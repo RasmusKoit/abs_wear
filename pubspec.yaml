@@ -1,0 +1,38 @@
+name: audiobookshelfwear
+description: AudioBookShelf on your watch!
+version: 1.0.0+1
+publish_to: none
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+
+dependencies:
+  bloc: ^8.1.2
+  flutter:
+    sdk: flutter
+  flutter_bloc: ^8.1.3
+  flutter_localizations:
+    sdk: flutter
+  flutter_svg: ^2.0.9
+  http: ^1.1.0
+  intl: ^0.18.0
+  just_audio: ^0.9.36
+  just_audio_background: ^0.0.1-beta.11
+  text_scroll: ^0.2.0
+  wearable_rotary: ^2.0.0
+
+dev_dependencies:
+  bloc_test: ^9.1.2
+  flutter_test:
+    sdk: flutter
+  mocktail: ^1.0.0
+  very_good_analysis: ^5.1.0
+
+flutter:
+  uses-material-design: true
+  generate: true
+  assets:
+    - assets/static/ABS.png
+    - assets/static/ABS.svg
+    - assets/static/ABSx48.svg
+    - assets/static/ABSx200.svg
