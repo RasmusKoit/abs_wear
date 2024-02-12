@@ -10,12 +10,13 @@ import 'package:http/http.dart' as http;
 import 'package:just_audio/just_audio.dart';
 
 class PlayerView extends StatefulWidget {
-  const PlayerView(
-      {super.key,
-      required this.token,
-      required this.serverUrl,
-      required this.libraryItemId,
-      required this.user});
+  const PlayerView({
+    required this.token,
+    required this.serverUrl,
+    required this.libraryItemId,
+    required this.user,
+    super.key,
+  });
   final String token;
   final String serverUrl;
   final String libraryItemId;
@@ -121,64 +122,69 @@ class _PlayerViewState extends State<PlayerView> {
   }
 
   Future<void> setupPlayer() async {
-    final libraryItemId = widget.libraryItemId;
+    try {
+      final libraryItemId = widget.libraryItemId;
 
-    final playUri = '${widget.serverUrl}/api/items/$libraryItemId/play';
-    final deviceInfoPlugin = DeviceInfoPlugin();
-    final buildInfo = await deviceInfoPlugin.androidInfo;
-    final playResponseBody = '''
-{
-  "deviceInfo": {
-    "clientName": "Wear OS",
-    "clientVersion": "${buildInfo.version.release}",
-    "deviceName": "${buildInfo.device}",
-    "deviceType": "wearable",
-    "sdkVersion": ${buildInfo.version.sdkInt},
-    "model": "${buildInfo.model}",
-    "manufacturer": "${buildInfo.manufacturer == 'unknown' ? 'Google' : buildInfo.manufacturer}"
-  },
-  "mediaPlayer": "JustAudio",
-  "forceDirectPlay": true
-}
-''';
+      final playUri = '${widget.serverUrl}/api/items/$libraryItemId/play';
+      final deviceInfoPlugin = DeviceInfoPlugin();
+      final buildInfo = await deviceInfoPlugin.androidInfo;
+      final playResponseBody = '''
+      {
+        "deviceInfo": {
+          "clientName": "Wear OS",
+          "clientVersion": "${buildInfo.version.release}",
+          "deviceName": "${buildInfo.device}",
+          "deviceType": "wearable",
+          "sdkVersion": ${buildInfo.version.sdkInt},
+          "model": "${buildInfo.model}",
+          "manufacturer": "${buildInfo.manufacturer == 'unknown' ? 'Google' : buildInfo.manufacturer}"
+        },
+        "mediaPlayer": "JustAudio",
+        "forceDirectPlay": true
+      }
+    ''';
 
-    final playResponse = await http.post(
-      Uri.parse(playUri),
-      headers: <String, String>{
-        'Authorization': 'Bearer ${widget.token}',
-        'Content-Type': 'application/json; charset=UTF-8',
-      },
-      body: jsonEncode(jsonDecode(playResponseBody)),
-    );
+      final playResponse = await http.post(
+        Uri.parse(playUri),
+        headers: <String, String>{
+          'Authorization': 'Bearer ${widget.token}',
+          'Content-Type': 'application/json; charset=UTF-8',
+        },
+        body: jsonEncode(jsonDecode(playResponseBody)),
+      );
 
-    if (playResponse.statusCode != 200) {
-      return;
+      if (playResponse.statusCode != 200) {
+        return;
+      }
+
+      final playData = jsonDecode(playResponse.body) as Map<String, dynamic>;
+      sessionId = playData['id'] as String;
+      chapters = playData['chapters'] as List<dynamic>;
+      startingPositionTime = (playData['currentTime'] as num).toDouble();
+      duration = (playData['duration'] as num).toDouble();
+
+      setState(() {
+        bookTitle = playData['mediaMetadata']['title'] as String;
+        chapterName =
+            getChapterName((playData['currentTime'] as num).round(), chapters);
+      });
+      final inoInt =
+          playData['libraryItem']['libraryFiles'][0]['ino'] as String;
+      final audioUrl =
+          '${widget.serverUrl}/api/items/$libraryItemId/file/$inoInt';
+
+      await _player.setUrl(
+        audioUrl,
+        headers: <String, String>{
+          'Authorization': 'Bearer ${widget.token}',
+        },
+        initialPosition: Duration(
+          seconds: (playData['currentTime'] as num).round(),
+        ),
+      );
+    } catch (e) {
+      print('Error setting up player: $e');
     }
-
-    final playData = jsonDecode(playResponse.body) as Map<String, dynamic>;
-    sessionId = playData['id'] as String;
-    chapters = playData['chapters'] as List<dynamic>;
-    startingPositionTime = (playData['currentTime'] as num).toDouble();
-    duration = (playData['duration'] as num).toDouble();
-
-    setState(() {
-      bookTitle = playData['mediaMetadata']['title'] as String;
-      chapterName =
-          getChapterName((playData['currentTime'] as num).round(), chapters);
-    });
-    final inoInt = playData['libraryItem']['libraryFiles'][0]['ino'] as String;
-    final audioUrl =
-        '${widget.serverUrl}/api/items/$libraryItemId/file/$inoInt';
-
-    await _player.setUrl(
-      audioUrl,
-      headers: <String, String>{
-        'Authorization': 'Bearer ${widget.token}',
-      },
-      initialPosition: Duration(
-        seconds: (playData['currentTime'] as num).round(),
-      ),
-    );
   }
 
   Stream<Duration> get positionStream {
@@ -290,83 +296,97 @@ class _PlayerViewState extends State<PlayerView> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 25),
-                child: ScrollingText(
-                  text: bookTitle,
-                  style: theme.textTheme.labelMedium!,
-                )),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 25),
-              child: ScrollingText(
-                text: chapterName,
-                style: theme.textTheme.labelSmall!,
-              ),
-            ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.skip_previous),
-                  onPressed: seekToPrevious,
-                ),
-                if (_isBuffering)
-                  const SizedBox(
-                    height: 48,
-                    width: 48,
-                    child: Padding(
-                      padding: EdgeInsets.all(12),
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2.5,
-                        color: Colors.white,
-                      ),
-                    ),
-                  )
-                else
-                  IconButton(
-                    icon: Icon(_isPlaying ? Icons.pause : Icons.play_arrow),
-                    onPressed: () {
-                      setState(() {
-                        if (_isPlaying) {
-                          _player.pause();
-                        } else {
-                          _player.play();
-                        }
-                        _isPlaying = !_isPlaying;
-                      });
-                    },
-                  ),
-                IconButton(
-                  icon: const Icon(Icons.skip_next),
-                  onPressed: seekToNext,
-                ),
-              ],
-            ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.replay_10_rounded),
-                  onPressed: () => seekTo(-10 + _player.position.inSeconds),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.forward_10_rounded),
-                  onPressed: () => seekTo(10 + _player.position.inSeconds),
-                ),
-              ],
-            ),
-            ValueListenableBuilder<String>(
-              valueListenable: _timeLeftNotifier,
-              builder: (context, value, child) {
-                return TimeLeftWidget(
-                  timeLeft: value,
-                  style: theme.textTheme.labelSmall!,
-                );
-              },
-            ),
+            _buildScrollingText(theme.textTheme.labelMedium!, bookTitle),
+            _buildScrollingText(theme.textTheme.labelSmall!, chapterName),
+            _buildPlaybackControls(),
+            _buildSeekButtons(),
+            _buildTimeLeftWidget(theme.textTheme.labelSmall!),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildScrollingText(TextStyle textStyle, String text) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 25),
+      child: ScrollingText(
+        text: text,
+        style: textStyle,
+      ),
+    );
+  }
+
+  Widget _buildPlaybackControls() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        IconButton(
+          icon: const Icon(Icons.skip_previous),
+          onPressed: seekToPrevious,
+        ),
+        _buildPlayPauseButton(),
+        IconButton(
+          icon: const Icon(Icons.skip_next),
+          onPressed: seekToNext,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPlayPauseButton() {
+    return _isBuffering
+        ? const SizedBox(
+            height: 48,
+            width: 48,
+            child: Padding(
+              padding: EdgeInsets.all(12),
+              child: CircularProgressIndicator(
+                strokeWidth: 2.5,
+                color: Colors.white,
+              ),
+            ),
+          )
+        : IconButton(
+            icon: Icon(_isPlaying ? Icons.pause : Icons.play_arrow),
+            onPressed: () {
+              setState(() {
+                if (_isPlaying) {
+                  _player.pause();
+                } else {
+                  _player.play();
+                }
+                _isPlaying = !_isPlaying;
+              });
+            },
+          );
+  }
+
+  Widget _buildSeekButtons() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        IconButton(
+          icon: const Icon(Icons.replay_10_rounded),
+          onPressed: () => seekTo(-10 + _player.position.inSeconds),
+        ),
+        IconButton(
+          icon: const Icon(Icons.forward_10_rounded),
+          onPressed: () => seekTo(10 + _player.position.inSeconds),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTimeLeftWidget(TextStyle textStyle) {
+    return ValueListenableBuilder<String>(
+      valueListenable: _timeLeftNotifier,
+      builder: (context, value, child) {
+        return TimeLeftWidget(
+          timeLeft: value,
+          style: textStyle,
+        );
+      },
     );
   }
 }
