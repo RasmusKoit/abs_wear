@@ -15,11 +15,11 @@ dependencies:
   flutter_localizations:
     sdk: flutter
   flutter_svg: ^2.0.9
-  http: ^1.1.0
+  http: 1.1.0
   intl: ^0.18.0
   just_audio: ^0.9.36
   just_audio_background: ^0.0.1-beta.11
-  text_scroll: ^0.2.0
+  text_scroll: ^0.2.0 
   wearable_rotary: ^2.0.0
 
 dev_dependencies:
@@ -34,6 +34,4 @@ flutter:
   generate: true
   assets:
     - assets/static/ABS.png
-    - assets/static/ABS.svg
-    - assets/static/ABSx48.svg
     - assets/static/ABSx200.svg
