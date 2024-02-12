@@ -30,6 +30,10 @@
     "@logout": {
         "description": "Text for logout"
     },
+    "login": "Login",
+    "@login": {
+        "description": "Text for login"
+    },
     "continueListening": "Continue Listening",
     "@continueListening": {
         "description": "Text for Continue Listening"

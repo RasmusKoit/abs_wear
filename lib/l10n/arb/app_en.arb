@@ -26,6 +26,10 @@
     "@library": {
         "description": "Text for Library"
     },
+    "login": "Login",
+    "@login": {
+        "description": "Text for login"
+    },
     "logout": "Logout",
     "@logout": {
         "description": "Text for logout"

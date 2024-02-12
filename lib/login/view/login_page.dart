@@ -148,7 +148,7 @@ class _LoginPageState extends State<LoginPage> {
                         });
                       },
                       child: Text(
-                        'Login',
+                        l10n.login,
                         style: theme.textTheme.bodyMedium,
                       ),
                     ),
