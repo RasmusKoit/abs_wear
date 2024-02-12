@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:ui' as ui;
 
+import 'package:audiobookshelfwear/app/app.dart';
 import 'package:audiobookshelfwear/l10n/l10n.dart';
 import 'package:audiobookshelfwear/library/view/library_page.dart';
 import 'package:flutter/material.dart';
@@ -11,20 +12,36 @@ class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
 
   @override
-  _LoginPageState createState() => _LoginPageState();
+  LoginPageState createState() => LoginPageState();
 }
 
-class _LoginPageState extends State<LoginPage> {
+class LoginPageState extends State<LoginPage> {
   final TextEditingController serverUrlController =
       TextEditingController(text: 'https://');
   final TextEditingController usernameController = TextEditingController();
   final TextEditingController passwordController = TextEditingController();
-  late String _token = '';
+  String _token = '';
   String defaultLibraryId = '';
+  late AppLocalizations l10n;
 
-  Future<String?> login(String url, String username, String password) async {
-    var response = await http.post(
-      Uri.parse('${url}/login'),
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    l10n = context.l10n;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    // Set the default values for the server url, username and password
+    serverUrlController.text = '';
+    usernameController.text = '';
+    passwordController.text = '';
+  }
+
+  Future<String> login(String url, String username, String password) async {
+    final response = await http.post(
+      Uri.parse('$url/login'),
       headers: <String, String>{
         'Content-Type': 'application/json',
       },
@@ -38,24 +55,21 @@ class _LoginPageState extends State<LoginPage> {
       final data = jsonDecode(response.body) as Map<String, dynamic>;
       final token = data['user']['token'] as String;
       defaultLibraryId = data['userDefaultLibraryId'] as String;
-
-      // Save the token and use it  for subsequent API calls
-      // Navigate to the next screen
-      // Navigator.push(context, MaterialPageRoute(builder: (context) => NextScreen()));
       return token;
     } else {
-      return null;
-      // Show an error message
+      return '';
     }
   }
 
-  Future<void> logout() async {
-    // Perform logout logic here
+  void logout() {
+    // set the token to an empty string
+    setState(() {
+      _token = '';
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    final l10n = context.l10n;
     final theme = Theme.of(context);
     return Scaffold(
       appBar: PreferredSize(
@@ -77,141 +91,135 @@ class _LoginPageState extends State<LoginPage> {
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           child: _token == ''
-              ? Column(
-                  children: [
-                    TextFormField(
-                      style: theme.textTheme.labelSmall,
-                      strutStyle: StrutStyle.fromTextStyle(
-                        theme.textTheme.labelSmall!,
-                      ),
-                      controller: serverUrlController,
-                      decoration: InputDecoration(
-                        labelStyle: theme.textTheme.labelSmall,
-                        prefixStyle: theme.textTheme.labelSmall,
-                        labelText: l10n.serverUrlLabel,
-                      ),
-                    ),
-                    TextFormField(
-                      style: theme.textTheme.labelSmall,
-                      strutStyle: StrutStyle.fromTextStyle(
-                        theme.textTheme.labelSmall!,
-                      ),
-                      controller: usernameController,
-                      decoration: InputDecoration(
-                        labelText: l10n.usernameLabel,
-                        labelStyle: theme.textTheme.labelSmall,
-                      ),
-                    ),
-                    TextFormField(
-                      style: theme.textTheme.labelSmall,
-                      strutStyle: StrutStyle.fromTextStyle(
-                        theme.textTheme.labelSmall!,
-                      ),
-                      controller: passwordController,
-                      decoration: InputDecoration(
-                        labelText: l10n.passwordLabel,
-                        labelStyle: theme.textTheme.labelSmall,
-                      ),
-                      obscureText: true,
-                    ),
-                    const SizedBox(height: 8),
-                    ElevatedButton(
-                      onPressed: () {
-                        final serverUrl = serverUrlController.text;
-                        final username = usernameController.text;
-                        final password = passwordController.text;
-
-                        if (serverUrl.isEmpty ||
-                            username.isEmpty ||
-                            password.isEmpty) {
-                          // Show an error message
-                          return;
-                        }
-                        login(serverUrl, username, password).then((token) {
-                          if (token == null) {
-                            return;
-                          }
-                          setState(() {
-                            _token = token;
-                          });
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute<LibraryPage>(
-                              builder: (context) => LibraryPage(
-                                serverUrl: serverUrl,
-                                token: token,
-                                libraryId: defaultLibraryId,
-                                user: username,
-                              ),
-                            ),
-                          );
-                        });
-                      },
-                      child: Text(
-                        l10n.login,
-                        style: theme.textTheme.bodyMedium,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                  ],
-                )
-              : Column(
-                  children: [
-                    Text(
-                      l10n.hello(usernameController.text),
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.bodyMedium,
-                    ),
-                    Text(
-                      '${serverUrlController.text}',
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.labelSmall,
-                    ),
-                    ElevatedButton(
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute<LibraryPage>(
-                            builder: (context) => LibraryPage(
-                              serverUrl: serverUrlController.text,
-                              token: _token,
-                              libraryId: defaultLibraryId,
-                              user: usernameController.text,
-                            ),
-                          ),
-                        );
-                      },
-                      child: Text(
-                        l10n.library,
-                        style: theme.textTheme.bodyMedium,
-                      ),
-                    ),
-                    Center(
-                      child: ElevatedButton(
-                        // make the logout button red
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: theme.colorScheme.error,
-                        ),
-                        onPressed: () {
-                          logout().then((_) {
-                            setState(() {
-                              _token = '';
-                            });
-                          });
-                        },
-                        child: Text(
-                          l10n.logout,
-                          style: theme.textTheme.bodyMedium,
-                        ),
-                      ),
-                    ),
-                    // create a centered button to navigate to the library
-
-                    const SizedBox(height: 8),
-                  ],
-                ),
+              ? _buildLoginForm(theme)
+              : _buildLoggedInState(theme),
         ),
       ),
+    );
+  }
+
+  Widget _buildLoginForm(ThemeData theme) {
+    return Column(
+      children: [
+        TextFormField(
+          style: theme.textTheme.labelSmall,
+          strutStyle: StrutStyle.fromTextStyle(
+            theme.textTheme.labelSmall!,
+          ),
+          controller: serverUrlController,
+          decoration: InputDecoration(
+            labelStyle: theme.textTheme.labelSmall,
+            prefixStyle: theme.textTheme.labelSmall,
+            labelText: l10n.serverUrlLabel,
+          ),
+        ),
+        TextFormField(
+          style: theme.textTheme.labelSmall,
+          strutStyle: StrutStyle.fromTextStyle(
+            theme.textTheme.labelSmall!,
+          ),
+          controller: usernameController,
+          decoration: InputDecoration(
+            labelText: l10n.usernameLabel,
+            labelStyle: theme.textTheme.labelSmall,
+          ),
+        ),
+        TextFormField(
+          style: theme.textTheme.labelSmall,
+          strutStyle: StrutStyle.fromTextStyle(
+            theme.textTheme.labelSmall!,
+          ),
+          controller: passwordController,
+          decoration: InputDecoration(
+            labelText: l10n.passwordLabel,
+            labelStyle: theme.textTheme.labelSmall,
+          ),
+          obscureText: true,
+        ),
+        const SizedBox(height: 8),
+        ElevatedButton(
+          onPressed: () {
+            final serverUrl = serverUrlController.text;
+            final username = usernameController.text;
+            final password = passwordController.text;
+
+            if (serverUrl.isEmpty || username.isEmpty || password.isEmpty) {
+              // Show an error message
+              return;
+            }
+
+            login(serverUrl, username, password).then((token) {
+              if (token != '') {
+                setState(() {
+                  _token = token;
+                });
+              }
+            });
+
+            if (_token == '') {
+              // Show an error message
+              return;
+            }
+          },
+          child: Text(
+            l10n.login,
+            style: theme.textTheme.bodyMedium,
+          ),
+        ),
+        const SizedBox(height: 8),
+      ],
+    );
+  }
+
+  Widget _buildLoggedInState(ThemeData theme) {
+    return Column(
+      children: [
+        Text(
+          l10n.hello(usernameController.text),
+          textAlign: TextAlign.center,
+          style: theme.textTheme.bodyMedium,
+        ),
+        Text(
+          serverUrlController.text,
+          textAlign: TextAlign.center,
+          style: theme.textTheme.labelSmall,
+        ),
+        ElevatedButton(
+          onPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute<LibraryPage>(
+                builder: (context) => LibraryPage(
+                  serverUrl: serverUrlController.text,
+                  token: _token,
+                  libraryId: defaultLibraryId,
+                  user: usernameController.text,
+                ),
+              ),
+            );
+          },
+          child: Text(
+            l10n.library,
+            style: theme.textTheme.bodyMedium,
+          ),
+        ),
+        Center(
+          child: ElevatedButton(
+            // make the logout button red
+            style: ElevatedButton.styleFrom(
+              backgroundColor: theme.colorScheme.error,
+            ),
+            onPressed: () async {
+              logout();
+            },
+            child: Text(
+              l10n.logout,
+              style: theme.textTheme.bodyMedium,
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+      ],
     );
   }
 }
