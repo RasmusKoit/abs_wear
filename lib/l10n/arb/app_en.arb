@@ -1,7 +1,43 @@
 {
     "@@locale": "en",
-    "counterAppBarTitle": "Counter",
-    "@counterAppBarTitle": {
-        "description": "Text shown in the Counter Page"
+    "serverUrlLabel": "Server URL",
+    "@serverUrlLabel": {
+        "description": "Label for the server URL input field"
+    },
+    "usernameLabel": "Username",
+    "@usernameLabel": {
+        "description": "Username for the input field"
+    },
+    "passwordLabel": "Password",
+    "@passwordLabel": {
+        "description": "Password for the input field"
+    },
+    "hello": "Hello {username}",
+    "@hello": {
+        "description": "Hello text with parameter: username",
+        "placeholders": {
+            "username": {
+                "type": "String",
+                "example": "Bob"
+            }
+        }
+    },
+    "library": "Library",
+    "@library": {
+        "description": "Text for Library"
+    },
+    "logout": "Logout",
+    "@logout": {
+        "description": "Text for logout"
+    },
+    "continueListening": "Continue Listening",
+    "@continueListening": {
+        "description": "Text for Continue Listening"
+    },
+    "refresh": "Refresh",
+    "@refresh": {
+        "description": "Text for refresh"
     }
+    
+    
 }
