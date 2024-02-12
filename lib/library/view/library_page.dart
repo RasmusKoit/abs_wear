@@ -93,6 +93,8 @@ class _LibraryPageState extends State<LibraryPage> {
                             trailing: Image.network(
                               coverUrl,
                               width: 50,
+                              cacheWidth: 100,
+                              cacheHeight: 100,
                               height: 50,
                             ),
                             onTap: () {
