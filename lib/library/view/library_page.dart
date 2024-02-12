@@ -1,9 +1,8 @@
 import 'dart:convert';
-import 'dart:io';
 
+import 'package:audiobookshelfwear/l10n/l10n.dart';
 import 'package:audiobookshelfwear/player/player.dart';
 import 'package:flutter/material.dart';
-import 'package:audiobookshelfwear/l10n/l10n.dart';
 import 'package:http/http.dart' as http;
 
 class LibraryPage extends StatefulWidget {
@@ -24,6 +23,7 @@ class LibraryPage extends StatefulWidget {
 }
 
 class _LibraryPageState extends State<LibraryPage> {
+  List<dynamic> continueListening = [];
   Future<List<dynamic>> getContinueListening(
     String token,
     String serverUrl,
@@ -38,7 +38,7 @@ class _LibraryPageState extends State<LibraryPage> {
     );
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body);
-      final continueListening = data.firstWhere(
+      continueListening = data.firstWhere(
         (item) => item['id'] == 'continue-listening',
       )['entities'] as List<dynamic>;
       return continueListening;
@@ -57,7 +57,7 @@ class _LibraryPageState extends State<LibraryPage> {
         child: AppBar(
           centerTitle: true,
           title: Text(
-            'Library',
+            l10n.library,
             style: theme.textTheme.bodyLarge,
           ),
           automaticallyImplyLeading: false,
@@ -68,7 +68,7 @@ class _LibraryPageState extends State<LibraryPage> {
           padding: const EdgeInsets.all(8),
           child: Column(
             children: [
-              const Text('Continue Listening'),
+              Text(l10n.continueListening),
               FutureBuilder<List<dynamic>>(
                 future: getContinueListening(
                   widget.token,
@@ -118,6 +118,24 @@ class _LibraryPageState extends State<LibraryPage> {
                   return const Center(child: CircularProgressIndicator());
                 },
               ),
+              Card(
+                child: ListTile(
+                  title: Text(
+                    l10n.refresh,
+                    style: theme.textTheme.bodySmall,
+                  ),
+                  trailing: const Icon(Icons.refresh),
+                  onTap: () {
+                    setState(() {
+                      getContinueListening(
+                        widget.token,
+                        widget.serverUrl,
+                      );
+                    });
+                  },
+                ),
+              ),
+              const SizedBox(height: 8),
             ],
           ),
         ),

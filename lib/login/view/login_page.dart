@@ -35,7 +35,6 @@ class _LoginPageState extends State<LoginPage> {
     );
 
     if (response.statusCode == 200) {
-      print('Login successful');
       final data = jsonDecode(response.body) as Map<String, dynamic>;
       final token = data['user']['token'] as String;
       defaultLibraryId = data['userDefaultLibraryId'] as String;
@@ -45,7 +44,6 @@ class _LoginPageState extends State<LoginPage> {
       // Navigator.push(context, MaterialPageRoute(builder: (context) => NextScreen()));
       return token;
     } else {
-      print('Login failed');
       return null;
       // Show an error message
     }
@@ -90,7 +88,7 @@ class _LoginPageState extends State<LoginPage> {
                       decoration: InputDecoration(
                         labelStyle: theme.textTheme.labelSmall,
                         prefixStyle: theme.textTheme.labelSmall,
-                        labelText: 'Server URL',
+                        labelText: l10n.serverUrlLabel,
                       ),
                     ),
                     TextFormField(
@@ -100,7 +98,7 @@ class _LoginPageState extends State<LoginPage> {
                       ),
                       controller: usernameController,
                       decoration: InputDecoration(
-                        labelText: 'Username',
+                        labelText: l10n.usernameLabel,
                         labelStyle: theme.textTheme.labelSmall,
                       ),
                     ),
@@ -111,7 +109,7 @@ class _LoginPageState extends State<LoginPage> {
                       ),
                       controller: passwordController,
                       decoration: InputDecoration(
-                        labelText: 'Password',
+                        labelText: l10n.passwordLabel,
                         labelStyle: theme.textTheme.labelSmall,
                       ),
                       obscureText: true,
@@ -119,7 +117,6 @@ class _LoginPageState extends State<LoginPage> {
                     const SizedBox(height: 8),
                     ElevatedButton(
                       onPressed: () {
-                        // Perform login logic here
                         final serverUrl = serverUrlController.text;
                         final username = usernameController.text;
                         final password = passwordController.text;
@@ -161,7 +158,7 @@ class _LoginPageState extends State<LoginPage> {
               : Column(
                   children: [
                     Text(
-                      'Hello ${usernameController.text}',
+                      l10n.hello(usernameController.text),
                       textAlign: TextAlign.center,
                       style: theme.textTheme.bodyMedium,
                     ),
@@ -170,8 +167,31 @@ class _LoginPageState extends State<LoginPage> {
                       textAlign: TextAlign.center,
                       style: theme.textTheme.labelSmall,
                     ),
+                    ElevatedButton(
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute<LibraryPage>(
+                            builder: (context) => LibraryPage(
+                              serverUrl: serverUrlController.text,
+                              token: _token,
+                              libraryId: defaultLibraryId,
+                              user: usernameController.text,
+                            ),
+                          ),
+                        );
+                      },
+                      child: Text(
+                        l10n.library,
+                        style: theme.textTheme.bodyMedium,
+                      ),
+                    ),
                     Center(
                       child: ElevatedButton(
+                        // make the logout button red
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: theme.colorScheme.error,
+                        ),
                         onPressed: () {
                           logout().then((_) {
                             setState(() {
@@ -180,11 +200,13 @@ class _LoginPageState extends State<LoginPage> {
                           });
                         },
                         child: Text(
-                          'Logout',
+                          l10n.logout,
                           style: theme.textTheme.bodyMedium,
                         ),
                       ),
                     ),
+                    // create a centered button to navigate to the library
+
                     const SizedBox(height: 8),
                   ],
                 ),

@@ -4,12 +4,10 @@ import 'dart:convert';
 import 'package:audiobookshelfwear/l10n/l10n.dart';
 import 'package:audiobookshelfwear/player/components/scrolling_text.dart';
 import 'package:audiobookshelfwear/player/components/time_left_widget.dart';
-import 'package:audiobookshelfwear/player/player.dart';
+import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
-import 'package:just_audio/just_audio.dart';
-import 'package:text_scroll/text_scroll.dart';
 import 'package:http/http.dart' as http;
+import 'package:just_audio/just_audio.dart';
 
 class PlayerView extends StatefulWidget {
   const PlayerView(
@@ -36,6 +34,11 @@ class _PlayerViewState extends State<PlayerView> {
   List<dynamic> chapters = [];
   String bookTitle = '';
   String chapterName = '';
+  String sessionId = '';
+  double startingPositionTime = 0;
+  double duration = 0;
+  double timeListened = 0;
+  Timer? _syncTimer;
 
   @override
   void initState() {
@@ -46,10 +49,47 @@ class _PlayerViewState extends State<PlayerView> {
   @override
   void dispose() {
     super.dispose();
+    _syncTimer?.cancel();
+    _syncOpenSession(
+      startingPositionTime,
+      _player.position.inSeconds.toDouble(),
+      close: true,
+    );
     _player.stop();
     _timeLeftNotifier.dispose();
     _positionSubscription?.cancel();
     _player.dispose();
+  }
+
+  Future<void> _syncOpenSession(
+    double lastCurrentTime,
+    double currentTime, {
+    bool close = false,
+  }) async {
+    if (sessionId.isNotEmpty) {
+      final sessionUri =
+          '${widget.serverUrl}/api/session/$sessionId/${close ? 'close' : 'sync'}';
+      timeListened = currentTime - lastCurrentTime;
+      final sessionBody = <String, double>{
+        'currentTime': _player.position.inSeconds.toDouble(),
+        'timeListened': timeListened,
+        'duration': duration,
+      };
+      // If close is true, then we are closing the session
+      final closeResponse = await http.post(
+        Uri.parse(sessionUri),
+        headers: <String, String>{
+          'Authorization': 'Bearer ${widget.token}',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode(sessionBody),
+      );
+      if (closeResponse.statusCode != 200) {
+        return;
+      }
+      // update the starting position time
+      startingPositionTime = currentTime;
+    }
   }
 
   Future<void> _init() async {
@@ -69,32 +109,66 @@ class _PlayerViewState extends State<PlayerView> {
     _positionSubscription = _player.positionStream.listen((event) {
       updateChapterNameAndDuration();
     });
+
+    _syncTimer = Timer.periodic(const Duration(minutes: 1), (timer) {
+      if (!_isBuffering) {
+        _syncOpenSession(
+          startingPositionTime,
+          _player.position.inSeconds.toDouble(),
+        );
+      }
+    });
   }
 
   Future<void> setupPlayer() async {
     final libraryItemId = widget.libraryItemId;
 
     final playUri = '${widget.serverUrl}/api/items/$libraryItemId/play';
+    final deviceInfoPlugin = DeviceInfoPlugin();
+    final buildInfo = await deviceInfoPlugin.androidInfo;
+    final playResponseBody = '''
+{
+  "deviceInfo": {
+    "clientName": "Wear OS",
+    "clientVersion": "${buildInfo.version.release}",
+    "deviceName": "${buildInfo.device}",
+    "deviceType": "wearable",
+    "sdkVersion": ${buildInfo.version.sdkInt},
+    "model": "${buildInfo.model}",
+    "manufacturer": "${buildInfo.manufacturer == 'unknown' ? 'Google' : buildInfo.manufacturer}"
+  },
+  "mediaPlayer": "JustAudio",
+  "forceDirectPlay": true
+}
+''';
 
-    final playResponse =
-        await http.post(Uri.parse(playUri), headers: <String, String>{
-      'Authorization': 'Bearer ${widget.token}',
-    });
+    final playResponse = await http.post(
+      Uri.parse(playUri),
+      headers: <String, String>{
+        'Authorization': 'Bearer ${widget.token}',
+        'Content-Type': 'application/json; charset=UTF-8',
+      },
+      body: jsonEncode(jsonDecode(playResponseBody)),
+    );
 
     if (playResponse.statusCode != 200) {
       return;
     }
 
     final playData = jsonDecode(playResponse.body) as Map<String, dynamic>;
+    sessionId = playData['id'] as String;
     chapters = playData['chapters'] as List<dynamic>;
+    startingPositionTime = (playData['currentTime'] as num).toDouble();
+    duration = (playData['duration'] as num).toDouble();
+
     setState(() {
       bookTitle = playData['mediaMetadata']['title'] as String;
       chapterName =
           getChapterName((playData['currentTime'] as num).round(), chapters);
     });
-
+    final inoInt = playData['libraryItem']['libraryFiles'][0]['ino'] as String;
     final audioUrl =
-        '${widget.serverUrl}/api/items/$libraryItemId/file/${playData['libraryItem']['libraryFiles'][0]['ino']}';
+        '${widget.serverUrl}/api/items/$libraryItemId/file/$inoInt';
 
     await _player.setUrl(
       audioUrl,
@@ -111,7 +185,17 @@ class _PlayerViewState extends State<PlayerView> {
     return Stream.periodic(const Duration(seconds: 1), (_) => _player.position);
   }
 
+  String durationPlayed(int inSeconds) {
+    final hours = inSeconds ~/ 3600;
+    final minutes = (inSeconds % 3600) ~/ 60;
+    final seconds = inSeconds % 60;
+    return '${hours.toString().padLeft(2, '0')}:${minutes.toString().padLeft(2, '0')}:${seconds.floor().toString().padLeft(2, '0')}';
+  }
+
   String getTimeLeft(int inSeconds, List<dynamic> chapters) {
+    if (chapters.isEmpty) {
+      return durationPlayed(inSeconds);
+    }
     for (final chapter in chapters) {
       final start = chapter['start'] as num;
       final end = chapter['end'] as num;
@@ -137,8 +221,9 @@ class _PlayerViewState extends State<PlayerView> {
           chapters.indexWhere((chapter) => chapter['title'] == currentChapter);
       if (currentChapterIndex > 0) {
         final previousChapter = chapters[currentChapterIndex - 1];
-        await _player
-            .seek(Duration(seconds: (previousChapter['start'] as num).round()));
+        await _player.seek(Duration(
+          seconds: (previousChapter['start'] as num).round(),
+        ));
         setState(() {
           chapterName = previousChapter['title'] as String;
         });
