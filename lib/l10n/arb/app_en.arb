@@ -41,7 +41,9 @@
     "refresh": "Refresh",
     "@refresh": {
         "description": "Text for refresh"
+    },
+    "errorLoadingData": "Error loading data",
+    "@errorLoadingData": {
+        "description": "Error loading data"
     }
-    
-    
 }
