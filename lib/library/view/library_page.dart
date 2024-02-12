@@ -23,7 +23,6 @@ class LibraryPage extends StatefulWidget {
 }
 
 class _LibraryPageState extends State<LibraryPage> {
-  List<dynamic> continueListening = [];
   Future<List<dynamic>> getContinueListening(
     String token,
     String serverUrl,
@@ -38,10 +37,9 @@ class _LibraryPageState extends State<LibraryPage> {
     );
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body);
-      continueListening = data.firstWhere(
+      return data.firstWhere(
         (item) => item['id'] == 'continue-listening',
       )['entities'] as List<dynamic>;
-      return continueListening;
     } else {
       throw Exception('Failed to load listening sessions');
     }
@@ -75,47 +73,47 @@ class _LibraryPageState extends State<LibraryPage> {
                   widget.serverUrl,
                 ),
                 builder: (context, snapshot) {
-                  if (snapshot.hasData) {
-                    return Column(
-                      children: snapshot.data!.map((item) {
-                        final coverUrl =
-                            "${widget.serverUrl}/api/items/${item['id']}/cover?token=${widget.token}";
-                        return Card(
-                          child: ListTile(
-                            title: Text(
-                              "${item['media']['metadata']['title']}",
-                              style: theme.textTheme.bodySmall,
-                            ),
-                            subtitle: Text(
-                              "${item['media']['metadata']['authorName']}",
-                              style: theme.textTheme.labelSmall,
-                            ),
-                            trailing: Image.network(
-                              coverUrl,
-                              width: 50,
-                              cacheWidth: 100,
-                              cacheHeight: 100,
-                              height: 50,
-                            ),
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute<dynamic>(
-                                  builder: (context) => PlayerView(
-                                    token: widget.token,
-                                    serverUrl: widget.serverUrl,
-                                    libraryItemId: item['id'] as String,
-                                    user: widget.user,
+                  if (snapshot.connectionState == ConnectionState.done) {
+                    if (snapshot.hasData) {
+                      return Column(
+                        children: snapshot.data!.map((item) {
+                          final coverUrl =
+                              "${widget.serverUrl}/api/items/${item['id']}/cover?token=${widget.token}";
+                          return Card(
+                            child: ListTile(
+                              title: Text(
+                                "${item['media']['metadata']['title']}",
+                                style: theme.textTheme.bodySmall,
+                              ),
+                              subtitle: Text(
+                                "${item['media']['metadata']['authorName']}",
+                                style: theme.textTheme.labelSmall,
+                              ),
+                              trailing: Image.network(
+                                coverUrl,
+                                width: 50,
+                                height: 50,
+                              ),
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute<dynamic>(
+                                    builder: (context) => PlayerView(
+                                      token: widget.token,
+                                      serverUrl: widget.serverUrl,
+                                      libraryItemId: item['id'] as String,
+                                      user: widget.user,
+                                    ),
                                   ),
-                                ),
-                              );
-                            },
-                          ),
-                        );
-                      }).toList(),
-                    );
-                  } else if (snapshot.hasError) {
-                    return Text('${snapshot.error}');
+                                );
+                              },
+                            ),
+                          );
+                        }).toList(),
+                      );
+                    } else if (snapshot.hasError) {
+                      return Text(l10n.errorLoadingData);
+                    }
                   }
                   return const Center(child: CircularProgressIndicator());
                 },
