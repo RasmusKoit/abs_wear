@@ -9,7 +9,7 @@ class App extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AmbientModeBuilder(
-      child: LoginPage(),
+      child: const LoginPage(),
       builder: (context, isAmbientModeActive, child) {
         return MaterialApp(
           theme: ThemeData(
