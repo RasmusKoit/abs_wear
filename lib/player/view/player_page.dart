@@ -8,6 +8,7 @@ import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:just_audio/just_audio.dart';
+import 'package:just_audio_background/just_audio_background.dart';
 
 class PlayerView extends StatefulWidget {
   const PlayerView({
@@ -173,11 +174,18 @@ class _PlayerViewState extends State<PlayerView> {
       final audioUrl =
           '${widget.serverUrl}/api/items/$libraryItemId/file/$inoInt';
 
-      await _player.setUrl(
-        audioUrl,
-        headers: <String, String>{
-          'Authorization': 'Bearer ${widget.token}',
-        },
+      await _player.setAudioSource(
+        AudioSource.uri(
+          Uri.parse(audioUrl),
+          headers: <String, String>{
+            'Authorization': 'Bearer ${widget.token}',
+          },
+          tag: MediaItem(
+            id: libraryItemId,
+            album: bookTitle,
+            title: chapterName,
+          ),
+        ),
         initialPosition: Duration(
           seconds: (playData['currentTime'] as num).round(),
         ),
