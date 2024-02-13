@@ -19,16 +19,17 @@ dependencies:
   intl: ^0.18.0
   just_audio: ^0.9.36
   just_audio_background: ^0.0.1-beta.11
+  shared_preferences: ^2.2.2
   text_scroll: ^0.2.0 
   wearable_rotary: ^2.0.0
 
 dev_dependencies:
   bloc_test: ^9.1.2
+  flutter_launcher_icons: ^0.13.1
   flutter_test:
     sdk: flutter
   mocktail: ^1.0.0
   very_good_analysis: ^5.1.0
-  flutter_launcher_icons: ^0.13.1
 
 flutter_launcher_icons:
   android: true
