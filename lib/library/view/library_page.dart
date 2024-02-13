@@ -1,3 +1,5 @@
+// ignore_for_file: avoid_dynamic_calls
+
 import 'dart:convert';
 
 import 'package:audiobookshelfwear/l10n/l10n.dart';
@@ -29,7 +31,7 @@ class _LibraryPageState extends State<LibraryPage> {
   ) async {
     final response = await http.get(
       Uri.parse(
-        '${serverUrl}/api/libraries/${widget.libraryId}/personalized?limit=5',
+        '$serverUrl/api/libraries/${widget.libraryId}/personalized?limit=5',
       ),
       headers: <String, String>{
         'Authorization': 'Bearer $token',
@@ -38,6 +40,7 @@ class _LibraryPageState extends State<LibraryPage> {
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body);
       return data.firstWhere(
+        // ignore: inference_failure_on_untyped_parameter
         (item) => item['id'] == 'continue-listening',
       )['entities'] as List<dynamic>;
     } else {

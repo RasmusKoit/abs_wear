@@ -1,6 +1,6 @@
+import 'package:audiobookshelfwear/ambient_mode/ambient_mode.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:audiobookshelfwear/ambient_mode/ambient_mode.dart';
 
 class _TestAmbientModeListener extends ValueNotifier<bool>
     implements AmbientModeListener {

@@ -1,12 +1,14 @@
+// ignore_for_file: avoid_dynamic_calls
+
 import 'dart:convert';
 import 'dart:ui' as ui;
 
-import 'package:audiobookshelfwear/app/app.dart';
 import 'package:audiobookshelfwear/l10n/l10n.dart';
 import 'package:audiobookshelfwear/library/view/library_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -34,12 +36,26 @@ class LoginPageState extends State<LoginPage> {
   void initState() {
     super.initState();
     // Set the default values for the server url, username and password
-    serverUrlController.text = '';
-    usernameController.text = '';
-    passwordController.text = '';
+    _checkToken();
   }
 
-  Future<String> login(String url, String username, String password) async {
+  Future<void> _checkToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedToken = prefs.getString('token');
+    final savedServerUrl = prefs.getString('serverUrl');
+    final savedUsername = prefs.getString('username');
+    final savedDefaultLibraryId = prefs.getString('defaultLibraryId');
+    if (savedToken != null && savedToken.isNotEmpty) {
+      setState(() {
+        _token = savedToken;
+        serverUrlController.text = savedServerUrl!;
+        usernameController.text = savedUsername!;
+        defaultLibraryId = savedDefaultLibraryId!;
+      });
+    }
+  }
+
+  Future<void> login(String url, String username, String password) async {
     final response = await http.post(
       Uri.parse('$url/login'),
       headers: <String, String>{
@@ -55,13 +71,23 @@ class LoginPageState extends State<LoginPage> {
       final data = jsonDecode(response.body) as Map<String, dynamic>;
       final token = data['user']['token'] as String;
       defaultLibraryId = data['userDefaultLibraryId'] as String;
-      return token;
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('token', token);
+      await prefs.setString('serverUrl', url);
+      await prefs.setString('username', username);
+      await prefs.setString('defaultLibraryId', defaultLibraryId);
+      setState(() {
+        _token = token;
+      });
     } else {
-      return '';
+      // Show an error message
     }
   }
 
-  void logout() {
+  Future<void> logout() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('token');
     // set the token to an empty string
     setState(() {
       _token = '';
@@ -148,13 +174,7 @@ class LoginPageState extends State<LoginPage> {
               return;
             }
 
-            login(serverUrl, username, password).then((token) {
-              if (token != '') {
-                setState(() {
-                  _token = token;
-                });
-              }
-            });
+            login(serverUrl, username, password);
 
             if (_token == '') {
               // Show an error message
@@ -203,6 +223,7 @@ class LoginPageState extends State<LoginPage> {
             style: theme.textTheme.bodyMedium,
           ),
         ),
+        const SizedBox(height: 8),
         Center(
           child: ElevatedButton(
             // make the logout button red
@@ -210,7 +231,7 @@ class LoginPageState extends State<LoginPage> {
               backgroundColor: theme.colorScheme.error,
             ),
             onPressed: () async {
-              logout();
+              await logout();
             },
             child: Text(
               l10n.logout,

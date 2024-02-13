@@ -1,10 +1,12 @@
+// ignore_for_file: avoid_dynamic_calls
+
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:audiobookshelfwear/l10n/l10n.dart';
 import 'package:audiobookshelfwear/player/components/scrolling_text.dart';
 import 'package:audiobookshelfwear/player/components/time_left_widget.dart';
 import 'package:device_info_plus/device_info_plus.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:just_audio/just_audio.dart';
@@ -191,7 +193,9 @@ class _PlayerViewState extends State<PlayerView> {
         ),
       );
     } catch (e) {
-      print('Error setting up player: $e');
+      if (kDebugMode) {
+        print('Error setting up player: $e');
+      }
     }
   }
 
@@ -203,7 +207,8 @@ class _PlayerViewState extends State<PlayerView> {
     final hours = inSeconds ~/ 3600;
     final minutes = (inSeconds % 3600) ~/ 60;
     final seconds = inSeconds % 60;
-    return '${hours.toString().padLeft(2, '0')}:${minutes.toString().padLeft(2, '0')}:${seconds.floor().toString().padLeft(2, '0')}';
+    // ignore: lines_longer_than_80_chars
+    return '${hours.toString().padLeft(2, '0')}:${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
   }
 
   String getTimeLeft(int inSeconds, List<dynamic> chapters) {
@@ -218,6 +223,7 @@ class _PlayerViewState extends State<PlayerView> {
         final hours = remainingSeconds ~/ 3600;
         final minutes = (remainingSeconds % 3600) ~/ 60;
         final seconds = remainingSeconds % 60;
+        // ignore: lines_longer_than_80_chars
         return '${hours.toString().padLeft(2, '0')}:${minutes.toString().padLeft(2, '0')}:${seconds.floor().toString().padLeft(2, '0')}';
       }
     }
@@ -235,9 +241,11 @@ class _PlayerViewState extends State<PlayerView> {
           chapters.indexWhere((chapter) => chapter['title'] == currentChapter);
       if (currentChapterIndex > 0) {
         final previousChapter = chapters[currentChapterIndex - 1];
-        await _player.seek(Duration(
-          seconds: (previousChapter['start'] as num).round(),
-        ));
+        await _player.seek(
+          Duration(
+            seconds: (previousChapter['start'] as num).round(),
+          ),
+        );
         setState(() {
           chapterName = previousChapter['title'] as String;
         });
@@ -296,7 +304,6 @@ class _PlayerViewState extends State<PlayerView> {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = context.l10n;
     final theme = Theme.of(context);
 
     return Scaffold(
