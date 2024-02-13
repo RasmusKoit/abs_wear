@@ -15,7 +15,7 @@ dependencies:
   flutter_localizations:
     sdk: flutter
   flutter_svg: ^2.0.9
-  http: 1.1.0
+  http: 1.2.0
   intl: ^0.18.0
   just_audio: ^0.9.36
   just_audio_background: ^0.0.1-beta.11
