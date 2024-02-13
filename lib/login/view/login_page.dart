@@ -18,8 +18,7 @@ class LoginPage extends StatefulWidget {
 }
 
 class LoginPageState extends State<LoginPage> {
-  final TextEditingController serverUrlController =
-      TextEditingController(text: 'https://');
+  final TextEditingController serverUrlController = TextEditingController();
   final TextEditingController usernameController = TextEditingController();
   final TextEditingController passwordController = TextEditingController();
   String _token = '';
@@ -35,7 +34,7 @@ class LoginPageState extends State<LoginPage> {
   @override
   void initState() {
     super.initState();
-    // Set the default values for the server url, username and password
+    serverUrlController.text = 'https://';
     _checkToken();
   }
 
@@ -87,6 +86,7 @@ class LoginPageState extends State<LoginPage> {
 
   Future<void> logout() async {
     final prefs = await SharedPreferences.getInstance();
+    passwordController.clear();
     await prefs.remove('token');
     // set the token to an empty string
     setState(() {
