@@ -60,14 +60,14 @@ jobs:
           echo "storeFile=keystore/android_keystore.jks" >> /home/runner/work/audiobookshelfwear/audiobookshelfwear/android/key.properties
 
       - name: Build APK
-        run: flutter build apk --split-per-abi --release --build-number ${{ github.event.inputs.build_number }} --build-name ${{ github.event.inputs.build_name }}
+        run: flutter build apk --split-per-abi --release --build-number ${{ github.event.inputs.build_number }} --build-name ${{ github.event.inputs.build_name }} --target "lib/main_production.dart" --flavor production
         env:
           SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
           SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
           SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
 
       - name: Build APP BUNDLE
-        run: flutter build appbundle --build-number ${{ github.event.inputs.build_number }} --build-name ${{ github.event.inputs.build_name }}
+        run: flutter build appbundle --build-number ${{ github.event.inputs.build_number }} --build-name ${{ github.event.inputs.build_name }} --target "lib/main_production.dart" --flavor production
         env:
           SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
           SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
