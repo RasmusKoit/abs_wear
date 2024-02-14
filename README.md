@@ -1,6 +1,6 @@
 # Audiobookshelfwear
 
-![abs_icon][abs_icon]
+![abswear_icon][abswear_icon]
 
 [![style: very good analysis][very_good_analysis_badge]][very_good_analysis_link]
 [![License: MIT][license_badge]][license_link]
@@ -147,5 +147,5 @@ Widget build(BuildContext context) {
 [very_good_analysis_link]: https://pub.dev/packages/very_good_analysis
 [very_good_cli_link]: https://github.com/VeryGoodOpenSource/very_good_cli
 [abs_github_link]: https://github.com/advplyr/audiobookshelf
-[abs_icon]: assets/static/ABS.png
+[abswear_icon]: assets/static/ABSWear_round.png
 [advplyr_github_link]: https://github.com/advplyr

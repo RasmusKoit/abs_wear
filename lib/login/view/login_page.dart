@@ -103,8 +103,8 @@ class LoginPageState extends State<LoginPage> {
         child: AppBar(
           title: Center(
             child: SvgPicture.asset(
-              'assets/static/ABSx200.svg',
-              height: 32,
+              'assets/static/ABSWear_round.svg',
+              height: 45,
               colorFilter: ColorFilter.mode(
                 theme.colorScheme.onSurface,
                 BlendMode.srcIn,

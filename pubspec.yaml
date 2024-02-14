@@ -34,12 +34,13 @@ dev_dependencies:
 flutter_launcher_icons:
   android: true
   ios: false
-  image_path: "assets/static/ABS.png"
+  image_path: "assets/static/ABSWear.png"
   
 
 flutter:
   uses-material-design: true
   generate: true
   assets:
-    - assets/static/ABS.png
-    - assets/static/ABSx200.svg
+    - assets/static/ABSWear.png
+    - assets/static/ABSWear_round.png
+    - assets/static/ABSWear_round.svg
