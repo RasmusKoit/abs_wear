@@ -55,11 +55,11 @@ flutter test --coverage --test-randomize-ordering-seed random
 > [!NOTE]
 > There are different types of APK files for Wear OS, depending on the device’s architecture and features. The most common ones are:
 >
-> app-production-arm64-v8a-release.apk: This is for devices that use a 64-bit ARM processor, such as the Fossil Gen 5, TicWatch Pro 3, and Samsung Galaxy Watch 4.
+> **app-production-arm64-v8a-release.apk**: This is for devices that use a 64-bit ARM processor, such as the Fossil Gen 5, TicWatch Pro 3, and Samsung Galaxy Watch 4.
 >
-> app-production-armeabi-v7a-release.apk: This is for devices that use a 32-bit ARM processor, such as the Moto 360 (3rd Gen), TicWatch E2, and Fossil Sport.
+> **app-production-armeabi-v7a-release.apk**: This is for devices that use a 32-bit ARM processor, such as the Moto 360 (3rd Gen), TicWatch E2, and Fossil Sport.
 >
-> app-production-x86_64-release.apk: This is for devices that use a 64-bit Intel processor, such as the LG Watch Urbane 2nd Edition and Asus ZenWatch 3.
+> **app-production-x86_64-release.apk**: This is for devices that use a 64-bit Intel processor, such as the LG Watch Urbane 2nd Edition and Asus ZenWatch 3.
 
 To install the latest release from GitHub, follow the steps below:
 
