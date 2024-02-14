@@ -82,7 +82,7 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
 
       - name: Create Release
-        uses: ncipollo/release-action@v1.10.0
+        uses: ncipollo/release-action@v1.14.0
         with:
           artifacts: "build/app/outputs/apk/release/*.apk, build/app/outputs/bundle/release/*.aab"
 
