@@ -99,79 +99,79 @@ This project relies on [flutter_localizations][flutter_localizations_link] and f
 
 1. To add a new localizable string, open the `app_en.arb` file at `lib/l10n/arb/app_en.arb`.
 
-```arb
-{
-    "@@locale": "en",
-    "serverUrlLabel": "Server URL",
-    "@serverUrlLabel": {
-        "description": "Label for the server URL input field"
-    },
-    "usernameLabel": "Username",
-    "@usernameLabel": {
-        "description": "Username for the input field"
-    },
-    "passwordLabel": "Password",
-    "@passwordLabel": {
-        "description": "Password for the input field"
-    },
-    "hello": "Hello {username}",
-    "@hello": {
-        "description": "Hello text with parameter: username",
-        "placeholders": {
-            "username": {
-                "type": "String",
-                "example": "Bob"
+    ```arb
+    {
+        "@@locale": "en",
+        "serverUrlLabel": "Server URL",
+        "@serverUrlLabel": {
+            "description": "Label for the server URL input field"
+        },
+        "usernameLabel": "Username",
+        "@usernameLabel": {
+            "description": "Username for the input field"
+        },
+        "passwordLabel": "Password",
+        "@passwordLabel": {
+            "description": "Password for the input field"
+        },
+        "hello": "Hello {username}",
+        "@hello": {
+            "description": "Hello text with parameter: username",
+            "placeholders": {
+                "username": {
+                    "type": "String",
+                    "example": "Bob"
+                }
             }
         }
     }
-}
-```
+    ```
 
 2. Then add a new key/value and description
 
-```arb
-{
-    "@@locale": "en",
-    "serverUrlLabel": "Server URL",
-    "@serverUrlLabel": {
-        "description": "Label for the server URL input field"
-    },
-    "usernameLabel": "Username",
-    "@usernameLabel": {
-        "description": "Username for the input field"
-    },
-    "passwordLabel": "Password",
-    "@passwordLabel": {
-        "description": "Password for the input field"
-    },
-    "hello": "Hello {username}",
-    "@hello": {
-        "description": "Hello text with parameter: username",
-        "placeholders": {
-            "username": {
-                "type": "String",
-                "example": "Bob"
+    ```arb
+    {
+        "@@locale": "en",
+        "serverUrlLabel": "Server URL",
+        "@serverUrlLabel": {
+            "description": "Label for the server URL input field"
+        },
+        "usernameLabel": "Username",
+        "@usernameLabel": {
+            "description": "Username for the input field"
+        },
+        "passwordLabel": "Password",
+        "@passwordLabel": {
+            "description": "Password for the input field"
+        },
+        "hello": "Hello {username}",
+        "@hello": {
+            "description": "Hello text with parameter: username",
+            "placeholders": {
+                "username": {
+                    "type": "String",
+                    "example": "Bob"
+                }
             }
+        },
+        "library": "Library",
+        "@library": {
+            "description": "Text for Library"
         }
-    },
-    "library": "Library",
-    "@library": {
-        "description": "Text for Library"
     }
-}
-```
+    ```
 
 3. Use the new string
 
-```dart
-import 'package:abs_wear/l10n/l10n.dart';
+    ```dart
+    import 'package:abs_wear/l10n/l10n.dart';
 
-@override
-Widget build(BuildContext context) {
-  final l10n = context.l10n;
-  return Text(l10n.library);
-}
-```
+    @override
+    Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    return Text(l10n.library);
+    }
+    ```
 
 ---
 
