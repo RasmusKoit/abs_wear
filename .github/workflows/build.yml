@@ -49,15 +49,15 @@ jobs:
         uses: timheuer/base64-to-file@v1.2
         with:
           fileName: 'android_keystore.jks'
-          fileDir: '/home/runner/work/audiobookshelfwear/audiobookshelfwear/android/app/keystore/'
+          fileDir: '/home/runner/work/abs_wear/abs_wear/android/app/keystore/'
           encodedString: ${{ secrets.KEYSTORE }}
 
       - name: Create key.properties file
         run: |
-          echo "storePassword=$SIGNING_STORE_PASSWORD" > /home/runner/work/audiobookshelfwear/audiobookshelfwear/android/key.properties
-          echo "keyPassword=$SIGNING_KEY_PASSWORD" >> /home/runner/work/audiobookshelfwear/audiobookshelfwear/android/key.properties
-          echo "keyAlias=$SIGNING_KEY_ALIAS" >> /home/runner/work/audiobookshelfwear/audiobookshelfwear/android/key.properties
-          echo "storeFile=keystore/android_keystore.jks" >> /home/runner/work/audiobookshelfwear/audiobookshelfwear/android/key.properties
+          echo "storePassword=$SIGNING_STORE_PASSWORD" > /home/runner/work/abs_wear/abs_wear/android/key.properties
+          echo "keyPassword=$SIGNING_KEY_PASSWORD" >> /home/runner/work/abs_wear/abs_wear/android/key.properties
+          echo "keyAlias=$SIGNING_KEY_ALIAS" >> /home/runner/work/abs_wear/abs_wear/android/key.properties
+          echo "storeFile=keystore/android_keystore.jks" >> /home/runner/work/abs_wear/abs_wear/android/key.properties
 
       - name: Build APK
         run: flutter build apk --split-per-abi --release --build-number ${{ github.event.inputs.build_number }} --build-name ${{ github.event.inputs.build_name }} --target "lib/main_production.dart" --flavor production
@@ -65,7 +65,7 @@ jobs:
           SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
           SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
           SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
-          ANDROID_KEYSTORE_PATH: "/home/runner/work/audiobookshelfwear/audiobookshelfwear/android/app/keystore/android_keystore.jks"
+          ANDROID_KEYSTORE_PATH: "/home/runner/work/abs_wear/abs_wear/android/app/keystore/android_keystore.jks"
           ANDROID_KEYSTORE_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
           ANDROID_KEYSTORE_PRIVATE_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
@@ -76,7 +76,7 @@ jobs:
           SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
           SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
           SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
-          ANDROID_KEYSTORE_PATH: "/home/runner/work/audiobookshelfwear/audiobookshelfwear/android/app/keystore/android_keystore.jks"
+          ANDROID_KEYSTORE_PATH: "/home/runner/work/abs_wear/abs_wear/android/app/keystore/android_keystore.jks"
           ANDROID_KEYSTORE_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
           ANDROID_KEYSTORE_PRIVATE_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}

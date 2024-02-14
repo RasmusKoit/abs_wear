@@ -1,4 +1,4 @@
-import 'package:audiobookshelfwear/ambient_mode/ambient_mode.dart';
+import 'package:abs_wear/ambient_mode/ambient_mode.dart';
 import 'package:flutter/widgets.dart';
 
 class AmbientModeBuilder extends StatelessWidget {

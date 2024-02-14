@@ -1,4 +1,4 @@
-package dev.koit.audiobookshelfwear
+package dev.koit.abs_wear
 
 import android.os.Bundle
 import androidx.annotation.NonNull

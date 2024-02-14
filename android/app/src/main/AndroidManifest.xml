@@ -1,5 +1,5 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="dev.koit.audiobookshelfwear">
+    package="dev.koit.abs_wear">
     <uses-feature android:name="android.hardware.type.watch" />
     <uses-permission android:name="android.permission.BLUETOOTH" />
     <uses-permission android:name="android.permission.INTERNET" />

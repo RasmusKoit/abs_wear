@@ -2,8 +2,8 @@
 
 import 'dart:convert';
 
-import 'package:audiobookshelfwear/l10n/l10n.dart';
-import 'package:audiobookshelfwear/player/player.dart';
+import 'package:abs_wear/l10n/l10n.dart';
+import 'package:abs_wear/player/player.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 

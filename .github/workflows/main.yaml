@@ -1,4 +1,4 @@
-name: audiobookshelfwear
+name: abs_wear
 
 concurrency:
   group: $-$

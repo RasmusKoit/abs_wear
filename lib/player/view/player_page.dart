@@ -3,8 +3,8 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:audiobookshelfwear/player/components/scrolling_text.dart';
-import 'package:audiobookshelfwear/player/components/time_left_widget.dart';
+import 'package:abs_wear/player/components/scrolling_text.dart';
+import 'package:abs_wear/player/components/time_left_widget.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';

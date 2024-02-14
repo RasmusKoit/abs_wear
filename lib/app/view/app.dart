@@ -1,6 +1,6 @@
-import 'package:audiobookshelfwear/ambient_mode/ambient_mode.dart';
-import 'package:audiobookshelfwear/l10n/l10n.dart';
-import 'package:audiobookshelfwear/login/login.dart';
+import 'package:abs_wear/ambient_mode/ambient_mode.dart';
+import 'package:abs_wear/l10n/l10n.dart';
+import 'package:abs_wear/login/login.dart';
 import 'package:flutter/material.dart';
 
 class App extends StatelessWidget {

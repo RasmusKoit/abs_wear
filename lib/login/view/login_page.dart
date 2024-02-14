@@ -3,8 +3,8 @@
 import 'dart:convert';
 import 'dart:ui' as ui;
 
-import 'package:audiobookshelfwear/l10n/l10n.dart';
-import 'package:audiobookshelfwear/library/view/library_page.dart';
+import 'package:abs_wear/l10n/l10n.dart';
+import 'package:abs_wear/library/view/library_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:http/http.dart' as http;
