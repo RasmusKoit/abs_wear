@@ -41,7 +41,7 @@ jobs:
       
       # Checkout the repository code and get packages.
       - name: Checkout flutter_app code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - run: flutter pub get
       # Create the keystore file
       - name: Decode Keystore
