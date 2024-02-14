@@ -50,6 +50,47 @@ flutter test --coverage --test-randomize-ordering-seed random
 
 ---
 
+## Installing GitHub Releases 📦
+
+> [!NOTE]
+> There are different types of APK files for Wear OS, depending on the device’s architecture and features. The most common ones are:
+>
+> app-production-arm64-v8a-release.apk: This is for devices that use a 64-bit ARM processor, such as the Fossil Gen 5, TicWatch Pro 3, and Samsung Galaxy Watch 4.
+>
+> app-production-armeabi-v7a-release.apk: This is for devices that use a 32-bit ARM processor, such as the Moto 360 (3rd Gen), TicWatch E2, and Fossil Sport.
+>
+> app-production-x86_64-release.apk: This is for devices that use a 64-bit Intel processor, such as the LG Watch Urbane 2nd Edition and Asus ZenWatch 3.
+
+To install the latest release from GitHub, follow the steps below:
+
+1. Download the latest release from the [releases page](https://github.com/RasmusKoit/abs_wear/releases/latest).
+2. Connect your Android Wear device to your computer.
+
+    ```bash
+    # Check if the device is connected
+    adb devices
+    # connect to the device, example:
+    adb connect 192.168.1.45:33553
+    ```
+
+3. Open a terminal and navigate to the directory where you downloaded the APK.
+
+    ```bash
+    # Example
+    cd ~/Downloads
+    ```
+
+4. Install the APK using the Android Debug Bridge (ADB) tool. If you haven't installed ADB, you can download it from the [Android developer site](https://developer.android.com/studio/releases/platform-tools).
+
+    ```bash
+    # Install the APK
+    adb install abs_wear.apk
+    # Disconnect from the device
+    adb disconnect
+    ```
+
+---
+
 ## Working with Translations 🌐
 
 This project relies on [flutter_localizations][flutter_localizations_link] and follows the [official internationalization guide for Flutter][internationalization_link].
