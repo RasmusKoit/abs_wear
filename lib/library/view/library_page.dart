@@ -29,22 +29,26 @@ class _LibraryPageState extends State<LibraryPage> {
     String token,
     String serverUrl,
   ) async {
-    final response = await http.get(
-      Uri.parse(
-        '$serverUrl/api/libraries/${widget.libraryId}/personalized?limit=5',
-      ),
-      headers: <String, String>{
-        'Authorization': 'Bearer $token',
-      },
-    );
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      return data.firstWhere(
-        // ignore: inference_failure_on_untyped_parameter
-        (item) => item['id'] == 'continue-listening',
-      )['entities'] as List<dynamic>;
-    } else {
-      throw Exception('Failed to load listening sessions');
+    try {
+      final response = await http.get(
+        Uri.parse(
+          '$serverUrl/api/libraries/${widget.libraryId}/personalized?limit=5',
+        ),
+        headers: <String, String>{
+          'Authorization': 'Bearer $token',
+        },
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data.firstWhere(
+          // ignore: inference_failure_on_untyped_parameter
+          (item) => item['id'] == 'continue-listening',
+        )['entities'] as List<dynamic>;
+      } else {
+        throw Exception('Failed to load listening sessions');
+      }
+    } catch (e) {
+      return [];
     }
   }
 

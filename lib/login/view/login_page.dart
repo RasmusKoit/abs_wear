@@ -55,32 +55,37 @@ class LoginPageState extends State<LoginPage> {
   }
 
   Future<void> login(String url, String username, String password) async {
-    final response = await http.post(
-      Uri.parse('$url/login'),
-      headers: <String, String>{
-        'Content-Type': 'application/json',
-      },
-      body: jsonEncode(<String, String>{
-        'username': username,
-        'password': password,
-      }),
-    );
-
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body) as Map<String, dynamic>;
-      final token = data['user']['token'] as String;
-      defaultLibraryId = data['userDefaultLibraryId'] as String;
-
+    try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('token', token);
       await prefs.setString('serverUrl', url);
       await prefs.setString('username', username);
-      await prefs.setString('defaultLibraryId', defaultLibraryId);
-      setState(() {
-        _token = token;
-      });
-    } else {
+      final response = await http.post(
+        Uri.parse('$url/login'),
+        headers: <String, String>{
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode(<String, String>{
+          'username': username,
+          'password': password,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final token = data['user']['token'] as String;
+        defaultLibraryId = data['userDefaultLibraryId'] as String;
+
+        await prefs.setString('token', token);
+        await prefs.setString('defaultLibraryId', defaultLibraryId);
+        setState(() {
+          _token = token;
+        });
+      } else {
+        // Show an error message
+      }
+    } catch (e) {
       // Show an error message
+      print(e);
     }
   }
 
@@ -129,6 +134,7 @@ class LoginPageState extends State<LoginPage> {
       children: [
         TextFormField(
           style: theme.textTheme.labelSmall,
+          scrollPadding: const EdgeInsets.all(8),
           strutStyle: StrutStyle.fromTextStyle(
             theme.textTheme.labelSmall!,
           ),
@@ -141,6 +147,7 @@ class LoginPageState extends State<LoginPage> {
         ),
         TextFormField(
           style: theme.textTheme.labelSmall,
+          scrollPadding: const EdgeInsets.all(8),
           strutStyle: StrutStyle.fromTextStyle(
             theme.textTheme.labelSmall!,
           ),
@@ -152,6 +159,7 @@ class LoginPageState extends State<LoginPage> {
         ),
         TextFormField(
           style: theme.textTheme.labelSmall,
+          scrollPadding: const EdgeInsets.all(8),
           strutStyle: StrutStyle.fromTextStyle(
             theme.textTheme.labelSmall!,
           ),

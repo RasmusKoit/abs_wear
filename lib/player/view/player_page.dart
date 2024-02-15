@@ -79,20 +79,26 @@ class _PlayerViewState extends State<PlayerView> {
         'timeListened': timeListened,
         'duration': duration,
       };
-      // If close is true, then we are closing the session
-      final closeResponse = await http.post(
-        Uri.parse(sessionUri),
-        headers: <String, String>{
-          'Authorization': 'Bearer ${widget.token}',
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode(sessionBody),
-      );
-      if (closeResponse.statusCode != 200) {
-        return;
+      try {
+        // If close is true, then we are closing the session
+        final closeResponse = await http.post(
+          Uri.parse(sessionUri),
+          headers: <String, String>{
+            'Authorization': 'Bearer ${widget.token}',
+            'Content-Type': 'application/json',
+          },
+          body: jsonEncode(sessionBody),
+        );
+        if (closeResponse.statusCode != 200) {
+          return;
+        }
+        // update the starting position time
+        startingPositionTime = currentTime;
+      } catch (e) {
+        if (kDebugMode) {
+          print('Error syncing session: $e');
+        }
       }
-      // update the starting position time
-      startingPositionTime = currentTime;
     }
   }
 

@@ -33,6 +33,17 @@ class App extends StatelessWidget {
           localizationsDelegates: AppLocalizations.localizationsDelegates,
           supportedLocales: AppLocalizations.supportedLocales,
           home: child,
+          builder: (context, child) {
+            final mediaQueryData = MediaQuery.of(context);
+            final textScaleFactor =
+                mediaQueryData.textScaleFactor.clamp(0.8, 1.3);
+            return MediaQuery(
+              data: MediaQuery.of(context).copyWith(
+                textScaleFactor: textScaleFactor,
+              ),
+              child: child!,
+            );
+          },
         );
       },
     );
