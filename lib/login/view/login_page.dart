@@ -5,9 +5,11 @@ import 'dart:ui' as ui;
 
 import 'package:abs_wear/l10n/l10n.dart';
 import 'package:abs_wear/library/view/library_page.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:http/http.dart' as http;
+import 'package:rotary_scrollbar/rotary_scrollbar.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class LoginPage extends StatefulWidget {
@@ -21,6 +23,7 @@ class LoginPageState extends State<LoginPage> {
   final TextEditingController serverUrlController = TextEditingController();
   final TextEditingController usernameController = TextEditingController();
   final TextEditingController passwordController = TextEditingController();
+  final _pageController = PageController();
   String _token = '';
   String defaultLibraryId = '';
   late AppLocalizations l10n;
@@ -29,6 +32,15 @@ class LoginPageState extends State<LoginPage> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     l10n = context.l10n;
+  }
+
+  @override
+  void dispose() {
+    serverUrlController.dispose();
+    usernameController.dispose();
+    passwordController.dispose();
+    _pageController.dispose();
+    super.dispose();
   }
 
   @override
@@ -85,7 +97,9 @@ class LoginPageState extends State<LoginPage> {
       }
     } catch (e) {
       // Show an error message
-      print(e);
+      if (kDebugMode) {
+        print(e);
+      }
     }
   }
 
@@ -102,28 +116,38 @@ class LoginPageState extends State<LoginPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Scaffold(
-      appBar: PreferredSize(
-        preferredSize: const ui.Size.fromHeight(40),
-        child: AppBar(
-          title: Center(
-            child: SvgPicture.asset(
-              'assets/static/ABSWear_round.svg',
-              height: 45,
-              colorFilter: ColorFilter.mode(
-                theme.colorScheme.onSurface,
-                BlendMode.srcIn,
+    return RotaryScrollWrapper(
+      rotaryScrollbar: RotaryScrollbar(
+        width: 2,
+        hasHapticFeedback: false,
+        autoHide: false,
+        controller: _pageController,
+      ),
+      child: Scaffold(
+        appBar: PreferredSize(
+          preferredSize: const ui.Size.fromHeight(40),
+          child: AppBar(
+            title: Center(
+              child: SvgPicture.asset(
+                'assets/static/ABSWear_round.svg',
+                height: 45,
+                colorFilter: ColorFilter.mode(
+                  theme.colorScheme.onSurface,
+                  BlendMode.srcIn,
+                ),
               ),
             ),
           ),
         ),
-      ),
-      body: SingleChildScrollView(
-        child: Padding(
+        body: ListView(
+          controller: _pageController,
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          child: _token == ''
-              ? _buildLoginForm(theme)
-              : _buildLoggedInState(theme),
+          children: [
+            if (_token == '')
+              _buildLoginForm(theme)
+            else
+              _buildLoggedInState(theme),
+          ],
         ),
       ),
     );
@@ -144,6 +168,9 @@ class LoginPageState extends State<LoginPage> {
             prefixStyle: theme.textTheme.labelSmall,
             labelText: l10n.serverUrlLabel,
           ),
+          maxLines: null,
+          minLines: 1,
+          keyboardType: TextInputType.visiblePassword, // Disable newline
         ),
         TextFormField(
           style: theme.textTheme.labelSmall,
@@ -156,6 +183,9 @@ class LoginPageState extends State<LoginPage> {
             labelText: l10n.usernameLabel,
             labelStyle: theme.textTheme.labelSmall,
           ),
+          maxLines: null,
+          minLines: 1,
+          keyboardType: TextInputType.visiblePassword, // Disable newline
         ),
         TextFormField(
           style: theme.textTheme.labelSmall,

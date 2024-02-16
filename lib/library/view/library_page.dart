@@ -6,6 +6,7 @@ import 'package:abs_wear/l10n/l10n.dart';
 import 'package:abs_wear/player/player.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:rotary_scrollbar/rotary_scrollbar.dart';
 
 class LibraryPage extends StatefulWidget {
   const LibraryPage({
@@ -25,6 +26,7 @@ class LibraryPage extends StatefulWidget {
 }
 
 class _LibraryPageState extends State<LibraryPage> {
+  final _pageController = PageController();
   Future<List<dynamic>> getContinueListening(
     String token,
     String serverUrl,
@@ -56,94 +58,103 @@ class _LibraryPageState extends State<LibraryPage> {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final theme = Theme.of(context);
-    return Scaffold(
-      appBar: PreferredSize(
-        preferredSize: const Size.fromHeight(40),
-        child: AppBar(
-          centerTitle: true,
-          title: Text(
-            l10n.library,
-            style: theme.textTheme.bodyLarge,
-          ),
-          automaticallyImplyLeading: false,
-        ),
+    return RotaryScrollWrapper(
+      rotaryScrollbar: RotaryScrollbar(
+        width: 2,
+        hasHapticFeedback: false,
+        autoHide: false,
+        controller: _pageController,
       ),
-      body: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.all(8),
-          child: Column(
-            children: [
-              Text(l10n.continueListening),
-              FutureBuilder<List<dynamic>>(
-                future: getContinueListening(
-                  widget.token,
-                  widget.serverUrl,
-                ),
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.done) {
-                    if (snapshot.hasData) {
-                      return Column(
-                        children: snapshot.data!.map((item) {
-                          final coverUrl =
-                              "${widget.serverUrl}/api/items/${item['id']}/cover?token=${widget.token}";
-                          return Card(
-                            child: ListTile(
-                              title: Text(
-                                "${item['media']['metadata']['title']}",
-                                style: theme.textTheme.bodySmall,
-                              ),
-                              subtitle: Text(
-                                "${item['media']['metadata']['authorName']}",
-                                style: theme.textTheme.labelSmall,
-                              ),
-                              trailing: Image.network(
-                                coverUrl,
-                                width: 50,
-                                height: 50,
-                              ),
-                              onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute<dynamic>(
-                                    builder: (context) => PlayerView(
-                                      token: widget.token,
-                                      serverUrl: widget.serverUrl,
-                                      libraryItemId: item['id'] as String,
-                                      user: widget.user,
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
-                          );
-                        }).toList(),
-                      );
-                    } else if (snapshot.hasError) {
-                      return Text(l10n.errorLoadingData);
-                    }
-                  }
-                  return const Center(child: CircularProgressIndicator());
-                },
-              ),
-              Card(
-                child: ListTile(
-                  title: Text(
-                    l10n.refresh,
-                    style: theme.textTheme.bodySmall,
+      child: Scaffold(
+        appBar: PreferredSize(
+          preferredSize: const Size.fromHeight(40),
+          child: AppBar(
+            centerTitle: true,
+            title: Text(
+              l10n.library,
+              style: theme.textTheme.bodyLarge,
+            ),
+            automaticallyImplyLeading: false,
+          ),
+        ),
+        body: SingleChildScrollView(
+          controller: _pageController,
+          child: Padding(
+            padding: const EdgeInsets.all(8),
+            child: Column(
+              children: [
+                Text(l10n.continueListening),
+                FutureBuilder<List<dynamic>>(
+                  future: getContinueListening(
+                    widget.token,
+                    widget.serverUrl,
                   ),
-                  trailing: const Icon(Icons.refresh),
-                  onTap: () {
-                    setState(() {
-                      getContinueListening(
-                        widget.token,
-                        widget.serverUrl,
-                      );
-                    });
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.done) {
+                      if (snapshot.hasData) {
+                        return Column(
+                          children: snapshot.data!.map((item) {
+                            final coverUrl =
+                                "${widget.serverUrl}/api/items/${item['id']}/cover?token=${widget.token}";
+                            return Card(
+                              child: ListTile(
+                                title: Text(
+                                  "${item['media']['metadata']['title']}",
+                                  style: theme.textTheme.bodySmall,
+                                ),
+                                subtitle: Text(
+                                  "${item['media']['metadata']['authorName']}",
+                                  style: theme.textTheme.labelSmall,
+                                ),
+                                trailing: Image.network(
+                                  coverUrl,
+                                  width: 50,
+                                  height: 50,
+                                ),
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute<dynamic>(
+                                      builder: (context) => PlayerView(
+                                        token: widget.token,
+                                        serverUrl: widget.serverUrl,
+                                        libraryItemId: item['id'] as String,
+                                        user: widget.user,
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            );
+                          }).toList(),
+                        );
+                      } else if (snapshot.hasError) {
+                        return Text(l10n.errorLoadingData);
+                      }
+                    }
+                    return const Center(child: CircularProgressIndicator());
                   },
                 ),
-              ),
-              const SizedBox(height: 8),
-            ],
+                Card(
+                  child: ListTile(
+                    title: Text(
+                      l10n.refresh,
+                      style: theme.textTheme.bodySmall,
+                    ),
+                    trailing: const Icon(Icons.refresh),
+                    onTap: () {
+                      setState(() {
+                        getContinueListening(
+                          widget.token,
+                          widget.serverUrl,
+                        );
+                      });
+                    },
+                  ),
+                ),
+                const SizedBox(height: 32),
+              ],
+            ),
           ),
         ),
       ),
