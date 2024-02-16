@@ -2,15 +2,19 @@
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
+import 'package:abs_wear/l10n/l10n.dart';
 import 'package:abs_wear/player/components/scrolling_text.dart';
 import 'package:abs_wear/player/components/time_left_widget.dart';
 import 'package:device_info_plus/device_info_plus.dart';
+import 'package:dots_indicator/dots_indicator.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
+import 'package:volume_controller/volume_controller.dart';
 
 class PlayerView extends StatefulWidget {
   const PlayerView({
@@ -32,6 +36,7 @@ class PlayerView extends StatefulWidget {
 class _PlayerViewState extends State<PlayerView> {
   StreamSubscription<Duration>? _positionSubscription;
   final ValueNotifier<String> _timeLeftNotifier = ValueNotifier<String>('');
+  final PageController _pageController = PageController();
   final _player = AudioPlayer();
   bool _isPlaying = false;
   bool _isBuffering = true;
@@ -42,11 +47,18 @@ class _PlayerViewState extends State<PlayerView> {
   double startingPositionTime = 0;
   double duration = 0;
   double timeListened = 0;
+  double _currentPage = 0;
   Timer? _syncTimer;
+  double _getVolume = 0;
 
   @override
   void initState() {
     super.initState();
+    _pageController.addListener(() {
+      setState(() {
+        _currentPage = _pageController.page!;
+      });
+    });
     _init();
   }
 
@@ -313,18 +325,133 @@ class _PlayerViewState extends State<PlayerView> {
     final theme = Theme.of(context);
 
     return Scaffold(
-      body: SizedBox.expand(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            _buildScrollingText(theme.textTheme.labelMedium!, bookTitle),
-            _buildScrollingText(theme.textTheme.labelSmall!, chapterName),
-            _buildPlaybackControls(),
-            _buildSeekButtons(),
-            _buildTimeLeftWidget(theme.textTheme.labelSmall!),
-          ],
+        body: Row(
+      children: <Widget>[
+        Expanded(
+          child: PageView(
+            scrollDirection: Axis.vertical,
+            controller: _pageController,
+            children: [
+              _buildPlayerPage(theme),
+              _buildPlayerControlsPage(context, theme),
+            ],
+          ),
         ),
-      ),
+      ],
+    ));
+  }
+
+  Widget _buildPlayerControlsPage(BuildContext context, ThemeData theme) {
+    final l10n = context.l10n;
+    return Stack(
+      children: <Widget>[
+        // Existing widgets
+        SizedBox.expand(
+          child: Scaffold(
+            appBar: AppBar(
+              centerTitle: true,
+              automaticallyImplyLeading: false,
+              title: Text(
+                l10n.controls,
+                style: theme.textTheme.bodyLarge,
+              ),
+            ),
+            body: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(8),
+                child: Column(
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.remove_rounded),
+                          onPressed: () async {
+                            _getVolume = await VolumeController().getVolume();
+                            VolumeController().setVolume(
+                              _getVolume - 0.1,
+                              showSystemUI: false,
+                            );
+                          },
+                        ),
+                        Icon(_getVolume > 0.5
+                            ? Icons.volume_up_rounded
+                            : Icons.volume_down_rounded),
+                        IconButton(
+                          icon: const Icon(Icons.add_rounded),
+                          onPressed: () async {
+                            _getVolume = await VolumeController().getVolume();
+                            VolumeController().setVolume(
+                              _getVolume + 0.1,
+                              showSystemUI: false,
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                    Text(
+                      l10n.continueListening,
+                      style: theme.textTheme.labelMedium,
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.download_rounded),
+                      onPressed: () {},
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+        // DotsIndicator on the right
+        Positioned(
+          right: 0,
+          top: 0,
+          bottom: 0,
+          child: Center(
+            child: DotsIndicator(
+              dotsCount: 2,
+              axis: Axis.vertical,
+              position: _currentPage.floor(),
+              decorator: DotsDecorator(activeColor: theme.colorScheme.primary),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPlayerPage(ThemeData theme) {
+    return Stack(
+      children: <Widget>[
+        // Existing widgets
+        SizedBox.expand(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _buildScrollingText(theme.textTheme.labelMedium!, bookTitle),
+              _buildScrollingText(theme.textTheme.labelSmall!, chapterName),
+              _buildPlaybackControls(),
+              _buildSeekButtons(),
+              _buildTimeLeftWidget(theme.textTheme.labelSmall!),
+            ],
+          ),
+        ),
+        // DotsIndicator on the right
+        Positioned(
+          right: 0,
+          top: 0,
+          bottom: 0,
+          child: Center(
+            child: DotsIndicator(
+              dotsCount: 2,
+              axis: Axis.vertical,
+              position: _currentPage.floor(),
+              decorator: DotsDecorator(activeColor: theme.colorScheme.primary),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
