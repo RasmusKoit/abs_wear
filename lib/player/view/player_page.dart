@@ -11,6 +11,7 @@ import 'package:archive/archive.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
@@ -57,19 +58,30 @@ class _PlayerViewState extends State<PlayerView> {
   @override
   void initState() {
     super.initState();
-
-    _init();
+    try {
+      _init();
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error initializing player: $e');
+      }
+      // pop the current view
+      if (context.mounted) {
+        Navigator.of(context).pop();
+      }
+    }
   }
 
   @override
   void dispose() {
     super.dispose();
     _syncTimer?.cancel();
-    _syncOpenSession(
-      startingPositionTime,
-      _player.position.inSeconds.toDouble(),
-      close: true,
-    );
+    if (!_isBuffering) {
+      _syncOpenSession(
+        startingPositionTime,
+        _player.position.inSeconds.toDouble(),
+        close: true,
+      );
+    }
     _player.stop();
     _timeLeftNotifier.dispose();
     _positionSubscription?.cancel();
@@ -109,12 +121,15 @@ class _PlayerViewState extends State<PlayerView> {
         if (kDebugMode) {
           print('Error syncing session: $e');
         }
+        Navigator.of(context).pop();
       }
     }
   }
 
   Future<void> _init() async {
-    await setupPlayer();
+    if (mounted) {
+      await setupPlayer();
+    }
     _player.processingStateStream.listen((state) {
       if (state == ProcessingState.ready) {
         setState(() {
@@ -131,14 +146,19 @@ class _PlayerViewState extends State<PlayerView> {
       updateChapterNameAndDuration();
     });
 
-    _syncTimer = Timer.periodic(const Duration(minutes: 1), (timer) {
-      if (!_isBuffering) {
-        _syncOpenSession(
-          startingPositionTime,
-          _player.position.inSeconds.toDouble(),
-        );
-      }
-    });
+    if (!_isBuffering) {
+      _syncTimer = Timer.periodic(
+        const Duration(minutes: 1),
+        (timer) {
+          if (mounted) {
+            _syncOpenSession(
+              startingPositionTime,
+              _player.position.inSeconds.toDouble(),
+            );
+          }
+        },
+      );
+    }
   }
 
   Future<void> setupPlayer() async {
@@ -185,12 +205,13 @@ class _PlayerViewState extends State<PlayerView> {
       chapters = playData['chapters'] as List<dynamic>;
       startingPositionTime = (playData['currentTime'] as num).toDouble();
       duration = (playData['duration'] as num).toDouble();
-
-      setState(() {
-        bookTitle = playData['mediaMetadata']['title'] as String;
-        chapterName =
-            getChapterName((playData['currentTime'] as num).round(), chapters);
-      });
+      if (mounted) {
+        setState(() {
+          bookTitle = playData['mediaMetadata']['title'] as String;
+          chapterName = getChapterName(
+              (playData['currentTime'] as num).round(), chapters);
+        });
+      }
 
       // find the first item where fileType is audio
 
@@ -204,42 +225,78 @@ class _PlayerViewState extends State<PlayerView> {
           '${widget.serverUrl}/api/items/$libraryItemId/file/$inoInt';
       _downloadUrl =
           '${widget.serverUrl}/api/items/$libraryItemId/download?token=${widget.token}';
-      if (localFilePath.isNotEmpty) {
+      if (localFilePath.isNotEmpty && mounted) {
         isMediaOffline = true;
         if (kDebugMode) {
           print('Local Audio file found!');
         }
-        await _player.setAudioSource(
-          AudioSource.uri(
-            Uri.file(localFilePath),
-            tag: MediaItem(
-              id: libraryItemId,
-              album: bookTitle,
-              title: chapterName,
+        try {
+          await _player.setAudioSource(
+            AudioSource.uri(
+              Uri.file(localFilePath),
+              tag: MediaItem(
+                id: libraryItemId,
+                album: bookTitle,
+                title: chapterName,
+              ),
             ),
-          ),
-          initialPosition: Duration(seconds: startingPositionTime.round()),
-        );
+            initialPosition: Duration(seconds: startingPositionTime.round()),
+          );
+        } on PlayerInterruptedException catch (e) {
+          if (kDebugMode) {
+            print(
+              'PlayerInterruptedException: Error setting audiotrack up for player: $e ${e.runtimeType}',
+            );
+          }
+        } on PlatformException catch (e) {
+          if (kDebugMode) {
+            print(
+                'PlatformException: Error setting audiotrack up for player: $e ${e.runtimeType}');
+          }
+        } catch (e) {
+          if (kDebugMode) {
+            print(
+                'Error setting audiotrack up for player: $e ${e.runtimeType}');
+          }
+        }
       } else {
         if (kDebugMode) {
           print('Local Audio file not found!');
         }
-        await _player.setAudioSource(
-          AudioSource.uri(
-            Uri.parse(audioUrl),
-            headers: <String, String>{
-              'Authorization': 'Bearer ${widget.token}',
-            },
-            tag: MediaItem(
-              id: libraryItemId,
-              album: bookTitle,
-              title: chapterName,
+        try {
+          await _player.setAudioSource(
+            AudioSource.uri(
+              Uri.parse(audioUrl),
+              headers: <String, String>{
+                'Authorization': 'Bearer ${widget.token}',
+              },
+              tag: MediaItem(
+                id: libraryItemId,
+                album: bookTitle,
+                title: chapterName,
+              ),
             ),
-          ),
-          initialPosition: Duration(
-            seconds: (playData['currentTime'] as num).round(),
-          ),
-        );
+            initialPosition: Duration(
+              seconds: (playData['currentTime'] as num).round(),
+            ),
+          );
+        } on PlayerInterruptedException catch (e) {
+          if (kDebugMode) {
+            print(
+              'PlayerInterruptedException: Error setting audiotrack up for player: $e ${e.runtimeType}',
+            );
+          }
+        } on PlatformException catch (e) {
+          if (kDebugMode) {
+            print(
+                'PlatformException: Error setting audiotrack up for player: $e ${e.runtimeType}');
+          }
+        } catch (e) {
+          if (kDebugMode) {
+            print(
+                'Error setting audiotrack up for player: $e ${e.runtimeType}');
+          }
+        }
       }
     } catch (e) {
       if (kDebugMode) {

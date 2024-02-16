@@ -96,34 +96,56 @@ class _LibraryPageState extends State<LibraryPage> {
                           children: snapshot.data!.map((item) {
                             final coverUrl =
                                 "${widget.serverUrl}/api/items/${item['id']}/cover?token=${widget.token}";
-                            return Card(
-                              child: ListTile(
-                                title: Text(
-                                  "${item['media']['metadata']['title']}",
-                                  style: theme.textTheme.bodySmall,
-                                ),
-                                subtitle: Text(
-                                  "${item['media']['metadata']['authorName']}",
-                                  style: theme.textTheme.labelSmall,
-                                ),
-                                trailing: Image.network(
-                                  coverUrl,
-                                  width: 50,
-                                  height: 50,
-                                ),
-                                onTap: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute<dynamic>(
-                                      builder: (context) => PlayerView(
-                                        token: widget.token,
-                                        serverUrl: widget.serverUrl,
-                                        libraryItemId: item['id'] as String,
-                                        user: widget.user,
-                                      ),
+                            return InkWell(
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute<dynamic>(
+                                    builder: (context) => PlayerView(
+                                      token: widget.token,
+                                      serverUrl: widget.serverUrl,
+                                      libraryItemId: item['id'] as String,
+                                      user: widget.user,
                                     ),
-                                  );
-                                },
+                                  ),
+                                );
+                              },
+                              child: Card(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(8.0),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: Text(
+                                              "${item['media']['metadata']['title']}",
+                                              style: theme.textTheme.bodySmall,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const Divider(),
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: Text(
+                                              "${item['media']['metadata']['authorName']}",
+                                              style: theme.textTheme.labelSmall,
+                                            ),
+                                          ),
+                                          Image.network(
+                                            coverUrl,
+                                            width: 50,
+                                            height: 50,
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
                               ),
                             );
                           }).toList(),
