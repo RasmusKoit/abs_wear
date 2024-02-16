@@ -42,7 +42,7 @@ class _PlayerViewState extends State<PlayerView> {
   final PageController _pageController = PageController();
   final _player = AudioPlayer();
   bool _isPlaying = false;
-  bool _isBuffering = true;
+  bool _isBuffering = false;
   List<dynamic> chapters = [];
   String bookTitle = '';
   String chapterName = '';
@@ -58,17 +58,7 @@ class _PlayerViewState extends State<PlayerView> {
   @override
   void initState() {
     super.initState();
-    try {
-      _init();
-    } catch (e) {
-      if (kDebugMode) {
-        print('Error initializing player: $e');
-      }
-      // pop the current view
-      if (context.mounted) {
-        Navigator.of(context).pop();
-      }
-    }
+    _init();
   }
 
   @override
@@ -127,15 +117,17 @@ class _PlayerViewState extends State<PlayerView> {
   }
 
   Future<void> _init() async {
-    if (mounted) {
-      await setupPlayer();
-    }
+    await setupPlayer();
     _player.processingStateStream.listen((state) {
-      if (state == ProcessingState.ready) {
+      if (state == ProcessingState.ready || state == ProcessingState.idle) {
         setState(() {
           _isBuffering = false;
         });
       } else if (state == ProcessingState.buffering) {
+        setState(() {
+          _isBuffering = true;
+        });
+      } else if (state == ProcessingState.loading) {
         setState(() {
           _isBuffering = true;
         });
@@ -150,12 +142,10 @@ class _PlayerViewState extends State<PlayerView> {
       _syncTimer = Timer.periodic(
         const Duration(minutes: 1),
         (timer) {
-          if (mounted) {
-            _syncOpenSession(
-              startingPositionTime,
-              _player.position.inSeconds.toDouble(),
-            );
-          }
+          _syncOpenSession(
+            startingPositionTime,
+            _player.position.inSeconds.toDouble(),
+          );
         },
       );
     }
@@ -205,13 +195,11 @@ class _PlayerViewState extends State<PlayerView> {
       chapters = playData['chapters'] as List<dynamic>;
       startingPositionTime = (playData['currentTime'] as num).toDouble();
       duration = (playData['duration'] as num).toDouble();
-      if (mounted) {
-        setState(() {
-          bookTitle = playData['mediaMetadata']['title'] as String;
-          chapterName = getChapterName(
-              (playData['currentTime'] as num).round(), chapters);
-        });
-      }
+      setState(() {
+        bookTitle = playData['mediaMetadata']['title'] as String;
+        chapterName =
+            getChapterName((playData['currentTime'] as num).round(), chapters);
+      });
 
       // find the first item where fileType is audio
 
@@ -225,7 +213,7 @@ class _PlayerViewState extends State<PlayerView> {
           '${widget.serverUrl}/api/items/$libraryItemId/file/$inoInt';
       _downloadUrl =
           '${widget.serverUrl}/api/items/$libraryItemId/download?token=${widget.token}';
-      if (localFilePath.isNotEmpty && mounted) {
+      if (localFilePath.isNotEmpty) {
         isMediaOffline = true;
         if (kDebugMode) {
           print('Local Audio file found!');
@@ -241,6 +229,7 @@ class _PlayerViewState extends State<PlayerView> {
               ),
             ),
             initialPosition: Duration(seconds: startingPositionTime.round()),
+            preload: false,
           );
         } on PlayerInterruptedException catch (e) {
           if (kDebugMode) {
@@ -279,7 +268,9 @@ class _PlayerViewState extends State<PlayerView> {
             initialPosition: Duration(
               seconds: (playData['currentTime'] as num).round(),
             ),
+            preload: false,
           );
+          print('Audio file set up for player');
         } on PlayerInterruptedException catch (e) {
           if (kDebugMode) {
             print(
