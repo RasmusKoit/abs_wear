@@ -45,5 +45,13 @@
     "errorLoadingData": "Error loading data",
     "@errorLoadingData": {
         "description": "Error loading data"
+    },
+    "controls": "Controls",
+    "@controls": {
+        "description": "Text for controls"
+    },
+    "offlineListening": "Offline Listening",
+    "@offlineListening": {
+        "description": "Text for offline listening"
     }
 }
