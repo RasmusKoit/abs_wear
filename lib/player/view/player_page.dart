@@ -2,18 +2,20 @@
 
 import 'dart:async';
 import 'dart:convert';
-import 'dart:math';
+import 'dart:io';
 
 import 'package:abs_wear/l10n/l10n.dart';
 import 'package:abs_wear/player/components/scrolling_text.dart';
 import 'package:abs_wear/player/components/time_left_widget.dart';
+import 'package:archive/archive.dart';
 import 'package:device_info_plus/device_info_plus.dart';
-import 'package:dots_indicator/dots_indicator.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:rotary_scrollbar/rotary_scrollbar.dart';
 import 'package:volume_controller/volume_controller.dart';
 
 class PlayerView extends StatefulWidget {
@@ -47,18 +49,15 @@ class _PlayerViewState extends State<PlayerView> {
   double startingPositionTime = 0;
   double duration = 0;
   double timeListened = 0;
-  double _currentPage = 0;
   Timer? _syncTimer;
   double _getVolume = 0;
+  String _downloadUrl = '';
+  bool isMediaOffline = false;
 
   @override
   void initState() {
     super.initState();
-    _pageController.addListener(() {
-      setState(() {
-        _currentPage = _pageController.page!;
-      });
-    });
+
     _init();
   }
 
@@ -146,6 +145,9 @@ class _PlayerViewState extends State<PlayerView> {
     try {
       final libraryItemId = widget.libraryItemId;
 
+      // Check if the audio file is locally available
+      final localFilePath = await _getLocalFilePath(libraryItemId, true);
+
       final playUri = '${widget.serverUrl}/api/items/$libraryItemId/play';
       final deviceInfoPlugin = DeviceInfoPlugin();
       final buildInfo = await deviceInfoPlugin.androidInfo;
@@ -189,32 +191,180 @@ class _PlayerViewState extends State<PlayerView> {
         chapterName =
             getChapterName((playData['currentTime'] as num).round(), chapters);
       });
-      final inoInt =
-          playData['libraryItem']['libraryFiles'][0]['ino'] as String;
+
+      // find the first item where fileType is audio
+
+      final inoInt = playData['libraryItem']['libraryFiles'].firstWhere(
+        (item) => item['fileType'] == 'audio',
+      )['ino'] as String;
+
+      // final inoInt =
+      //     playData['libraryItem']['libraryFiles'][0]['ino'] as String;
       final audioUrl =
           '${widget.serverUrl}/api/items/$libraryItemId/file/$inoInt';
-
-      await _player.setAudioSource(
-        AudioSource.uri(
-          Uri.parse(audioUrl),
-          headers: <String, String>{
-            'Authorization': 'Bearer ${widget.token}',
-          },
-          tag: MediaItem(
-            id: libraryItemId,
-            album: bookTitle,
-            title: chapterName,
+      _downloadUrl =
+          '${widget.serverUrl}/api/items/$libraryItemId/download?token=${widget.token}';
+      if (localFilePath.isNotEmpty) {
+        isMediaOffline = true;
+        if (kDebugMode) {
+          print('Local Audio file found!');
+        }
+        await _player.setAudioSource(
+          AudioSource.uri(
+            Uri.file(localFilePath),
+            tag: MediaItem(
+              id: libraryItemId,
+              album: bookTitle,
+              title: chapterName,
+            ),
           ),
-        ),
-        initialPosition: Duration(
-          seconds: (playData['currentTime'] as num).round(),
-        ),
-      );
+          initialPosition: Duration(seconds: startingPositionTime.round()),
+        );
+      } else {
+        if (kDebugMode) {
+          print('Local Audio file not found!');
+        }
+        await _player.setAudioSource(
+          AudioSource.uri(
+            Uri.parse(audioUrl),
+            headers: <String, String>{
+              'Authorization': 'Bearer ${widget.token}',
+            },
+            tag: MediaItem(
+              id: libraryItemId,
+              album: bookTitle,
+              title: chapterName,
+            ),
+          ),
+          initialPosition: Duration(
+            seconds: (playData['currentTime'] as num).round(),
+          ),
+        );
+      }
     } catch (e) {
       if (kDebugMode) {
         print('Error setting up player: $e');
       }
     }
+  }
+
+  Future<void> _downloadFile() async {
+    final httpClient = http.Client();
+
+    final request = http.Request('GET', Uri.parse(_downloadUrl));
+    final response = await httpClient.send(request);
+
+    if (response.statusCode == 200) {
+      // Save the file to the device
+      // Downloaded file is a .zip file
+
+      final folderPath = await _getLocalFilePath(widget.libraryItemId, false);
+      final zipFilePath = '$folderPath/${widget.libraryItemId}.zip';
+
+      // Check if FolderPath exists, if not create it
+      final dir = Directory(folderPath);
+      if (!dir.existsSync()) {
+        dir.createSync(recursive: true);
+      } else {
+        // Delete the existing files
+        for (final file in dir.listSync()) {
+          file.deleteSync();
+        }
+      }
+
+      // Download the zip file by streaming
+      final zipFile = File(zipFilePath);
+      await response.stream.pipe(zipFile.openWrite());
+
+      // Unzip the file
+      if (_isZipFile(zipFile)) {
+        final bytes = zipFile.readAsBytesSync();
+        final archive = ZipDecoder().decodeBytes(bytes);
+        for (final file in archive) {
+          final filename = '$folderPath/${file.name}';
+          if (file.isFile) {
+            final data = file.content as List<int>;
+            File(filename)
+              ..createSync(recursive: true)
+              ..writeAsBytesSync(data);
+          }
+        }
+        // Delete the zip file
+        zipFile.deleteSync();
+      }
+      setState(() {
+        isMediaOffline = true;
+        _isBuffering = true;
+        _isPlaying = false;
+      });
+      await _player.stop();
+      // sync current progress
+      await _syncOpenSession(
+        startingPositionTime,
+        _player.position.inSeconds.toDouble(),
+      );
+      await _init();
+    }
+  }
+
+  Future<void> _deleteMedia() async {
+    final folderPath = await _getLocalFilePath(widget.libraryItemId, false);
+    final dir = Directory(folderPath);
+    if (dir.existsSync()) {
+      setState(() {
+        isMediaOffline = false;
+        _isBuffering = true;
+        _isPlaying = false;
+      });
+      await _player.stop();
+      await _syncOpenSession(
+        startingPositionTime,
+        _player.position.inSeconds.toDouble(),
+        close: true,
+      );
+      dir.deleteSync(recursive: true);
+    }
+    await _init();
+  }
+
+  bool _isZipFile(File file) {
+    // Check if the file has a .zip extension (you may need to improve this check based on your requirements)
+    return file.path.toLowerCase().endsWith('.zip');
+  }
+
+  Future<String> _getLocalFilePath(
+    String libraryItemId,
+    bool getAudioFile,
+  ) async {
+    final appDocDir = await getApplicationDocumentsDirectory();
+    final folderPath = '${appDocDir.path}/$libraryItemId';
+    if (!getAudioFile) {
+      return folderPath;
+    }
+    // Get a list of files in the specified folder
+    final dir = Directory(folderPath);
+    if (!dir.existsSync()) {
+      return '';
+    }
+    final files = await dir.list().toList();
+    // Search for audio files with known extensions
+    final audioExtensions = [
+      '.mp3',
+      '.m4a',
+      '.m4b',
+      '.aac',
+      '.flac',
+    ]; // Add more if needed
+
+    for (final file in files) {
+      // check if file.path ends with any of the audio extensions
+      if (audioExtensions.any((ext) => file.path.endsWith(ext))) {
+        return file.path;
+      }
+    }
+
+    // If no audio file is found, return an empty string
+    return '';
   }
 
   Stream<Duration> get positionStream {
@@ -324,21 +474,29 @@ class _PlayerViewState extends State<PlayerView> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Scaffold(
-        body: Row(
-      children: <Widget>[
-        Expanded(
-          child: PageView(
-            scrollDirection: Axis.vertical,
-            controller: _pageController,
-            children: [
-              _buildPlayerPage(theme),
-              _buildPlayerControlsPage(context, theme),
-            ],
+    return RotaryScrollWrapper(
+      rotaryScrollbar: RotaryScrollbar(
+        width: 2,
+        hasHapticFeedback: false,
+        autoHide: false,
+        controller: _pageController,
+      ),
+      child: Scaffold(
+          body: Row(
+        children: <Widget>[
+          Expanded(
+            child: PageView(
+              scrollDirection: Axis.vertical,
+              controller: _pageController,
+              children: [
+                _buildPlayerPage(theme),
+                _buildPlayerControlsPage(context, theme),
+              ],
+            ),
           ),
-        ),
-      ],
-    ));
+        ],
+      )),
+    );
   }
 
   Widget _buildPlayerControlsPage(BuildContext context, ThemeData theme) {
@@ -374,9 +532,11 @@ class _PlayerViewState extends State<PlayerView> {
                             );
                           },
                         ),
-                        Icon(_getVolume > 0.5
-                            ? Icons.volume_up_rounded
-                            : Icons.volume_down_rounded),
+                        Icon(
+                          _getVolume > 0.5
+                              ? Icons.volume_up_rounded
+                              : Icons.volume_down_rounded,
+                        ),
                         IconButton(
                           icon: const Icon(Icons.add_rounded),
                           onPressed: () async {
@@ -390,35 +550,71 @@ class _PlayerViewState extends State<PlayerView> {
                       ],
                     ),
                     Text(
-                      l10n.continueListening,
+                      l10n.offlineListening,
                       style: theme.textTheme.labelMedium,
                     ),
-                    IconButton(
-                      icon: const Icon(Icons.download_rounded),
-                      onPressed: () {},
-                    ),
+                    _buildOfflineMediaAction(theme),
                   ],
                 ),
               ),
             ),
           ),
         ),
-        // DotsIndicator on the right
-        Positioned(
-          right: 0,
-          top: 0,
-          bottom: 0,
-          child: Center(
-            child: DotsIndicator(
-              dotsCount: 2,
-              axis: Axis.vertical,
-              position: _currentPage.floor(),
-              decorator: DotsDecorator(activeColor: theme.colorScheme.primary),
-            ),
-          ),
-        ),
       ],
     );
+  }
+
+  Widget _buildOfflineMediaAction(ThemeData theme) {
+    if (isMediaOffline && !_isBuffering) {
+      return Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          IconButton(
+            icon: Icon(
+              isMediaOffline
+                  ? Icons.download_done_rounded
+                  : Icons.download_rounded,
+              color: isMediaOffline
+                  ? theme.colorScheme.primary
+                  : theme.colorScheme.secondary,
+            ),
+            onPressed: () async {
+              if (!isMediaOffline && !_isBuffering) {
+                await _downloadFile();
+              }
+            },
+          ),
+          IconButton(
+            icon: const Icon(
+              Icons.delete_forever_rounded,
+              color: Colors.red,
+            ),
+            onPressed: () async {
+              await _deleteMedia();
+              setState(() {
+                isMediaOffline = false;
+                _isBuffering = true;
+              });
+              await setupPlayer();
+            },
+          ),
+        ],
+      );
+    } else {
+      return IconButton(
+        icon: Icon(
+          isMediaOffline ? Icons.download_done_rounded : Icons.download_rounded,
+          color: isMediaOffline
+              ? theme.colorScheme.primary
+              : theme.colorScheme.secondary,
+        ),
+        onPressed: () async {
+          if (!isMediaOffline && !_isBuffering) {
+            await _downloadFile();
+          }
+        },
+      );
+    }
   }
 
   Widget _buildPlayerPage(ThemeData theme) {
@@ -429,8 +625,19 @@ class _PlayerViewState extends State<PlayerView> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              _buildScrollingText(theme.textTheme.labelMedium!, bookTitle),
-              _buildScrollingText(theme.textTheme.labelSmall!, chapterName),
+              const SizedBox(height: 8),
+              _buildScrollingText(
+                theme.textTheme.labelMedium!,
+                bookTitle,
+                30,
+                2.5,
+              ),
+              _buildScrollingText(
+                theme.textTheme.labelSmall!,
+                chapterName,
+                22,
+                0,
+              ),
               _buildPlaybackControls(),
               _buildSeekButtons(),
               _buildTimeLeftWidget(theme.textTheme.labelSmall!),
@@ -438,26 +645,21 @@ class _PlayerViewState extends State<PlayerView> {
           ),
         ),
         // DotsIndicator on the right
-        Positioned(
-          right: 0,
-          top: 0,
-          bottom: 0,
-          child: Center(
-            child: DotsIndicator(
-              dotsCount: 2,
-              axis: Axis.vertical,
-              position: _currentPage.floor(),
-              decorator: DotsDecorator(activeColor: theme.colorScheme.primary),
-            ),
-          ),
-        ),
       ],
     );
   }
 
-  Widget _buildScrollingText(TextStyle textStyle, String text) {
+  Widget _buildScrollingText(
+    TextStyle textStyle,
+    String text,
+    double horizontalPadding,
+    double verticalPadding,
+  ) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 25),
+      padding: EdgeInsets.symmetric(
+        horizontal: horizontalPadding,
+        vertical: verticalPadding,
+      ),
       child: ScrollingText(
         text: text,
         style: textStyle,
