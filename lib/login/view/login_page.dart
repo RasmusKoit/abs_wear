@@ -119,6 +119,7 @@ class LoginPageState extends State<LoginPage> {
     return RotaryScrollWrapper(
       rotaryScrollbar: RotaryScrollbar(
         width: 2,
+        padding: 1,
         hasHapticFeedback: false,
         autoHide: false,
         controller: _pageController,
@@ -141,7 +142,7 @@ class LoginPageState extends State<LoginPage> {
         ),
         body: ListView(
           controller: _pageController,
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           children: [
             if (_token == '')
               _buildLoginForm(theme)
@@ -224,23 +225,31 @@ class LoginPageState extends State<LoginPage> {
             style: theme.textTheme.bodyMedium,
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 16),
       ],
     );
   }
 
   Widget _buildLoggedInState(ThemeData theme) {
+    _pageController.jumpTo(0.1);
     return Column(
       children: [
-        Text(
-          l10n.hello(usernameController.text),
-          textAlign: TextAlign.center,
-          style: theme.textTheme.bodyMedium,
+        const SizedBox(height: 8),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Text(
+            l10n.hello(usernameController.text),
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodyMedium,
+          ),
         ),
-        Text(
-          serverUrlController.text,
-          textAlign: TextAlign.center,
-          style: theme.textTheme.labelSmall,
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Text(
+            serverUrlController.text,
+            textAlign: TextAlign.center,
+            style: theme.textTheme.labelSmall,
+          ),
         ),
         ElevatedButton(
           onPressed: () {
@@ -277,7 +286,7 @@ class LoginPageState extends State<LoginPage> {
             ),
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 32),
       ],
     );
   }
