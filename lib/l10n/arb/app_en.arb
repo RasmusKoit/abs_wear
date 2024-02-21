@@ -50,8 +50,8 @@
     "@controls": {
         "description": "Text for controls"
     },
-    "offlineListening": "Offline Listening",
-    "@offlineListening": {
-        "description": "Text for offline listening"
+    "localListening": "Local Listening",
+    "@localListening": {
+        "description": "Text for local listening"
     }
 }
