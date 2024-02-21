@@ -26,7 +26,17 @@ class LibraryPage extends StatefulWidget {
 }
 
 class _LibraryPageState extends State<LibraryPage> {
-  final _pageController = PageController();
+  late PageController _pageController;
+
+  @override
+  void initState() {
+    super.initState();
+    _pageController = PageController();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _pageController.jumpTo(0.1);
+    });
+  }
+
   Future<List<dynamic>> getContinueListening(
     String token,
     String serverUrl,
@@ -61,6 +71,7 @@ class _LibraryPageState extends State<LibraryPage> {
     return RotaryScrollWrapper(
       rotaryScrollbar: RotaryScrollbar(
         width: 2,
+        padding: 1,
         hasHapticFeedback: false,
         autoHide: false,
         controller: _pageController,
@@ -80,7 +91,7 @@ class _LibraryPageState extends State<LibraryPage> {
         body: SingleChildScrollView(
           controller: _pageController,
           child: Padding(
-            padding: const EdgeInsets.all(8),
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
             child: Column(
               children: [
                 Text(l10n.continueListening),
@@ -96,23 +107,26 @@ class _LibraryPageState extends State<LibraryPage> {
                           children: snapshot.data!.map((item) {
                             final coverUrl =
                                 "${widget.serverUrl}/api/items/${item['id']}/cover?token=${widget.token}";
+                            final title =
+                                "${item['media']['metadata']['title']}";
+                            final author =
+                                "${item['media']['metadata']['authorName']}";
                             return InkWell(
                               onTap: () {
                                 Navigator.push(
                                   context,
                                   MaterialPageRoute<dynamic>(
-                                    builder: (context) => PlayerView(
+                                    builder: (context) => PlayerPage(
                                       token: widget.token,
                                       serverUrl: widget.serverUrl,
                                       libraryItemId: item['id'] as String,
-                                      user: widget.user,
                                     ),
                                   ),
                                 );
                               },
                               child: Card(
                                 child: Padding(
-                                  padding: const EdgeInsets.all(8.0),
+                                  padding: const EdgeInsets.all(8),
                                   child: Column(
                                     crossAxisAlignment:
                                         CrossAxisAlignment.start,
@@ -121,7 +135,7 @@ class _LibraryPageState extends State<LibraryPage> {
                                         children: [
                                           Expanded(
                                             child: Text(
-                                              "${item['media']['metadata']['title']}",
+                                              title,
                                               style: theme.textTheme.bodySmall,
                                             ),
                                           ),
@@ -132,7 +146,7 @@ class _LibraryPageState extends State<LibraryPage> {
                                         children: [
                                           Expanded(
                                             child: Text(
-                                              "${item['media']['metadata']['authorName']}",
+                                              author,
                                               style: theme.textTheme.labelSmall,
                                             ),
                                           ),
@@ -174,7 +188,7 @@ class _LibraryPageState extends State<LibraryPage> {
                     },
                   ),
                 ),
-                const SizedBox(height: 32),
+                const SizedBox(height: 48),
               ],
             ),
           ),
