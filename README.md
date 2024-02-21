@@ -17,6 +17,16 @@ ABS Wear is a standalone version for Android Wear OS 4.0, currently there is no 
 
 Download the app from Play Store: ⌚ [**ABS Wear**][play_store_link] ⌚
 
+---
+
+## Features
+
+- **Library**: Browse your library and continue listening to your favorite audiobooks.
+- **Player**: Control the playback of your audiobooks.
+- **Online Mode**: Stream your audiobooks from the server (internet connection is required).
+- **Local Mode**: Download your audiobooks and listen to them locally (internet connection is still required for syncing).
+- **Controls**: Control the playback of your audiobooks with the built-in media controls.
+
 <div style="text-align: center">
 
 ![login][screen_login]
