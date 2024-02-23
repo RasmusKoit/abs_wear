@@ -17,9 +17,29 @@ ABS Wear is a standalone version for Android Wear OS 4.0, currently there is no 
 
 Download the app from Play Store: ⌚ [**ABS Wear**][play_store_link] ⌚
 
+---
+
+## Features
+
+- **Library**: Browse your library and continue listening to your favorite audiobooks.
+- **Player**: Control the playback of your audiobooks.
+- **Online Mode**: Stream your audiobooks from the server (internet connection is required).
+- **Local Mode**: Download your audiobooks and listen to them locally (internet connection is still required for syncing).
+- **Controls**: Control the playback of your audiobooks with the built-in media controls.
+
 <div style="text-align: center">
 
-![login][screen_login] ![user_info][user_info] ![library][screen_library] ![player][screen_player]
+![login][screen_login]
+
+![screen_login_info][screen_login_info]
+
+![library][screen_library]
+
+![player][screen_player]
+
+![controls_online][screen_controls_online]
+
+![controls_offline][screen_controls_offline]
 
 </div>
 
@@ -202,8 +222,10 @@ This project relies on [flutter_localizations][flutter_localizations_link] and f
 [advplyr_github_link]: https://github.com/advplyr
 [screen_library]: .github/pictures/library.png
 [screen_player]: .github/pictures/player.png
-[screen_login]: .github/pictures/login.png
-[user_info]: .github/pictures/userInfo.png
+[screen_login]: .github/pictures/login_page.png
+[screen_login_info]: .github/pictures/login_info.png
+[screen_controls_offline]: .github/pictures/controls_offline.png
+[screen_controls_online]: .github/pictures/controls_online.png
 [releases_page]: https://github.com/RasmusKoit/abs_wear/releases/latest
 [android developer site]: https://developer.android.com/studio/releases/platform-tools
 [play_store_link]: https://play.google.com/store/apps/details?id=dev.koit.abs_wear
