@@ -208,7 +208,7 @@ This project relies on [flutter_localizations][flutter_localizations_link] and f
 ## Special thanks 😊
 
 - [advplyr][advplyr_github_link] - Author of Audiobookshelf
-- nyxholas - Moderator/Contributor of ABS
+- [nyxholas][nyxholas_github_link] - Moderator/Contributor of ABS
 
 [flutter_localizations_link]: https://api.flutter.dev/flutter/flutter_localizations/flutter_localizations-library.html
 [internationalization_link]: https://flutter.dev/docs/development/accessibility-and-localization/internationalization
@@ -220,6 +220,7 @@ This project relies on [flutter_localizations][flutter_localizations_link] and f
 [abs_github_link]: https://github.com/advplyr/audiobookshelf
 [abs_wear_header]: .github/pictures/ABS_Wear_header.png
 [advplyr_github_link]: https://github.com/advplyr
+[nyxholas_github_link]: https://github.com/nichwall
 [screen_library]: .github/pictures/library.png
 [screen_player]: .github/pictures/player.png
 [screen_login]: .github/pictures/login_page.png
