@@ -8,6 +8,7 @@ import 'package:archive/archive.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import 'package:http/http.dart' as http;
 import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
@@ -288,10 +289,20 @@ class AudioPlayerController extends ChangeNotifier {
         // Delete the zip file
         zipFile.deleteSync();
       }
+      await Fluttertoast.showToast(
+        msg: 'Audiobook downloaded!',
+        toastLength: Toast.LENGTH_SHORT,
+        gravity: ToastGravity.CENTER,
+      );
       if (kDebugMode) {
         print('Downloaded and unzipped the file');
       }
     } else {
+      await Fluttertoast.showToast(
+        msg: 'Failed to download the file!',
+        toastLength: Toast.LENGTH_SHORT,
+        gravity: ToastGravity.CENTER,
+      );
       if (kDebugMode) {
         print('Failed to download the file');
       }
