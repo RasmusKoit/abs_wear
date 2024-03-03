@@ -5,6 +5,7 @@ import 'dart:convert';
 import 'package:abs_wear/l10n/l10n.dart';
 import 'package:abs_wear/player/player.dart';
 import 'package:flutter/material.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import 'package:http/http.dart' as http;
 import 'package:rotary_scrollbar/rotary_scrollbar.dart';
 
@@ -57,6 +58,11 @@ class _LibraryPageState extends State<LibraryPage> {
           (item) => item['id'] == 'continue-listening',
         )['entities'] as List<dynamic>;
       } else {
+        await Fluttertoast.showToast(
+          msg: 'Failed to load sessions!',
+          toastLength: Toast.LENGTH_SHORT,
+          gravity: ToastGravity.CENTER,
+        );
         throw Exception('Failed to load listening sessions');
       }
     } catch (e) {

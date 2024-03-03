@@ -8,6 +8,7 @@ import 'package:abs_wear/library/view/library_page.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import 'package:http/http.dart' as http;
 import 'package:rotary_scrollbar/rotary_scrollbar.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -93,13 +94,22 @@ class LoginPageState extends State<LoginPage> {
           _token = token;
         });
       } else {
-        // Show an error message
+        await Fluttertoast.showToast(
+          msg: 'Wrong username or password.',
+          toastLength: Toast.LENGTH_SHORT,
+          gravity: ToastGravity.CENTER,
+        );
       }
     } catch (e) {
       // Show an error message
       if (kDebugMode) {
         print(e);
       }
+      await Fluttertoast.showToast(
+        msg: 'Error with URL',
+        toastLength: Toast.LENGTH_SHORT,
+        gravity: ToastGravity.CENTER,
+      );
     }
   }
 

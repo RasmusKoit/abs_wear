@@ -17,6 +17,7 @@ dependencies:
   flutter_localizations:
     sdk: flutter
   flutter_svg: ^2.0.10+1
+  fluttertoast: ^8.2.4
   http: 1.1.0
   intl: ^0.18.0
   just_audio: ^0.9.36
