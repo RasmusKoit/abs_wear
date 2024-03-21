@@ -9,7 +9,7 @@ environment:
 dependencies:
   archive: ^3.1.2
   bloc: ^8.1.2
-  device_info_plus: ^9.1.2
+  device_info_plus: ^10.0.1
   dots_indicator: ^3.0.0
   flutter:
     sdk: flutter
