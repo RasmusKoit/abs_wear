@@ -20,7 +20,7 @@ dependencies:
   fluttertoast: ^8.2.4
   http: 1.1.0
   intl: ^0.18.0
-  just_audio: ^0.9.36
+  just_audio: ^0.9.37
   just_audio_background: ^0.0.1-beta.11
   path_provider: ^2.1.2
   rotary_scrollbar: ^0.1.1
