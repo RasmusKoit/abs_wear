@@ -70,13 +70,15 @@ class _LibraryPageState extends State<LibraryPage> {
   }
 
   Future<List<ShelfBook>> _fetchContinueListening() async {
-    final response = await http.get(
-      Uri.parse(
-        '${widget.serverUrl}/api/libraries/${widget.libraryId}'
-        '/personalized?limit=10',
-      ),
-      headers: _authHeaders,
-    );
+    final response = await http
+        .get(
+          Uri.parse(
+            '${widget.serverUrl}/api/libraries/${widget.libraryId}'
+            '/personalized?limit=10',
+          ),
+          headers: _authHeaders,
+        )
+        .timeout(const Duration(seconds: 20));
     if (response.statusCode != 200) {
       throw http.ClientException(
         'Failed to load shelves (HTTP ${response.statusCode})',

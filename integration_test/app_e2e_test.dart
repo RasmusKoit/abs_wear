@@ -175,6 +175,28 @@ void main() {
     await pumpUntil(tester, find.text('00:00:15'));
   });
 
+  testWidgets('rejects a URL without a scheme', (tester) async {
+    await tester.pumpWidget(const App());
+    await pumpUntil(tester, find.text('Login'));
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Server URL'),
+      'abs.example.com',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Username'),
+      absUser,
+    );
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Password'),
+      absPassword,
+    );
+    await scrollAndTap(tester, find.text('Login'));
+    await pumpFor(tester, const Duration(seconds: 2));
+    // Still on the form; an uncaught error would fail the test.
+    expect(find.text('Login'), findsOneWidget);
+    expect(find.text('Hello $absUser'), findsNothing);
+  });
+
   testWidgets('logs in and lists Continue Listening', (tester) async {
     await logInAndOpenLibrary(tester);
 

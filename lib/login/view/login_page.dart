@@ -56,12 +56,27 @@ class LoginPageState extends State<LoginPage> {
     final savedServerUrl = prefs.getString('serverUrl');
     final savedUsername = prefs.getString('username');
     final savedDefaultLibraryId = prefs.getString('defaultLibraryId');
-    if (!mounted || savedToken == null || savedToken.isEmpty) return;
+    if (savedToken == null || savedToken.isEmpty || savedServerUrl == null) {
+      return;
+    }
+    var libraryId = savedDefaultLibraryId ?? '';
+    if (libraryId.isEmpty) {
+      // Older installs could save a token without a library; resolve one
+      // now rather than showing a library that can never load.
+      try {
+        libraryId = await _firstLibraryId(savedServerUrl, savedToken) ?? '';
+      } on Object catch (e) {
+        debugPrint('Could not resolve library: $e');
+      }
+      if (libraryId.isEmpty) return; // Fall back to the login form.
+      await prefs.setString('defaultLibraryId', libraryId);
+    }
+    if (!mounted) return;
     setState(() {
       _token = savedToken;
-      serverUrlController.text = savedServerUrl ?? serverUrlController.text;
+      serverUrlController.text = savedServerUrl;
       usernameController.text = savedUsername ?? '';
-      defaultLibraryId = savedDefaultLibraryId ?? '';
+      defaultLibraryId = libraryId;
     });
   }
 
@@ -74,6 +89,13 @@ class LoginPageState extends State<LoginPage> {
   Future<void> login(String rawUrl, String username, String password) async {
     // "https://abs.example.com/" and "https://abs.example.com" both work.
     final url = rawUrl.trim().replaceAll(RegExp(r'/+$'), '');
+    final uri = Uri.tryParse(url);
+    if (uri == null ||
+        !(uri.scheme == 'http' || uri.scheme == 'https') ||
+        uri.host.isEmpty) {
+      await _toast('Enter a full URL, e.g. https://abs.example.com');
+      return;
+    }
     setState(() => _loggingIn = true);
     try {
       final response = await http
@@ -110,7 +132,9 @@ class LoginPageState extends State<LoginPage> {
         defaultLibraryId = libraryId;
         serverUrlController.text = url;
       });
-    } on Exception catch (e) {
+    } on Object catch (e) {
+      // Network errors are Exceptions, but bad responses throw TypeError
+      // from the casts above; both should end in a message, not silence.
       debugPrint('Login failed: $e');
       await _toast('Error with URL');
     } finally {
@@ -119,10 +143,12 @@ class LoginPageState extends State<LoginPage> {
   }
 
   Future<String?> _firstLibraryId(String url, String token) async {
-    final response = await http.get(
-      Uri.parse('$url/api/libraries'),
-      headers: {'Authorization': 'Bearer $token'},
-    );
+    final response = await http
+        .get(
+          Uri.parse('$url/api/libraries'),
+          headers: {'Authorization': 'Bearer $token'},
+        )
+        .timeout(const Duration(seconds: 20));
     if (response.statusCode != 200) return null;
     final body = jsonDecode(response.body) as Map<String, dynamic>;
     final libraries = (body['libraries'] as List)
