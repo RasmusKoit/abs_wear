@@ -85,6 +85,34 @@ Future<void> resetServerProgress() async {
   }
 }
 
+/// Current server-side progress (seconds) of the book titled [title].
+Future<double> serverProgress(String title) async {
+  final login = await http.post(
+    Uri.parse('$absUrl/login'),
+    headers: {'Content-Type': 'application/json'},
+    body: jsonEncode({'username': absUser, 'password': absPassword}),
+  );
+  final user =
+      (jsonDecode(login.body) as Map<String, dynamic>)['user']
+          as Map<String, dynamic>;
+  final headers = {'Authorization': 'Bearer ${user['token']}'};
+  final me = await http.get(Uri.parse('$absUrl/api/me'), headers: headers);
+  final progress =
+      (jsonDecode(me.body) as Map<String, dynamic>)['mediaProgress'] as List;
+  for (final p in progress.cast<Map<String, dynamic>>()) {
+    final item = await http.get(
+      Uri.parse('$absUrl/api/items/${p['libraryItemId']}'),
+      headers: headers,
+    );
+    final media =
+        (jsonDecode(item.body) as Map<String, dynamic>)['media']
+            as Map<String, dynamic>;
+    final meta = media['metadata'] as Map<String, dynamic>;
+    if (meta['title'] == title) return (p['currentTime'] as num).toDouble();
+  }
+  return -1;
+}
+
 /// Scrolls [finder] into view (watch screens are tiny) and taps it.
 Future<void> scrollAndTap(WidgetTester tester, Finder finder) async {
   await tester.ensureVisible(finder);
@@ -198,13 +226,21 @@ void main() {
     await scrollAndTap(tester, find.text('Multi File Book'));
     await pumpUntil(tester, find.byIcon(Icons.play_arrow));
 
+    // Play a few seconds past the seeded 34s position.
+    await tester.tap(find.byIcon(Icons.play_arrow));
+    await pumpUntil(tester, find.byIcon(Icons.pause));
+    await pumpFor(tester, const Duration(seconds: 6));
+
     // Swipe to the controls page.
     await tester.fling(find.byType(PageView), const Offset(0, -300), 1000);
     await pumpUntil(tester, find.byIcon(Icons.download_rounded));
 
-    // Start from a clean state if a previous run left files behind.
     await scrollAndTap(tester, find.byIcon(Icons.download_rounded));
     await pumpUntil(tester, find.byIcon(Icons.download_done_rounded));
+
+    // Reloading sources after the download must not rewind progress.
+    await pumpFor(tester, const Duration(seconds: 1));
+    expect(await serverProgress('Multi File Book'), greaterThan(36));
 
     await scrollAndTap(tester, find.byIcon(Icons.delete_forever_rounded));
     await pumpUntil(tester, find.byIcon(Icons.download_rounded));

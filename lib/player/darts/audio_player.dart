@@ -113,27 +113,40 @@ class AudioPlayerController extends ChangeNotifier {
 
   Map<String, String> get _authHeaders => {'Authorization': 'Bearer $token'};
 
-  /// Position in the whole book, across all audio files.
+  /// Position in the whole book, across all audio files. While audio is
+  /// loaded this also records the last known position, so a stop, error or
+  /// reload (all of which make the player idle) can't rewind progress.
   double get bookPosition {
     if (!_audioLoaded) return _pendingPosition;
     final index = player.currentIndex ?? 0;
     final offset = index < tracks.length ? tracks[index].startOffset : 0;
-    return offset + player.position.inMilliseconds / 1000;
+    return _pendingPosition = offset + player.position.inMilliseconds / 1000;
+  }
+
+  /// Real listening time (wall clock while playing), for session stats.
+  final Stopwatch _listenClock = Stopwatch();
+  Duration _reportedListening = Duration.zero;
+  StreamSubscription<bool>? _playingSub;
+
+  /// Serialises syncs so overlapping calls don't double-report time.
+  Future<void> _syncChain = Future.value();
+
+  void _notify() {
+    if (!_closed) notifyListeners();
   }
 
   /// Emits the book position about four times a second.
   Stream<double> get bookPositionStream =>
       Stream.periodic(const Duration(milliseconds: 250), (_) => bookPosition);
 
+  /// Index of the last chapter starting at or before [time] (so gaps
+  /// between chapters belong to the previous one), or -1 before the first.
   int chapterIndexAt(double time) {
+    var index = -1;
     for (var i = 0; i < chapters.length; i++) {
-      if (time >= chapters[i].start && time < chapters[i].end) return i;
+      if (chapters[i].start <= time) index = i;
     }
-    // Past the last chapter end (rounding) counts as the last chapter.
-    if (chapters.isNotEmpty && time >= chapters.last.end) {
-      return chapters.length - 1;
-    }
-    return -1;
+    return index;
   }
 
   String get chapterName {
@@ -152,18 +165,30 @@ class AudioPlayerController extends ChangeNotifier {
     serverUrl = srvUrl;
     token = authToken;
 
-    final response = await _client.post(
-      Uri.parse('$serverUrl/api/items/$libraryItemId/play'),
-      headers: {..._authHeaders, 'Content-Type': 'application/json'},
-      body: await _deviceInfoBody(),
-    );
-    if (response.statusCode != 200) return false;
+    try {
+      final response = await _client
+          .post(
+            Uri.parse('$serverUrl/api/items/$libraryItemId/play'),
+            headers: {..._authHeaders, 'Content-Type': 'application/json'},
+            body: await _deviceInfoBody(),
+          )
+          .timeout(const Duration(seconds: 20));
+      if (response.statusCode != 200 || _closed) return false;
 
-    final json = jsonDecode(response.body) as Map<String, dynamic>;
-    _applySession(json);
-    await _loadSources(initialTime: _lastSyncedTime);
+      _applySession(jsonDecode(response.body) as Map<String, dynamic>);
+      if (tracks.isEmpty) return false;
+      await _loadSources(initialTime: _lastSyncedTime);
+    } on Object catch (e) {
+      // Offline, timeout, or an unexpected response shape.
+      debugPrint('Could not start playback: $e');
+      return false;
+    }
+    if (_closed) return false;
+    _playingSub = player.playingStream.listen((playing) {
+      playing ? _listenClock.start() : _listenClock.stop();
+    });
     isLoaded = true;
-    if (!_closed) notifyListeners();
+    _notify();
     return true;
   }
 
@@ -171,6 +196,7 @@ class AudioPlayerController extends ChangeNotifier {
     sessionId = json['id'] as String;
     duration = (json['duration'] as num).toDouble();
     _lastSyncedTime = (json['currentTime'] as num).toDouble();
+    _pendingPosition = _lastSyncedTime;
     final metadata = json['mediaMetadata'] as Map<String, dynamic>? ?? {};
     bookTitle = metadata['title'] as String? ?? '';
 
@@ -220,8 +246,14 @@ class AudioPlayerController extends ChangeNotifier {
     return '${docs.path}/$libraryItemId';
   }
 
-  File _localFile(String dir, BookTrack track) =>
-      File('$dir/${track.filename}');
+  /// Local file for a track. Named by index and inode, not the original
+  /// basename, so multi-disc books (CD1/01.mp3, CD2/01.mp3) don't collide.
+  File _localFile(String dir, BookTrack track) {
+    final dot = track.filename.lastIndexOf('.');
+    final ext = dot >= 0 ? track.filename.substring(dot) : '';
+    final index = track.index.toString().padLeft(3, '0');
+    return File('$dir/${index}_${track.ino}$ext');
+  }
 
   /// True when every audio file of the book is on the device.
   Future<bool> isDownloaded() async {
@@ -284,7 +316,7 @@ class AudioPlayerController extends ChangeNotifier {
       Duration(milliseconds: (offset * 1000).round()),
       index: index,
     );
-    notifyListeners();
+    _notify();
   }
 
   Future<void> seekRelative(double seconds) =>
@@ -292,7 +324,7 @@ class AudioPlayerController extends ChangeNotifier {
 
   Future<void> seekToNextChapter() async {
     final i = chapterIndexAt(bookPosition);
-    if (i >= 0 && i < chapters.length - 1) {
+    if (i < chapters.length - 1) {
       await seekToBookTime(chapters[i + 1].start);
     }
   }
@@ -302,7 +334,10 @@ class AudioPlayerController extends ChangeNotifier {
   Future<void> seekToPreviousChapter() async {
     final pos = bookPosition;
     final i = chapterIndexAt(pos);
-    if (i < 0) return seekToBookTime(0);
+    if (i < 0) {
+      await seekToBookTime(0);
+      return;
+    }
     final target = (pos - chapters[i].start < 3 && i > 0)
         ? chapters[i - 1].start
         : chapters[i].start;
@@ -328,24 +363,34 @@ class AudioPlayerController extends ChangeNotifier {
   }
 
   /// Reports progress to the server. With [close], ends the session.
-  Future<void> syncOpenSession({bool close = false}) async {
-    if (sessionId.isEmpty || !isLoaded) return;
+  /// Calls are serialised so overlapping syncs never double-count time.
+  Future<void> syncOpenSession({bool close = false}) {
+    return _syncChain = _syncChain.then((_) => _sync(close: close));
+  }
+
+  Future<void> _sync({required bool close}) async {
+    if (sessionId.isEmpty) return;
     final current = bookPosition;
-    final listened = (current - _lastSyncedTime).clamp(0, double.infinity);
+    final listened = _listenClock.elapsed - _reportedListening;
     try {
-      final response = await _client.post(
-        Uri.parse(
-          '$serverUrl/api/session/$sessionId/${close ? 'close' : 'sync'}',
-        ),
-        headers: {..._authHeaders, 'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'currentTime': current,
-          'timeListened': listened,
-          'duration': duration,
-        }),
-      );
-      if (response.statusCode == 200) _lastSyncedTime = current;
-    } on Exception catch (e) {
+      final response = await _client
+          .post(
+            Uri.parse(
+              '$serverUrl/api/session/$sessionId/${close ? 'close' : 'sync'}',
+            ),
+            headers: {..._authHeaders, 'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'currentTime': current,
+              'timeListened': listened.inMilliseconds / 1000,
+              'duration': duration,
+            }),
+          )
+          .timeout(const Duration(seconds: 20));
+      if (response.statusCode == 200) {
+        _lastSyncedTime = current;
+        _reportedListening += listened;
+      }
+    } on Object catch (e) {
       debugPrint('Error syncing session: $e');
     }
   }
@@ -356,7 +401,7 @@ class AudioPlayerController extends ChangeNotifier {
     if (isDownloading || tracks.isEmpty) return false;
     isDownloading = true;
     downloadProgress.value = 0;
-    notifyListeners();
+    _notify();
 
     final dir = Directory(await localDirPath());
     final totalBytes = tracks.fold<int>(0, (sum, t) => sum + t.size);
@@ -388,6 +433,7 @@ class AudioPlayerController extends ChangeNotifier {
           await for (final chunk in response.stream) {
             sink.add(chunk);
             receivedBytes += chunk.length;
+            if (_closed) throw const HttpException('Player closed');
             downloadProgress.value = totalBytes > 0
                 ? (receivedBytes / totalBytes).clamp(0, 1)
                 : (i + 1) / tracks.length;
@@ -402,10 +448,10 @@ class AudioPlayerController extends ChangeNotifier {
       debugPrint('Download failed: $e');
     } finally {
       isDownloading = false;
-      downloadProgress.value = null;
-      if (!_closed) notifyListeners();
+      if (!_closed) downloadProgress.value = null;
+      _notify();
     }
-    if (success) await reloadSources();
+    if (success && !_closed) await reloadSources();
     return success;
   }
 
@@ -420,11 +466,12 @@ class AudioPlayerController extends ChangeNotifier {
   Future<void> reloadSources() async {
     final wasPlaying = player.playing;
     final pos = bookPosition;
-    await player.stop();
+    // Sync while the player still reports the real position.
     await syncOpenSession();
+    await player.stop();
     await _loadSources(initialTime: pos);
     if (wasPlaying) unawaited(player.play());
-    if (!_closed) notifyListeners();
+    _notify();
   }
 
   /// Closes the session on the server (saving the final position) and then
@@ -436,6 +483,7 @@ class AudioPlayerController extends ChangeNotifier {
       await player.pause();
       await syncOpenSession(close: true);
     } finally {
+      await _playingSub?.cancel();
       await player.dispose();
       _client.close();
       downloadProgress.dispose();
