@@ -1,11 +1,9 @@
-// ignore_for_file: avoid_dynamic_calls
-
+import 'dart:async';
 import 'dart:convert';
 import 'dart:ui' as ui;
 
 import 'package:abs_wear/l10n/l10n.dart';
 import 'package:abs_wear/library/view/library_page.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:fluttertoast/fluttertoast.dart';
@@ -27,6 +25,7 @@ class LoginPageState extends State<LoginPage> {
   final _pageController = PageController();
   String _token = '';
   String defaultLibraryId = '';
+  bool _loggingIn = false;
   late AppLocalizations l10n;
 
   @override
@@ -48,7 +47,7 @@ class LoginPageState extends State<LoginPage> {
   void initState() {
     super.initState();
     serverUrlController.text = 'https://';
-    _checkToken();
+    unawaited(_checkToken());
   }
 
   Future<void> _checkToken() async {
@@ -57,58 +56,79 @@ class LoginPageState extends State<LoginPage> {
     final savedServerUrl = prefs.getString('serverUrl');
     final savedUsername = prefs.getString('username');
     final savedDefaultLibraryId = prefs.getString('defaultLibraryId');
-    if (savedToken != null && savedToken.isNotEmpty) {
-      setState(() {
-        _token = savedToken;
-        serverUrlController.text = savedServerUrl!;
-        usernameController.text = savedUsername!;
-        defaultLibraryId = savedDefaultLibraryId!;
-      });
-    }
+    if (!mounted || savedToken == null || savedToken.isEmpty) return;
+    setState(() {
+      _token = savedToken;
+      serverUrlController.text = savedServerUrl ?? serverUrlController.text;
+      usernameController.text = savedUsername ?? '';
+      defaultLibraryId = savedDefaultLibraryId ?? '';
+    });
   }
 
-  Future<void> login(String url, String username, String password) async {
+  Future<void> _toast(String msg) => Fluttertoast.showToast(
+    msg: msg,
+    toastLength: Toast.LENGTH_SHORT,
+    gravity: ToastGravity.CENTER,
+  );
+
+  Future<void> login(String rawUrl, String username, String password) async {
+    // "https://abs.example.com/" and "https://abs.example.com" both work.
+    final url = rawUrl.trim().replaceAll(RegExp(r'/+$'), '');
+    setState(() => _loggingIn = true);
     try {
+      final response = await http
+          .post(
+            Uri.parse('$url/login'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'username': username, 'password': password}),
+          )
+          .timeout(const Duration(seconds: 20));
+      if (response.statusCode != 200) {
+        await _toast('Wrong username or password.');
+        return;
+      }
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final user = data['user'] as Map<String, dynamic>;
+      final token = user['token'] as String;
+      // Users without a default library (e.g. root) get the first one.
+      final libraryId =
+          data['userDefaultLibraryId'] as String? ??
+          await _firstLibraryId(url, token);
+      if (libraryId == null) {
+        await _toast('No libraries on this server.');
+        return;
+      }
+
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('serverUrl', url);
       await prefs.setString('username', username);
-      final response = await http.post(
-        Uri.parse('$url/login'),
-        headers: <String, String>{'Content-Type': 'application/json'},
-        body: jsonEncode(<String, String>{
-          'username': username,
-          'password': password,
-        }),
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
-        final token = data['user']['token'] as String;
-        defaultLibraryId = data['userDefaultLibraryId'] as String;
-
-        await prefs.setString('token', token);
-        await prefs.setString('defaultLibraryId', defaultLibraryId);
-        setState(() {
-          _token = token;
-        });
-      } else {
-        await Fluttertoast.showToast(
-          msg: 'Wrong username or password.',
-          toastLength: Toast.LENGTH_SHORT,
-          gravity: ToastGravity.CENTER,
-        );
-      }
-    } catch (e) {
-      // Show an error message
-      if (kDebugMode) {
-        print(e);
-      }
-      await Fluttertoast.showToast(
-        msg: 'Error with URL',
-        toastLength: Toast.LENGTH_SHORT,
-        gravity: ToastGravity.CENTER,
-      );
+      await prefs.setString('token', token);
+      await prefs.setString('defaultLibraryId', libraryId);
+      if (!mounted) return;
+      setState(() {
+        _token = token;
+        defaultLibraryId = libraryId;
+        serverUrlController.text = url;
+      });
+    } on Exception catch (e) {
+      debugPrint('Login failed: $e');
+      await _toast('Error with URL');
+    } finally {
+      if (mounted) setState(() => _loggingIn = false);
     }
+  }
+
+  Future<String?> _firstLibraryId(String url, String token) async {
+    final response = await http.get(
+      Uri.parse('$url/api/libraries'),
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    if (response.statusCode != 200) return null;
+    final body = jsonDecode(response.body) as Map<String, dynamic>;
+    final libraries = (body['libraries'] as List)
+        .cast<Map<String, dynamic>>()
+        .where((l) => l['mediaType'] == 'book');
+    return libraries.isEmpty ? null : libraries.first['id'] as String;
   }
 
   Future<void> logout() async {
@@ -203,24 +223,26 @@ class LoginPageState extends State<LoginPage> {
         ),
         const SizedBox(height: 8),
         ElevatedButton(
-          onPressed: () {
-            final serverUrl = serverUrlController.text;
-            final username = usernameController.text;
-            final password = passwordController.text;
-
-            if (serverUrl.isEmpty || username.isEmpty || password.isEmpty) {
-              // Show an error message
-              return;
-            }
-
-            login(serverUrl, username, password);
-
-            if (_token == '') {
-              // Show an error message
-              return;
-            }
-          },
-          child: Text(l10n.login, style: theme.textTheme.bodyMedium),
+          onPressed: _loggingIn
+              ? null
+              : () {
+                  final serverUrl = serverUrlController.text;
+                  final username = usernameController.text.trim();
+                  final password = passwordController.text;
+                  if (serverUrl.isEmpty ||
+                      username.isEmpty ||
+                      password.isEmpty) {
+                    unawaited(_toast('Fill in all fields.'));
+                    return;
+                  }
+                  unawaited(login(serverUrl, username, password));
+                },
+          child: _loggingIn
+              ? const SizedBox.square(
+                  dimension: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : Text(l10n.login, style: theme.textTheme.bodyMedium),
         ),
         const SizedBox(height: 16),
       ],
@@ -228,7 +250,6 @@ class LoginPageState extends State<LoginPage> {
   }
 
   Widget _buildLoggedInState(ThemeData theme) {
-    _pageController.jumpTo(0.1);
     return Column(
       children: [
         const SizedBox(height: 8),
