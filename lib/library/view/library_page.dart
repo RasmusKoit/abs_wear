@@ -47,16 +47,15 @@ class _LibraryPageState extends State<LibraryPage> {
         Uri.parse(
           '$serverUrl/api/libraries/${widget.libraryId}/personalized?limit=5',
         ),
-        headers: <String, String>{
-          'Authorization': 'Bearer $token',
-        },
+        headers: <String, String>{'Authorization': 'Bearer $token'},
       );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         return data.firstWhere(
-          // ignore: inference_failure_on_untyped_parameter
-          (item) => item['id'] == 'continue-listening',
-        )['entities'] as List<dynamic>;
+              // ignore: inference_failure_on_untyped_parameter
+              (item) => item['id'] == 'continue-listening',
+            )['entities']
+            as List<dynamic>;
       } else {
         await Fluttertoast.showToast(
           msg: 'Failed to load sessions!',
@@ -74,23 +73,18 @@ class _LibraryPageState extends State<LibraryPage> {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final theme = Theme.of(context);
-    return RotaryScrollWrapper(
-      rotaryScrollbar: RotaryScrollbar(
-        width: 2,
-        padding: 1,
-        hasHapticFeedback: false,
-        autoHide: false,
-        controller: _pageController,
-      ),
+    return RotaryScrollbar(
+      width: 2,
+      padding: 1,
+      hasHapticFeedback: false,
+      autoHide: false,
+      controller: _pageController,
       child: Scaffold(
         appBar: PreferredSize(
           preferredSize: const Size.fromHeight(40),
           child: AppBar(
             centerTitle: true,
-            title: Text(
-              l10n.library,
-              style: theme.textTheme.bodyLarge,
-            ),
+            title: Text(l10n.library, style: theme.textTheme.bodyLarge),
             automaticallyImplyLeading: false,
           ),
         ),
@@ -102,10 +96,7 @@ class _LibraryPageState extends State<LibraryPage> {
               children: [
                 Text(l10n.continueListening),
                 FutureBuilder<List<dynamic>>(
-                  future: getContinueListening(
-                    widget.token,
-                    widget.serverUrl,
-                  ),
+                  future: getContinueListening(widget.token, widget.serverUrl),
                   builder: (context, snapshot) {
                     if (snapshot.connectionState == ConnectionState.done) {
                       if (snapshot.hasData) {
@@ -160,6 +151,17 @@ class _LibraryPageState extends State<LibraryPage> {
                                             coverUrl,
                                             width: 50,
                                             height: 50,
+                                            // Books without cover art return
+                                            // 404; show a placeholder instead
+                                            // of Flutter's oversized error
+                                            // widget.
+                                            errorBuilder: (_, _, _) =>
+                                                const SizedBox.square(
+                                                  dimension: 50,
+                                                  child: Icon(
+                                                    Icons.book_rounded,
+                                                  ),
+                                                ),
                                           ),
                                         ],
                                       ),
@@ -179,17 +181,11 @@ class _LibraryPageState extends State<LibraryPage> {
                 ),
                 Card(
                   child: ListTile(
-                    title: Text(
-                      l10n.refresh,
-                      style: theme.textTheme.bodySmall,
-                    ),
+                    title: Text(l10n.refresh, style: theme.textTheme.bodySmall),
                     trailing: const Icon(Icons.refresh),
                     onTap: () {
                       setState(() {
-                        getContinueListening(
-                          widget.token,
-                          widget.serverUrl,
-                        );
+                        getContinueListening(widget.token, widget.serverUrl);
                       });
                     },
                   ),

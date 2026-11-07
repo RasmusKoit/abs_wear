@@ -110,3 +110,13 @@ app.*.map.json
 !.idea/codeStyles/
 !.idea/dictionaries/
 !.idea/runConfigurations/
+
+# Generated localizations
+lib/l10n/gen/
+
+# Local dev/test environment (portable Node, ABS test server, test media)
+.dev/
+
+# Test-server credentials
+tool/abs_test_server/.env
+tool/abs_test_server/data/

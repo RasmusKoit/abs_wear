@@ -74,9 +74,7 @@ class LoginPageState extends State<LoginPage> {
       await prefs.setString('username', username);
       final response = await http.post(
         Uri.parse('$url/login'),
-        headers: <String, String>{
-          'Content-Type': 'application/json',
-        },
+        headers: <String, String>{'Content-Type': 'application/json'},
         body: jsonEncode(<String, String>{
           'username': username,
           'password': password,
@@ -126,14 +124,12 @@ class LoginPageState extends State<LoginPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return RotaryScrollWrapper(
-      rotaryScrollbar: RotaryScrollbar(
-        width: 2,
-        padding: 1,
-        hasHapticFeedback: false,
-        autoHide: false,
-        controller: _pageController,
-      ),
+    return RotaryScrollbar(
+      width: 2,
+      padding: 1,
+      hasHapticFeedback: false,
+      autoHide: false,
+      controller: _pageController,
       child: Scaffold(
         appBar: PreferredSize(
           preferredSize: const ui.Size.fromHeight(40),
@@ -170,9 +166,7 @@ class LoginPageState extends State<LoginPage> {
         TextFormField(
           style: theme.textTheme.labelSmall,
           scrollPadding: const EdgeInsets.all(8),
-          strutStyle: StrutStyle.fromTextStyle(
-            theme.textTheme.labelSmall!,
-          ),
+          strutStyle: StrutStyle.fromTextStyle(theme.textTheme.labelSmall!),
           controller: serverUrlController,
           decoration: InputDecoration(
             labelStyle: theme.textTheme.labelSmall,
@@ -186,9 +180,7 @@ class LoginPageState extends State<LoginPage> {
         TextFormField(
           style: theme.textTheme.labelSmall,
           scrollPadding: const EdgeInsets.all(8),
-          strutStyle: StrutStyle.fromTextStyle(
-            theme.textTheme.labelSmall!,
-          ),
+          strutStyle: StrutStyle.fromTextStyle(theme.textTheme.labelSmall!),
           controller: usernameController,
           decoration: InputDecoration(
             labelText: l10n.usernameLabel,
@@ -201,9 +193,7 @@ class LoginPageState extends State<LoginPage> {
         TextFormField(
           style: theme.textTheme.labelSmall,
           scrollPadding: const EdgeInsets.all(8),
-          strutStyle: StrutStyle.fromTextStyle(
-            theme.textTheme.labelSmall!,
-          ),
+          strutStyle: StrutStyle.fromTextStyle(theme.textTheme.labelSmall!),
           controller: passwordController,
           decoration: InputDecoration(
             labelText: l10n.passwordLabel,
@@ -230,10 +220,7 @@ class LoginPageState extends State<LoginPage> {
               return;
             }
           },
-          child: Text(
-            l10n.login,
-            style: theme.textTheme.bodyMedium,
-          ),
+          child: Text(l10n.login, style: theme.textTheme.bodyMedium),
         ),
         const SizedBox(height: 16),
       ],
@@ -275,10 +262,7 @@ class LoginPageState extends State<LoginPage> {
               ),
             );
           },
-          child: Text(
-            l10n.library,
-            style: theme.textTheme.bodyMedium,
-          ),
+          child: Text(l10n.library, style: theme.textTheme.bodyMedium),
         ),
         const SizedBox(height: 8),
         Center(
@@ -290,10 +274,7 @@ class LoginPageState extends State<LoginPage> {
             onPressed: () async {
               await logout();
             },
-            child: Text(
-              l10n.logout,
-              style: theme.textTheme.bodyMedium,
-            ),
+            child: Text(l10n.logout, style: theme.textTheme.bodyMedium),
           ),
         ),
         const SizedBox(height: 32),

@@ -4,19 +4,21 @@ import 'package:flutter_test/flutter_test.dart';
 import '../../helpers/helpers.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   group('$AmbientModeListener', () {
-    test('updates when ambient mode is activated', () {
+    test('updates when ambient mode is activated', () async {
       final listener = AmbientModeListener.instance..value = false;
 
-      simulatePlatformCall('ambient_mode', 'onEnterAmbient');
+      await simulatePlatformCall('ambient_mode', 'onEnterAmbient');
 
       expect(listener.isAmbientModeActive, isTrue);
     });
 
-    test('updates when ambient mode is update', () {
+    test('updates when ambient mode is update', () async {
       final listener = AmbientModeListener.instance..value = false;
 
-      simulatePlatformCall('ambient_mode', 'onUpdateAmbient');
+      await simulatePlatformCall('ambient_mode', 'onUpdateAmbient');
 
       expect(listener.isAmbientModeActive, isTrue);
     });

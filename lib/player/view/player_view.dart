@@ -26,13 +26,15 @@ class _PlayerViewPageState extends State<PlayerViewPage> {
   @override
   void initState() {
     super.initState();
-    _positionSubscription =
-        widget.playerController.player.positionStream.listen((event) {
-      _updateTitleAndChapterName();
-      _timeLeftNotifier.value = widget.playerController.getTimeLeft();
-      widget.playerController.updateChapterNameAndDuration(_timeLeftNotifier);
-      isPlaying = widget.playerController.player.playing;
-    });
+    _positionSubscription = widget.playerController.player.positionStream
+        .listen((event) {
+          _updateTitleAndChapterName();
+          _timeLeftNotifier.value = widget.playerController.getTimeLeft();
+          widget.playerController.updateChapterNameAndDuration(
+            _timeLeftNotifier,
+          );
+          isPlaying = widget.playerController.player.playing;
+        });
   }
 
   @override
@@ -50,9 +52,7 @@ class _PlayerViewPageState extends State<PlayerViewPage> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const SizedBox(
-                height: 8,
-              ),
+              const SizedBox(height: 8),
               _buildScrollingText(
                 theme.textTheme.labelMedium!,
                 widget.playerController.bookTitle,
@@ -86,10 +86,7 @@ class _PlayerViewPageState extends State<PlayerViewPage> {
         horizontal: horizontalPadding,
         vertical: verticalPadding,
       ),
-      child: ScrollingText(
-        text: text,
-        style: textStyle,
-      ),
+      child: ScrollingText(text: text, style: textStyle),
     );
   }
 
@@ -128,9 +125,7 @@ class _PlayerViewPageState extends State<PlayerViewPage> {
                 processingState == ProcessingState.idle) &&
             !widget.playerController.isDownloading) {
           return IconButton(
-            icon: Icon(
-              isPlaying ? Icons.pause : Icons.play_arrow,
-            ),
+            icon: Icon(isPlaying ? Icons.pause : Icons.play_arrow),
             onPressed: () async {
               if (isPlaying) {
                 setState(() {
@@ -192,10 +187,7 @@ class _PlayerViewPageState extends State<PlayerViewPage> {
     return ValueListenableBuilder<String>(
       valueListenable: _timeLeftNotifier,
       builder: (context, value, child) {
-        return TimeLeftWidget(
-          timeLeft: value,
-          style: textStyle,
-        );
+        return TimeLeftWidget(timeLeft: value, style: textStyle);
       },
     );
   }

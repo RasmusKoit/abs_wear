@@ -1,10 +1,13 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="dev.koit.abs_wear">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-feature android:name="android.hardware.type.watch" />
     <uses-permission android:name="android.permission.BLUETOOTH" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <!-- Required on Android 14+ (Wear OS 5) for the mediaPlayback foreground service -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
+    <!-- Media notification on Android 13+ -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.AUDIO_FOCUS" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <application
@@ -14,7 +17,7 @@
         android:icon="@mipmap/ic_launcher">
 
         <activity
-            android:name="com.ryanheise.audioservice.AudioServiceActivity"
+            android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
             android:theme="@style/LaunchTheme"

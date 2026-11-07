@@ -11,9 +11,6 @@ class TimeLeftWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Text(
-      timeLeft,
-      style: style,
-    );
+    return Text(timeLeft, style: style);
   }
 }

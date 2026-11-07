@@ -1,0 +1,15 @@
+# Throwaway Audiobookshelf server for ABS Wear development and E2E tests.
+# Deployed to ~/code/abs-wear-test on the dev box (see README.md).
+services:
+  audiobookshelf:
+    image: ghcr.io/advplyr/audiobookshelf:2.37.2
+    container_name: abs-wear-test
+    restart: unless-stopped
+    ports:
+      - "13378:80"
+    environment:
+      - TZ=Europe/Tallinn
+    volumes:
+      - ./data/config:/config
+      - ./data/metadata:/metadata
+      - ./data/audiobooks:/audiobooks:ro

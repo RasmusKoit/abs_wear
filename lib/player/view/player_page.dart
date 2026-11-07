@@ -59,14 +59,12 @@ class _PlayerPageState extends State<PlayerPage> {
 
   @override
   Widget build(BuildContext context) {
-    return RotaryScrollWrapper(
-      rotaryScrollbar: RotaryScrollbar(
-        width: 2,
-        padding: 1,
-        hasHapticFeedback: false,
-        autoHide: false,
-        controller: _pageController,
-      ),
+    return RotaryScrollbar(
+      width: 2,
+      padding: 1,
+      hasHapticFeedback: false,
+      autoHide: false,
+      controller: _pageController,
       child: Scaffold(
         body: Row(
           children: <Widget>[
@@ -75,12 +73,8 @@ class _PlayerPageState extends State<PlayerPage> {
                 scrollDirection: Axis.vertical,
                 controller: _pageController,
                 children: [
-                  PlayerViewPage(
-                    playerController: _playerController,
-                  ),
-                  ControlViewPage(
-                    playerController: _playerController,
-                  ),
+                  PlayerViewPage(playerController: _playerController),
+                  ControlViewPage(playerController: _playerController),
                 ],
               ),
             ),

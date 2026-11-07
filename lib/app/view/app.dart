@@ -22,12 +22,9 @@ class App extends StatelessWidget {
             colorScheme: isAmbientModeActive
                 ? const ColorScheme.dark(
                     primary: Colors.white24,
-                    onBackground: Colors.white10,
                     onSurface: Colors.white10,
                   )
-                : const ColorScheme.dark(
-                    primary: Color(0xFF00B5FF),
-                  ),
+                : const ColorScheme.dark(primary: Color(0xFF00B5FF)),
           ),
           debugShowCheckedModeBanner: false,
           localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -35,12 +32,12 @@ class App extends StatelessWidget {
           home: child,
           builder: (context, child) {
             final mediaQueryData = MediaQuery.of(context);
-            final textScaler = mediaQueryData.textScaler
-                .clamp(minScaleFactor: 0.8, maxScaleFactor: 1.3);
+            final textScaler = mediaQueryData.textScaler.clamp(
+              minScaleFactor: 0.8,
+              maxScaleFactor: 1.3,
+            );
             return MediaQuery(
-              data: MediaQuery.of(context).copyWith(
-                textScaler: textScaler,
-              ),
+              data: MediaQuery.of(context).copyWith(textScaler: textScaler),
               child: child!,
             );
           },
