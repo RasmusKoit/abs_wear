@@ -1,467 +1,498 @@
 // audio_player.dart
-// contains the audio player and the audio player controller
+// Audio player controller: playback sessions, multi-file books, chapter
+// navigation, progress sync and offline downloads.
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:archive/archive.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
-import 'package:fluttertoast/fluttertoast.dart';
 import 'package:http/http.dart' as http;
 import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:path_provider/path_provider.dart';
 
+/// One audio file of a library item. Multi-file books have several, each
+/// starting at [startOffset] seconds into the book.
+@immutable
+class BookTrack {
+  const BookTrack({
+    required this.index,
+    required this.startOffset,
+    required this.duration,
+    required this.contentUrl,
+    required this.filename,
+    required this.ino,
+    required this.size,
+  });
+
+  factory BookTrack.fromJson(
+    Map<String, dynamic> json,
+    Map<String, int> sizesByIno,
+  ) {
+    final contentUrl = json['contentUrl'] as String;
+    final ino = contentUrl.split('/').last;
+    final metadata = json['metadata'] as Map<String, dynamic>? ?? const {};
+    return BookTrack(
+      index: (json['index'] as num).toInt(),
+      startOffset: (json['startOffset'] as num).toDouble(),
+      duration: (json['duration'] as num).toDouble(),
+      contentUrl: contentUrl,
+      filename: metadata['filename'] as String? ?? '$ino.audio',
+      ino: ino,
+      size: sizesByIno[ino] ?? 0,
+    );
+  }
+
+  final int index;
+  final double startOffset;
+  final double duration;
+  final String contentUrl;
+  final String filename;
+  final String ino;
+  final int size;
+
+  double get end => startOffset + duration;
+}
+
+@immutable
+class BookChapter {
+  const BookChapter({
+    required this.start,
+    required this.end,
+    required this.title,
+  });
+
+  factory BookChapter.fromJson(Map<String, dynamic> json) => BookChapter(
+    start: (json['start'] as num).toDouble(),
+    end: (json['end'] as num).toDouble(),
+    title: json['title'] as String? ?? '',
+  );
+
+  final double start;
+  final double end;
+  final String title;
+}
+
 class AudioPlayerController extends ChangeNotifier {
+  AudioPlayerController({http.Client? client})
+    : _client = client ?? http.Client();
+
+  final http.Client _client;
   final AudioPlayer player = AudioPlayer();
-  List<dynamic> chapters = [];
+
+  List<BookTrack> tracks = [];
+  List<BookChapter> chapters = [];
   String sessionId = '';
-  double startingPositionTime = 0;
-  double duration = 0;
   String bookTitle = '';
-  String chapterName = '';
   String libraryItemId = '';
   String serverUrl = '';
-  String inoInt = '';
-  String onlineAudioUrl = '';
-  String downloadUrl = '';
-  String localDirPath = '';
   String token = '';
-  bool isPlaying = false;
+
+  /// Total book length in seconds.
+  double duration = 0;
+
+  /// Book position (seconds) at the last successful sync with the server.
+  double _lastSyncedTime = 0;
+
+  bool isLoaded = false;
   bool isDownloading = false;
 
-  Future<AudioPlayer?> setupPlayer(
+  /// 0..1 while downloading, null otherwise.
+  final ValueNotifier<double?> downloadProgress = ValueNotifier(null);
+
+  bool _closed = false;
+
+  /// Where the player should be while its audio is not loaded yet. With
+  /// `preload: false` the player reports 0 until playback starts, which
+  /// would otherwise sync position 0 and wipe the user's progress.
+  double _pendingPosition = 0;
+
+  bool get _audioLoaded => player.processingState != ProcessingState.idle;
+
+  Map<String, String> get _authHeaders => {'Authorization': 'Bearer $token'};
+
+  /// Position in the whole book, across all audio files. While audio is
+  /// loaded this also records the last known position, so a stop, error or
+  /// reload (all of which make the player idle) can't rewind progress.
+  double get bookPosition {
+    if (!_audioLoaded) return _pendingPosition;
+    final index = player.currentIndex ?? 0;
+    final offset = index < tracks.length ? tracks[index].startOffset : 0;
+    return _pendingPosition = offset + player.position.inMilliseconds / 1000;
+  }
+
+  /// Real listening time (wall clock while playing), for session stats.
+  final Stopwatch _listenClock = Stopwatch();
+  Duration _reportedListening = Duration.zero;
+  StreamSubscription<bool>? _playingSub;
+
+  /// Serialises syncs so overlapping calls don't double-report time.
+  Future<void> _syncChain = Future.value();
+
+  void _notify() {
+    if (!_closed) notifyListeners();
+  }
+
+  /// Emits the book position about four times a second.
+  Stream<double> get bookPositionStream =>
+      Stream.periodic(const Duration(milliseconds: 250), (_) => bookPosition);
+
+  /// Index of the last chapter starting at or before [time] (so gaps
+  /// between chapters belong to the previous one), or -1 before the first.
+  int chapterIndexAt(double time) {
+    var index = -1;
+    for (var i = 0; i < chapters.length; i++) {
+      if (chapters[i].start <= time) index = i;
+    }
+    return index;
+  }
+
+  String get chapterName {
+    final i = chapterIndexAt(bookPosition);
+    return i >= 0 ? chapters[i].title : '';
+  }
+
+  /// Starts a playback session and loads the book into the player.
+  /// Returns false if the session could not be started.
+  Future<bool> setupPlayer(
     String libItemId,
     String srvUrl,
-    String token,
+    String authToken,
   ) async {
-    //
     libraryItemId = libItemId;
     serverUrl = srvUrl;
-    this.token = token;
-    final playUri = Uri.parse('$srvUrl/api/items/$libItemId/play');
-    final playResponseBody = await getDeviceInfoBody();
-    final playResponse = await http.post(
-      playUri,
-      headers: <String, String>{
-        'Authorization': 'Bearer $token',
-        'Content-Type': 'application/json',
-      },
-      body: playResponseBody,
-    );
+    token = authToken;
 
-    if (playResponse.statusCode != 200) {
-      return null;
-    }
-    final playResponseJson =
-        jsonDecode(playResponse.body) as Map<String, dynamic>;
-    await setPlaydataValues(playResponseJson);
     try {
-      final playerAudioSource = await getAudioSourceUri();
-      final playerHeaders = await getAudioSourceHeaders();
-      await player.setAudioSource(
+      final response = await _client
+          .post(
+            Uri.parse('$serverUrl/api/items/$libraryItemId/play'),
+            headers: {..._authHeaders, 'Content-Type': 'application/json'},
+            body: await _deviceInfoBody(),
+          )
+          .timeout(const Duration(seconds: 20));
+      if (response.statusCode != 200 || _closed) return false;
+
+      _applySession(jsonDecode(response.body) as Map<String, dynamic>);
+      if (tracks.isEmpty) return false;
+      await _loadSources(initialTime: _lastSyncedTime);
+    } on Object catch (e) {
+      // Offline, timeout, or an unexpected response shape.
+      debugPrint('Could not start playback: $e');
+      return false;
+    }
+    if (_closed) return false;
+    _playingSub = player.playingStream.listen((playing) {
+      playing ? _listenClock.start() : _listenClock.stop();
+    });
+    isLoaded = true;
+    _notify();
+    return true;
+  }
+
+  void _applySession(Map<String, dynamic> json) {
+    sessionId = json['id'] as String;
+    duration = (json['duration'] as num).toDouble();
+    _lastSyncedTime = (json['currentTime'] as num).toDouble();
+    _pendingPosition = _lastSyncedTime;
+    final metadata = json['mediaMetadata'] as Map<String, dynamic>? ?? {};
+    bookTitle = metadata['title'] as String? ?? '';
+
+    final sizesByIno = <String, int>{};
+    final item = json['libraryItem'];
+    if (item is Map<String, dynamic> && item['libraryFiles'] is List) {
+      for (final f
+          in (item['libraryFiles'] as List).cast<Map<String, dynamic>>()) {
+        final size = (f['metadata'] as Map<String, dynamic>?)?['size'];
+        if (size is num) sizesByIno[f['ino'] as String] = size.toInt();
+      }
+    }
+
+    tracks =
+        (json['audioTracks'] as List? ?? const [])
+            .cast<Map<String, dynamic>>()
+            .map((t) => BookTrack.fromJson(t, sizesByIno))
+            .toList()
+          ..sort((a, b) => a.startOffset.compareTo(b.startOffset));
+    chapters = (json['chapters'] as List? ?? const [])
+        .cast<Map<String, dynamic>>()
+        .map(BookChapter.fromJson)
+        .toList();
+  }
+
+  Future<String> _deviceInfoBody() async {
+    final info = await DeviceInfoPlugin().androidInfo;
+    return jsonEncode({
+      'deviceInfo': {
+        'clientName': 'ABS Wear',
+        'clientVersion': info.version.release,
+        'deviceName': info.device,
+        'deviceType': 'wearable',
+        'sdkVersion': info.version.sdkInt,
+        'model': info.model,
+        'manufacturer': info.manufacturer == 'unknown'
+            ? 'Google'
+            : info.manufacturer,
+      },
+      'mediaPlayer': 'JustAudio',
+      'forceDirectPlay': true,
+    });
+  }
+
+  Future<String> localDirPath() async {
+    final docs = await getApplicationDocumentsDirectory();
+    return '${docs.path}/$libraryItemId';
+  }
+
+  /// Local file for a track. Named by index and inode, not the original
+  /// basename, so multi-disc books (CD1/01.mp3, CD2/01.mp3) don't collide.
+  File _localFile(String dir, BookTrack track) {
+    final dot = track.filename.lastIndexOf('.');
+    final ext = dot >= 0 ? track.filename.substring(dot) : '';
+    final index = track.index.toString().padLeft(3, '0');
+    return File('$dir/${index}_${track.ino}$ext');
+  }
+
+  /// True when every audio file of the book is on the device.
+  Future<bool> isDownloaded() async {
+    if (tracks.isEmpty) return false;
+    final dir = await localDirPath();
+    for (final t in tracks) {
+      if (!_localFile(dir, t).existsSync()) return false;
+    }
+    return true;
+  }
+
+  /// (Re)loads all tracks into the player, preferring local files, and
+  /// positions it at [initialTime] seconds into the book.
+  Future<void> _loadSources({required double initialTime}) async {
+    final local = await isDownloaded();
+    final dir = await localDirPath();
+    final sources = [
+      for (final t in tracks)
         AudioSource.uri(
-          playerAudioSource,
-          headers: playerHeaders,
+          local
+              ? Uri.file(_localFile(dir, t).path)
+              : Uri.parse('$serverUrl${t.contentUrl}'),
+          headers: local ? null : _authHeaders,
           tag: MediaItem(
-            id: libraryItemId,
-            title: chapterName,
+            id: '$libraryItemId/${t.index}',
+            title: bookTitle,
             album: bookTitle,
           ),
         ),
-        initialPosition: Duration(seconds: startingPositionTime.round()),
-        preload: false,
-      );
-      return player;
-    } on PlayerInterruptedException catch (e) {
-      if (kDebugMode) {
-        print('$e: Error setting audiotrack up for player: ${e.runtimeType}');
-      }
-    } on PlatformException catch (e) {
-      if (kDebugMode) {
-        print('$e: Error setting audiotrack up for player: ${e.runtimeType}');
-      }
-    } catch (e) {
-      if (kDebugMode) {
-        print('$e: Error setting audiotrack up for player:  ${e.runtimeType}');
-      }
-    }
-    return null;
-  }
-
-  Future<String> getDeviceInfoBody() async {
-    final deviceInfoPlugin = DeviceInfoPlugin();
-    final buildInfo = await deviceInfoPlugin.androidInfo;
-    final playResponseBody =
-        '''
-      {
-        "deviceInfo": {
-          "clientName": "Wear OS",
-          "clientVersion": "${buildInfo.version.release}",
-          "deviceName": "${buildInfo.device}",
-          "deviceType": "wearable",
-          "sdkVersion": ${buildInfo.version.sdkInt},
-          "model": "${buildInfo.model}",
-          "manufacturer": "${buildInfo.manufacturer == 'unknown' ? 'Google' : buildInfo.manufacturer}"
-        },
-        "mediaPlayer": "JustAudio",
-        "forceDirectPlay": true
-      }
-    ''';
-    return jsonEncode(jsonDecode(playResponseBody));
-  }
-
-  Future<void> setPlaydataValues(Map<String, dynamic> resJson) async {
-    // Set values
-    sessionId = resJson['id'] as String;
-    chapters = resJson['chapters'] as List<dynamic>;
-    startingPositionTime = (resJson['currentTime'] as num).toDouble();
-    duration = (resJson['duration'] as num).toDouble();
-    // ignore: avoid_dynamic_calls
-    bookTitle = resJson['mediaMetadata']['title'] as String;
-    chapterName = getChapterName(startingPositionTime);
-    inoInt = getInoInt(resJson);
-    onlineAudioUrl = '$serverUrl/api/items/$libraryItemId/file/$inoInt';
-    downloadUrl = '$serverUrl/api/items/$libraryItemId/download?token=$token';
-    localDirPath = await getLocalFilePath(getAudioFile: false);
-  }
-
-  Future<String> getLocalFilePath({required bool getAudioFile}) async {
-    final appDocDir = await getApplicationDocumentsDirectory();
-    final folderPath = '${appDocDir.path}/$libraryItemId';
-    if (!getAudioFile) {
-      return folderPath;
-    }
-    // Get a list of files in the specified folder
-    final dir = Directory(folderPath);
-    if (!dir.existsSync()) {
-      return '';
-    }
-
-    final files = await dir.list().toList();
-    // Search for audio files with known extensions
-    final audioExtensions = [
-      '.mp3',
-      '.m4a',
-      '.m4b',
-      '.aac',
-      '.flac',
-    ]; // Add more if needed
-
-    for (final file in files) {
-      // check if file.path ends with any of the audio extensions
-      if (audioExtensions.any((ext) => file.path.endsWith(ext))) {
-        return file.path;
-      }
-    }
-    if (kDebugMode) {
-      print('No audio file found');
-    }
-
-    // If no audio file is found, return an empty string
-    return '';
-  }
-
-  String getChapterName(double startingPositionTime) {
-    for (final chapter in chapters) {
-      chapter as Map<String, dynamic>;
-      final start = chapter['start'] as num;
-      final end = chapter['end'] as num;
-      if (startingPositionTime >= start && startingPositionTime <= end) {
-        return chapter['title'] as String;
-      }
-    }
-    return 'None found';
-  }
-
-  String getInoInt(Map<String, dynamic> resJson) {
-    if (resJson['libraryItem'] is Map<String, dynamic> &&
-        // ignore: avoid_dynamic_calls
-        resJson['libraryItem']['libraryFiles'] is List<dynamic>) {
-      final libraryItem = resJson['libraryItem'] as Map<String, dynamic>;
-      final libraryFiles = libraryItem['libraryFiles'] as List<dynamic>;
-      final audioFile =
-          libraryFiles.firstWhere((file) {
-                file as Map<String, dynamic>;
-                if (file['fileType'] == 'audio') {
-                  return true;
-                } else {
-                  return false;
-                }
-              })
-              as Map<String, dynamic>?;
-      if (audioFile != null) {
-        return audioFile['ino'] as String;
-      }
-    }
-    return '';
-  }
-
-  Future<Uri> getAudioSourceUri() async {
-    final localAudioFile = await getLocalFilePath(getAudioFile: true);
-    if (localAudioFile != '') {
-      // If the local file path is not empty, return a file URI
-      final localAudioFile = await getLocalFilePath(getAudioFile: true);
-      if (kDebugMode) {
-        print('LAF: $localAudioFile');
-      }
-      return Uri.file(localAudioFile);
-    } else {
-      if (kDebugMode) {
-        print('Online audio path');
-      }
-      // If the local file path is empty, return an online URI
-      return Uri.parse(onlineAudioUrl);
-    }
-  }
-
-  Future<Map<String, String>?> getAudioSourceHeaders() async {
-    final localAudioFile = await getLocalFilePath(getAudioFile: true);
-
-    if (localAudioFile != '') {
-      // If the local file path is not empty, return an empty map
-      return null;
-    } else {
-      // If the local file path is empty, return a map with the session ID
-      return <String, String>{'Authorization': 'Bearer $token'};
-    }
-  }
-
-  Future<void> downloadFile() async {
-    isDownloading = true;
-    final httpClient = http.Client();
-    final request = http.Request('GET', Uri.parse(downloadUrl));
-    final response = await httpClient.send(request);
-
-    if (response.statusCode == 200) {
-      // Save the file to the device
-      // Downloaded file is a .zip file
-
-      final folderPath = await getLocalFilePath(getAudioFile: false);
-      final zipFilePath = '$folderPath/$libraryItemId.zip';
-
-      // Check if FolderPath exists, if not create it
-      final dir = Directory(folderPath);
-      if (!dir.existsSync()) {
-        dir.createSync(recursive: true);
-      } else {
-        // Delete the existing files
-        for (final file in dir.listSync()) {
-          file.deleteSync();
-        }
-      }
-
-      if (kDebugMode) {
-        print('Downloading the file');
-      }
-
-      // Download the zip file by streaming
-      final zipFile = File(zipFilePath);
-      await response.stream.pipe(zipFile.openWrite());
-
-      if (kDebugMode) {
-        print('Downloaded the file');
-        print('Unzipping the file');
-      }
-
-      // Unzip the file
-      if (_isZipFile(zipFile)) {
-        final bytes = zipFile.readAsBytesSync();
-        final archive = ZipDecoder().decodeBytes(bytes);
-        for (final file in archive) {
-          final filename = '$folderPath/${file.name}';
-          if (file.isFile) {
-            final data = file.content as List<int>;
-            File(filename)
-              ..createSync(recursive: true)
-              ..writeAsBytesSync(data);
-          }
-        }
-        // Delete the zip file
-        zipFile.deleteSync();
-      }
-      await Fluttertoast.showToast(
-        msg: 'Audiobook downloaded!',
-        toastLength: Toast.LENGTH_SHORT,
-        gravity: ToastGravity.CENTER,
-      );
-      if (kDebugMode) {
-        print('Downloaded and unzipped the file');
-      }
-    } else {
-      await Fluttertoast.showToast(
-        msg: 'Failed to download the file!',
-        toastLength: Toast.LENGTH_SHORT,
-        gravity: ToastGravity.CENTER,
-      );
-      if (kDebugMode) {
-        print('Failed to download the file');
-      }
-    }
-    isDownloading = false;
-  }
-
-  Future<void> deleteMedia() async {
-    final folderPath = await getLocalFilePath(getAudioFile: false);
-    final dir = Directory(folderPath);
-    if (dir.existsSync()) {
-      dir.deleteSync(recursive: true);
-    }
-  }
-
-  bool _isZipFile(File zipFile) {
-    return zipFile.path.toLowerCase().endsWith('.zip');
-  }
-
-  Stream<Duration> get positionStream {
-    return Stream.periodic(const Duration(seconds: 1), (_) => player.position);
-  }
-
-  String getTimeLeft() {
-    var hours = 0;
-    var minutes = 0;
-    var seconds = 0;
-    final timePlayed = player.position.inSeconds;
-    if (chapters.isNotEmpty) {
-      for (final chapter in chapters) {
-        chapter as Map<String, dynamic>;
-        final start = chapter['start'];
-        final end = chapter['end'];
-        if (timePlayed >= (start as num) && timePlayed <= (end as num)) {
-          final remainingSeconds = (end - timePlayed).floor();
-          hours = remainingSeconds ~/ 3600.0;
-          minutes = (remainingSeconds % 3600) ~/ 60;
-          seconds = remainingSeconds % 60;
-        }
-      }
-    } else {
-      hours = timePlayed ~/ 3600.0;
-      minutes = (timePlayed % 3600) ~/ 60;
-      seconds = timePlayed % 60;
-    }
-    // ignore: lines_longer_than_80_chars
-    return '${hours.toString().padLeft(2, '0')}:${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
-  }
-
-  Future<void> seekToPrevious() async {
-    if (player.hasPrevious) {
-      await player.seekToPrevious();
-    } else {
-      chapterName = getChapterName(player.position.inSeconds.toDouble());
-      final currentChapterIndex = chapters.indexWhere((chapter) {
-        chapter as Map<String, dynamic>;
-        return chapter['title'] == chapterName;
-      });
-      if (currentChapterIndex > 0) {
-        final previousChapter =
-            chapters[currentChapterIndex - 1] as Map<String, dynamic>;
-        await player.seek(
-          Duration(seconds: (previousChapter['start'] as num).round()),
-        );
-        chapterName = previousChapter['title'] as String;
-      }
-    }
-  }
-
-  Future<void> seekToNext() async {
-    if (player.hasNext) {
-      await player.seekToNext();
-    } else {
-      chapterName = getChapterName(player.position.inSeconds.toDouble());
-      final currentChapterIndex = chapters.indexWhere((chapter) {
-        chapter as Map<String, dynamic>;
-        return chapter['title'] == chapterName;
-      });
-      if (currentChapterIndex < chapters.length - 1) {
-        final nextChapter =
-            chapters[currentChapterIndex + 1] as Map<String, dynamic>;
-        await player.seek(
-          Duration(seconds: (nextChapter['start'] as num).round()),
-        );
-        chapterName = nextChapter['title'] as String;
-      }
-    }
-  }
-
-  Future<void> seekTo(int position) async {
-    await player.seek(Duration(seconds: position));
-  }
-
-  void updateChapterNameAndDuration(ValueNotifier<String> timeLeftNotifier) {
-    chapterName = getChapterName(player.position.inSeconds.toDouble());
-    final timeLeft = getTimeLeft();
-    if (timeLeftNotifier.value != timeLeft) {
-      timeLeftNotifier.value = timeLeft;
-    }
-    if (timeLeftNotifier.value == '00:00:00') {
-      chapterName = getChapterName(player.position.inSeconds + 5);
-    }
-  }
-
-  Future<void> togglePlayPause() async {
-    if (isPlaying) {
-      await player.pause();
-      isPlaying = false;
-    } else {
-      await player.play();
-      isPlaying = true;
-    }
-  }
-
-  Future<void> checkAndSetAudioSource() async {
-    final playerAudioSource = await getAudioSourceUri();
-    final playerHeaders = await getAudioSourceHeaders();
-
-    // stop the player
-    await player.stop();
-
-    // sync the current session data
-    await syncOpenSession();
-
-    await player.setAudioSource(
-      AudioSource.uri(
-        playerAudioSource,
-        headers: playerHeaders,
-        tag: MediaItem(id: libraryItemId, title: chapterName, album: bookTitle),
-      ),
-      initialPosition: Duration(seconds: startingPositionTime.round()),
+    ];
+    final (index, offset) = _trackAt(initialTime);
+    _pendingPosition = initialTime;
+    await player.setAudioSources(
+      sources,
+      initialIndex: index,
+      initialPosition: Duration(milliseconds: (offset * 1000).round()),
       preload: false,
     );
   }
 
-  Future<void> syncOpenSession({bool close = false}) async {
-    if (sessionId.isNotEmpty) {
-      final sessionUri =
-          '$serverUrl/api/session/$sessionId/${close ? 'close' : 'sync'}';
-      final timeListened =
-          player.position.inSeconds.toDouble() - startingPositionTime;
-      final sessionBody = <String, double>{
-        'currentTime': player.position.inSeconds.toDouble(),
-        'timeListened': timeListened,
-        'duration': duration,
-      };
-      try {
-        // If close is true, then we are closing the session
-        final closeResponse = await http.post(
-          Uri.parse(sessionUri),
-          headers: <String, String>{
-            'Authorization': 'Bearer $token',
-            'Content-Type': 'application/json',
-          },
-          body: jsonEncode(sessionBody),
+  /// Track index and position within that track for a book time.
+  (int, double) _trackAt(double time) {
+    for (var i = 0; i < tracks.length; i++) {
+      if (time < tracks[i].end || i == tracks.length - 1) {
+        final offset = (time - tracks[i].startOffset).clamp(
+          0,
+          tracks[i].duration,
         );
-        if (closeResponse.statusCode != 200) {
-          return;
-        }
-        // update the starting position time
-        startingPositionTime = player.position.inSeconds.toDouble();
-      } catch (e) {
-        if (kDebugMode) {
-          print('Error syncing session: $e');
-        }
+        return (i, offset.toDouble());
       }
     }
+    return (0, 0);
   }
+
+  Future<void> seekToBookTime(double time) async {
+    final clamped = time.clamp(0, duration).toDouble();
+    final (index, offset) = _trackAt(clamped);
+    _pendingPosition = clamped;
+    await player.seek(
+      Duration(milliseconds: (offset * 1000).round()),
+      index: index,
+    );
+    _notify();
+  }
+
+  Future<void> seekRelative(double seconds) =>
+      seekToBookTime(bookPosition + seconds);
+
+  Future<void> seekToNextChapter() async {
+    final i = chapterIndexAt(bookPosition);
+    if (i < chapters.length - 1) {
+      await seekToBookTime(chapters[i + 1].start);
+    }
+  }
+
+  /// Restarts the current chapter, or goes to the previous one when within
+  /// the first 3 seconds of a chapter.
+  Future<void> seekToPreviousChapter() async {
+    final pos = bookPosition;
+    final i = chapterIndexAt(pos);
+    if (i < 0) {
+      await seekToBookTime(0);
+      return;
+    }
+    final target = (pos - chapters[i].start < 3 && i > 0)
+        ? chapters[i - 1].start
+        : chapters[i].start;
+    await seekToBookTime(target);
+  }
+
+  /// Time left in the current chapter (or the book if it has none).
+  Duration get timeLeft {
+    final pos = bookPosition;
+    final i = chapterIndexAt(pos);
+    final end = i >= 0 ? chapters[i].end : duration;
+    final seconds = (end - pos).clamp(0, double.infinity);
+    return Duration(seconds: seconds.floor());
+  }
+
+  Future<void> togglePlayPause() async {
+    if (player.playing) {
+      await player.pause();
+      unawaited(syncOpenSession());
+    } else {
+      unawaited(player.play());
+    }
+  }
+
+  /// Reports progress to the server. With [close], ends the session.
+  /// Calls are serialised so overlapping syncs never double-count time.
+  Future<void> syncOpenSession({bool close = false}) {
+    return _syncChain = _syncChain.then((_) => _sync(close: close));
+  }
+
+  Future<void> _sync({required bool close}) async {
+    if (sessionId.isEmpty) return;
+    final current = bookPosition;
+    final listened = _listenClock.elapsed - _reportedListening;
+    try {
+      final response = await _client
+          .post(
+            Uri.parse(
+              '$serverUrl/api/session/$sessionId/${close ? 'close' : 'sync'}',
+            ),
+            headers: {..._authHeaders, 'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'currentTime': current,
+              'timeListened': listened.inMilliseconds / 1000,
+              'duration': duration,
+            }),
+          )
+          .timeout(const Duration(seconds: 20));
+      if (response.statusCode == 200) {
+        _lastSyncedTime = current;
+        _reportedListening += listened;
+      }
+    } on Object catch (e) {
+      debugPrint('Error syncing session: $e');
+    }
+  }
+
+  /// Downloads every audio file of the book, streaming each to disk and
+  /// reporting progress through [downloadProgress]. Returns true on success.
+  Future<bool> downloadBook() async {
+    if (isDownloading || tracks.isEmpty) return false;
+    isDownloading = true;
+    downloadProgress.value = 0;
+    _notify();
+
+    final dir = Directory(await localDirPath());
+    final totalBytes = tracks.fold<int>(0, (sum, t) => sum + t.size);
+    var receivedBytes = 0;
+    var success = false;
+    try {
+      dir.createSync(recursive: true);
+      for (final (i, t) in tracks.indexed) {
+        final target = _localFile(dir.path, t);
+        if (target.existsSync() &&
+            target.lengthSync() == t.size &&
+            t.size > 0) {
+          receivedBytes += t.size;
+          continue;
+        }
+        final request = http.Request(
+          'GET',
+          Uri.parse(
+            '$serverUrl/api/items/$libraryItemId/file/${t.ino}/download',
+          ),
+        )..headers.addAll(_authHeaders);
+        final response = await _client.send(request);
+        if (response.statusCode != 200) {
+          throw HttpException('HTTP ${response.statusCode} for ${t.filename}');
+        }
+        final part = File('${target.path}.part');
+        final sink = part.openWrite();
+        try {
+          await for (final chunk in response.stream) {
+            sink.add(chunk);
+            receivedBytes += chunk.length;
+            if (_closed) throw const HttpException('Player closed');
+            downloadProgress.value = totalBytes > 0
+                ? (receivedBytes / totalBytes).clamp(0, 1)
+                : (i + 1) / tracks.length;
+          }
+        } finally {
+          await sink.close();
+        }
+        part.renameSync(target.path);
+      }
+      success = true;
+    } on Exception catch (e) {
+      debugPrint('Download failed: $e');
+    } finally {
+      isDownloading = false;
+      if (!_closed) downloadProgress.value = null;
+      _notify();
+    }
+    if (success && !_closed) await reloadSources();
+    return success;
+  }
+
+  Future<void> deleteDownload() async {
+    final dir = Directory(await localDirPath());
+    if (dir.existsSync()) dir.deleteSync(recursive: true);
+    await reloadSources();
+  }
+
+  /// Reloads the player (e.g. after a download or delete) keeping the
+  /// current position and play state.
+  Future<void> reloadSources() async {
+    final wasPlaying = player.playing;
+    final pos = bookPosition;
+    // Sync while the player still reports the real position.
+    await syncOpenSession();
+    await player.stop();
+    await _loadSources(initialTime: pos);
+    if (wasPlaying) unawaited(player.play());
+    _notify();
+  }
+
+  /// Closes the session on the server (saving the final position) and then
+  /// releases the player. Safe to call without awaiting from dispose().
+  Future<void> close() async {
+    if (_closed) return;
+    _closed = true;
+    try {
+      await player.pause();
+      await syncOpenSession(close: true);
+    } finally {
+      await _playingSub?.cancel();
+      await player.dispose();
+      _client.close();
+      downloadProgress.dispose();
+      super.dispose();
+    }
+  }
+}
+
+String formatDuration(Duration d) {
+  String two(int n) => n.toString().padLeft(2, '0');
+  return '${two(d.inHours)}:${two(d.inMinutes % 60)}:${two(d.inSeconds % 60)}';
 }
