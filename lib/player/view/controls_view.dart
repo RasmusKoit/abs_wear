@@ -52,10 +52,11 @@ class _ControlViewPageState extends State<ControlViewPage> {
   }
 
   Future<void> _init() async {
-    _getVolume = await VolumeController().getVolume();
+    VolumeController.instance.showSystemUI = false;
+    _getVolume = await VolumeController.instance.getVolume();
 
-    final newLocalMediaFilePath =
-        await widget.playerController.getLocalFilePath(getAudioFile: true);
+    final newLocalMediaFilePath = await widget.playerController
+        .getLocalFilePath(getAudioFile: true);
     final getCurrentDownloading = widget.playerController.isDownloading;
     if (mounted) {
       setState(() {
@@ -76,10 +77,7 @@ class _ControlViewPageState extends State<ControlViewPage> {
             appBar: AppBar(
               centerTitle: true,
               automaticallyImplyLeading: false,
-              title: Text(
-                l10n.controls,
-                style: theme.textTheme.bodyLarge,
-              ),
+              title: Text(l10n.controls, style: theme.textTheme.bodyLarge),
             ),
             body: Center(
               child: Padding(
@@ -92,11 +90,10 @@ class _ControlViewPageState extends State<ControlViewPage> {
                         IconButton(
                           icon: const Icon(Icons.remove_rounded),
                           onPressed: () async {
-                            final newVolume =
-                                await VolumeController().getVolume();
-                            VolumeController().setVolume(
+                            final newVolume = await VolumeController.instance
+                                .getVolume();
+                            VolumeController.instance.setVolume(
                               _getVolume - 0.1,
-                              showSystemUI: false,
                             );
                             setState(() {
                               _getVolume = newVolume;
@@ -111,11 +108,10 @@ class _ControlViewPageState extends State<ControlViewPage> {
                         IconButton(
                           icon: const Icon(Icons.add_rounded),
                           onPressed: () async {
-                            final newVolume =
-                                await VolumeController().getVolume();
-                            VolumeController().setVolume(
+                            final newVolume = await VolumeController.instance
+                                .getVolume();
+                            VolumeController.instance.setVolume(
                               newVolume + 0.1,
-                              showSystemUI: false,
                             );
                             setState(() {
                               _getVolume = newVolume;
@@ -152,10 +148,7 @@ class _ControlViewPageState extends State<ControlViewPage> {
             ),
           ),
           IconButton(
-            icon: const Icon(
-              Icons.delete_forever_rounded,
-              color: Colors.red,
-            ),
+            icon: const Icon(Icons.delete_forever_rounded, color: Colors.red),
             onPressed: () async {
               unawaited(widget.playerController.player.stop());
               await widget.playerController.syncOpenSession();
@@ -202,10 +195,8 @@ class _ControlViewPageState extends State<ControlViewPage> {
               }
               await widget.playerController.downloadFile();
               await widget.playerController.checkAndSetAudioSource();
-              final newLocalMediaFilePath =
-                  await widget.playerController.getLocalFilePath(
-                getAudioFile: true,
-              );
+              final newLocalMediaFilePath = await widget.playerController
+                  .getLocalFilePath(getAudioFile: true);
               unawaited(widget.playerController.player.play());
               if (mounted) {
                 setState(() {

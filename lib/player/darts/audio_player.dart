@@ -77,21 +77,15 @@ class AudioPlayerController extends ChangeNotifier {
       return player;
     } on PlayerInterruptedException catch (e) {
       if (kDebugMode) {
-        print(
-          '$e: Error setting audiotrack up for player: ${e.runtimeType}',
-        );
+        print('$e: Error setting audiotrack up for player: ${e.runtimeType}');
       }
     } on PlatformException catch (e) {
       if (kDebugMode) {
-        print(
-          '$e: Error setting audiotrack up for player: ${e.runtimeType}',
-        );
+        print('$e: Error setting audiotrack up for player: ${e.runtimeType}');
       }
     } catch (e) {
       if (kDebugMode) {
-        print(
-          '$e: Error setting audiotrack up for player:  ${e.runtimeType}',
-        );
+        print('$e: Error setting audiotrack up for player:  ${e.runtimeType}');
       }
     }
     return null;
@@ -100,7 +94,8 @@ class AudioPlayerController extends ChangeNotifier {
   Future<String> getDeviceInfoBody() async {
     final deviceInfoPlugin = DeviceInfoPlugin();
     final buildInfo = await deviceInfoPlugin.androidInfo;
-    final playResponseBody = '''
+    final playResponseBody =
+        '''
       {
         "deviceInfo": {
           "clientName": "Wear OS",
@@ -187,16 +182,16 @@ class AudioPlayerController extends ChangeNotifier {
         resJson['libraryItem']['libraryFiles'] is List<dynamic>) {
       final libraryItem = resJson['libraryItem'] as Map<String, dynamic>;
       final libraryFiles = libraryItem['libraryFiles'] as List<dynamic>;
-      final audioFile = libraryFiles.firstWhere(
-        (file) {
-          file as Map<String, dynamic>;
-          if (file['fileType'] == 'audio') {
-            return true;
-          } else {
-            return false;
-          }
-        },
-      ) as Map<String, dynamic>?;
+      final audioFile =
+          libraryFiles.firstWhere((file) {
+                file as Map<String, dynamic>;
+                if (file['fileType'] == 'audio') {
+                  return true;
+                } else {
+                  return false;
+                }
+              })
+              as Map<String, dynamic>?;
       if (audioFile != null) {
         return audioFile['ino'] as String;
       }
@@ -230,9 +225,7 @@ class AudioPlayerController extends ChangeNotifier {
       return null;
     } else {
       // If the local file path is empty, return a map with the session ID
-      return <String, String>{
-        'Authorization': 'Bearer $token',
-      };
+      return <String, String>{'Authorization': 'Bearer $token'};
     }
   }
 
@@ -364,8 +357,9 @@ class AudioPlayerController extends ChangeNotifier {
       if (currentChapterIndex > 0) {
         final previousChapter =
             chapters[currentChapterIndex - 1] as Map<String, dynamic>;
-        await player
-            .seek(Duration(seconds: (previousChapter['start'] as num).round()));
+        await player.seek(
+          Duration(seconds: (previousChapter['start'] as num).round()),
+        );
         chapterName = previousChapter['title'] as String;
       }
     }
@@ -383,8 +377,9 @@ class AudioPlayerController extends ChangeNotifier {
       if (currentChapterIndex < chapters.length - 1) {
         final nextChapter =
             chapters[currentChapterIndex + 1] as Map<String, dynamic>;
-        await player
-            .seek(Duration(seconds: (nextChapter['start'] as num).round()));
+        await player.seek(
+          Duration(seconds: (nextChapter['start'] as num).round()),
+        );
         chapterName = nextChapter['title'] as String;
       }
     }
@@ -429,20 +424,14 @@ class AudioPlayerController extends ChangeNotifier {
       AudioSource.uri(
         playerAudioSource,
         headers: playerHeaders,
-        tag: MediaItem(
-          id: libraryItemId,
-          title: chapterName,
-          album: bookTitle,
-        ),
+        tag: MediaItem(id: libraryItemId, title: chapterName, album: bookTitle),
       ),
       initialPosition: Duration(seconds: startingPositionTime.round()),
       preload: false,
     );
   }
 
-  Future<void> syncOpenSession({
-    bool close = false,
-  }) async {
+  Future<void> syncOpenSession({bool close = false}) async {
     if (sessionId.isNotEmpty) {
       final sessionUri =
           '$serverUrl/api/session/$sessionId/${close ? 'close' : 'sync'}';
