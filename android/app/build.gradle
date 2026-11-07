@@ -68,7 +68,11 @@ android {
 
     buildTypes {
         release {
-            signingConfig signingConfigs.release
+            // Sign with the release key when one is configured (CI env vars or
+            // key.properties); otherwise fall back to debug signing so a fresh
+            // clone can still build a release APK.
+            def hasReleaseKey = System.getenv("ANDROID_KEYSTORE_PATH") || keystorePropertiesFile.exists()
+            signingConfig hasReleaseKey ? signingConfigs.release : signingConfigs.debug
             minifyEnabled true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt')
         }

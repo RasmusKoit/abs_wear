@@ -5,6 +5,8 @@ set -euo pipefail
 cd "$(dirname "$0")"
 OUT=data/audiobooks
 mkdir -p "$OUT"
+TMP=$(mktemp -d)
+trap 'rm -rf "$TMP"' EXIT
 
 tone() { # <freq> <seconds> <out> [extra ffmpeg args...]
   local f=$1 s=$2 o=$3; shift 3
@@ -14,7 +16,7 @@ tone() { # <freq> <seconds> <out> [extra ffmpeg args...]
 # 1) Single-file M4B with 3 embedded chapters (60s each).
 d="$OUT/Test Author A/Single File Book"
 mkdir -p "$d"
-cat > /tmp/chapters.txt <<META
+cat > $TMP/chapters.txt <<META
 ;FFMETADATA1
 title=Single File Book
 artist=Test Author A
@@ -36,8 +38,8 @@ START=120000
 END=180000
 title=Chapter Three
 META
-tone 440 180 /tmp/single.m4a -c:a aac -b:a 32k
-ffmpeg -loglevel error -y -i /tmp/single.m4a -i /tmp/chapters.txt -map_metadata 1 -map_chapters 1 -c copy "$d/Single File Book.m4b"
+tone 440 180 $TMP/single.m4a -c:a aac -b:a 32k
+ffmpeg -loglevel error -y -i $TMP/single.m4a -i $TMP/chapters.txt -map_metadata 1 -map_chapters 1 -c copy "$d/Single File Book.m4b"
 
 # 2) Multi-file MP3 book: 3 files x 45s (ABS makes one chapter per file).
 d="$OUT/Test Author B/Multi File Book"

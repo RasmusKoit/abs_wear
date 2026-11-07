@@ -7,6 +7,8 @@ cd "$(dirname "$0")"
 set -a; . ./.env; set +a
 URL=${ABS_URL:-http://localhost:13378}
 j() { python3 -c "import sys,json;d=json.load(sys.stdin);print(eval(sys.argv[1]))" "$1"; }
+# Build JSON safely (passwords may contain quotes or backslashes).
+creds() { python3 -c 'import sys,json;print(json.dumps({"username":sys.argv[1],"password":sys.argv[2]}))' "$1" "$2"; }
 
 echo "Waiting for $URL ..."
 for _ in $(seq 60); do curl -fs "$URL/status" >/dev/null && break; sleep 2; done
@@ -14,11 +16,11 @@ for _ in $(seq 60); do curl -fs "$URL/status" >/dev/null && break; sleep 2; done
 if [ "$(curl -fs "$URL/status" | j 'd["isInit"]')" = "False" ]; then
   echo "Creating root user"
   curl -fs -X POST "$URL/init" -H 'Content-Type: application/json' \
-    -d "{\"newRoot\":{\"username\":\"$ABS_ROOT_USER\",\"password\":\"$ABS_ROOT_PASSWORD\"}}" >/dev/null
+    -d "{\"newRoot\":$(creds "$ABS_ROOT_USER" "$ABS_ROOT_PASSWORD")}" >/dev/null
 fi
 
 login() { curl -fs -X POST "$URL/login" -H 'Content-Type: application/json' \
-  -d "{\"username\":\"$1\",\"password\":\"$2\"}" | j 'd["user"]["token"]'; }
+  -d "$(creds "$1" "$2")" | j 'd["user"]["token"]'; }
 ROOT=$(login "$ABS_ROOT_USER" "$ABS_ROOT_PASSWORD")
 auth=(-H "Authorization: Bearer $ROOT" -H 'Content-Type: application/json')
 
@@ -39,7 +41,8 @@ echo "Library has $n items"
 
 if ! curl -fs "$URL/api/users" "${auth[@]}" | j '[u["username"] for u in d["users"]]' | grep -q "'$ABS_TEST_USER'"; then
   echo "Creating test user"
-  curl -fs -X POST "$URL/api/users" "${auth[@]}" -d "{\"username\":\"$ABS_TEST_USER\",\"password\":\"$ABS_TEST_PASSWORD\",\"type\":\"user\",\"isActive\":true,\"permissions\":{\"download\":true,\"update\":false,\"delete\":false,\"upload\":false,\"accessAllLibraries\":true,\"accessAllTags\":true}}" >/dev/null
+  body=$(creds "$ABS_TEST_USER" "$ABS_TEST_PASSWORD" | python3 -c 'import sys,json;d=json.load(sys.stdin);d.update(type="user",isActive=True,permissions=dict(download=True,update=False,delete=False,upload=False,accessAllLibraries=True,accessAllTags=True));print(json.dumps(d))')
+  curl -fs -X POST "$URL/api/users" "${auth[@]}" -d "$body" >/dev/null
 fi
 
 USER_TOKEN=$(login "$ABS_TEST_USER" "$ABS_TEST_PASSWORD")
