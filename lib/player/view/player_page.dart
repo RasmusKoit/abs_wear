@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:abs_wear/player/player.dart';
 import 'package:flutter/material.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import 'package:rotary_scrollbar/rotary_scrollbar.dart';
 
 class PlayerPage extends StatefulWidget {
@@ -22,39 +23,45 @@ class PlayerPage extends StatefulWidget {
 class _PlayerPageState extends State<PlayerPage> {
   final PageController _pageController = PageController();
   final AudioPlayerController _playerController = AudioPlayerController();
-  late Timer? _syncTimer;
+  Timer? _syncTimer;
 
   @override
   void initState() {
     super.initState();
-    asyncInitState();
+    unawaited(_init());
   }
 
-  Future<void> asyncInitState() async {
-    await _playerController.setupPlayer(
+  Future<void> _init() async {
+    final ok = await _playerController.setupPlayer(
       widget.libraryItemId,
       widget.serverUrl,
       widget.token,
     );
-    _pageController.jumpTo(0.1);
-    // setup timer to sync player state with server
-    _syncTimer = Timer.periodic(const Duration(minutes: 1), (timer) {
-      _playerController.syncOpenSession();
-    });
+    if (!mounted) return;
+    if (!ok) {
+      unawaited(
+        Fluttertoast.showToast(
+          msg: 'Could not start playback',
+          gravity: ToastGravity.CENTER,
+        ),
+      );
+      Navigator.of(context).pop();
+      return;
+    }
+    // Keep the server's progress in sync while the player is open.
+    _syncTimer = Timer.periodic(
+      const Duration(minutes: 1),
+      (_) => unawaited(_playerController.syncOpenSession()),
+    );
   }
 
   @override
   void dispose() {
-    asyncDispose();
     _syncTimer?.cancel();
-    _playerController.player.dispose();
-    _playerController.dispose();
+    // Saves the final position, then releases the player.
+    unawaited(_playerController.close());
     _pageController.dispose();
     super.dispose();
-  }
-
-  Future<void> asyncDispose() async {
-    await _playerController.syncOpenSession(close: true);
   }
 
   @override
@@ -66,18 +73,12 @@ class _PlayerPageState extends State<PlayerPage> {
       autoHide: false,
       controller: _pageController,
       child: Scaffold(
-        body: Row(
-          children: <Widget>[
-            Expanded(
-              child: PageView(
-                scrollDirection: Axis.vertical,
-                controller: _pageController,
-                children: [
-                  PlayerViewPage(playerController: _playerController),
-                  ControlViewPage(playerController: _playerController),
-                ],
-              ),
-            ),
+        body: PageView(
+          scrollDirection: Axis.vertical,
+          controller: _pageController,
+          children: [
+            PlayerViewPage(playerController: _playerController),
+            ControlViewPage(playerController: _playerController),
           ],
         ),
       ),
