@@ -15,7 +15,7 @@ class ControlViewPage extends StatefulWidget {
 }
 
 class _ControlViewPageState extends State<ControlViewPage> {
-  final _volume = VolumeController.instance;
+  final VolumeController _volume = VolumeController.instance;
   double _currentVolume = 0;
   bool _downloaded = false;
   StreamSubscription<double>? _volumeSubscription;

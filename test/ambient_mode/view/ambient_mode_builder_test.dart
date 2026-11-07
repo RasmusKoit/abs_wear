@@ -4,7 +4,9 @@ import 'package:flutter_test/flutter_test.dart';
 
 class _TestAmbientModeListener extends ValueNotifier<bool>
     implements AmbientModeListener {
-  // ignore: avoid_positional_boolean_parameters
+  // Mirrors ValueNotifier's positional constructor, whose parameter is
+  // named `_value`, so the names cannot match.
+  // ignore: avoid_positional_boolean_parameters, matching_super_parameters
   _TestAmbientModeListener(super.value);
 
   @override
