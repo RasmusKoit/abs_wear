@@ -53,5 +53,16 @@
     "localListening": "Local Listening",
     "@localListening": {
         "description": "Text for local listening"
-    }
+    },
+    "invalidUrl": "Introduce una URL completa, p. ej. https://abs.example.com",
+    "wrongCredentials": "Usuario o contraseña incorrectos.",
+    "serverError": "Error del servidor (HTTP {code}). Revisa la URL.",
+    "serverTimeout": "El servidor no respondió.",
+    "cannotReachServer": "No se puede conectar con el servidor.",
+    "fillAllFields": "Rellena todos los campos.",
+    "noLibraries": "No hay bibliotecas de libros en este servidor.",
+    "sessionExpired": "La sesión ha caducado. Inicia sesión de nuevo.",
+    "logoutConfirm": "¿Cerrar sesión? Se eliminarán los libros descargados.",
+    "cancel": "Cancelar",
+    "nothingInProgress": "Nada en curso."
 }

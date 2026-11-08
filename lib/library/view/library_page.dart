@@ -7,6 +7,15 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:rotary_scrollbar/rotary_scrollbar.dart';
 
+/// Why the library page closed itself, for the login page to act on.
+enum LibraryResult {
+  /// The server rejected the token (401): log in again.
+  sessionExpired,
+
+  /// The saved library no longer exists (404): pick another one.
+  libraryMissing,
+}
+
 /// A book on the "Continue Listening" shelf.
 @immutable
 class ShelfBook {
@@ -79,10 +88,15 @@ class _LibraryPageState extends State<LibraryPage> {
           headers: _authHeaders,
         )
         .timeout(const Duration(seconds: 20));
-    if (response.statusCode != 200) {
-      throw http.ClientException(
-        'Failed to load shelves (HTTP ${response.statusCode})',
+    if (response.statusCode == 401 || response.statusCode == 404) {
+      _close(
+        response.statusCode == 401
+            ? LibraryResult.sessionExpired
+            : LibraryResult.libraryMissing,
       );
+    }
+    if (response.statusCode != 200) {
+      throw _ShelfLoadException(response.statusCode);
     }
     final shelves = (jsonDecode(response.body) as List)
         .cast<Map<String, dynamic>>();
@@ -92,6 +106,25 @@ class _LibraryPageState extends State<LibraryPage> {
         .cast<Map<String, dynamic>>()
         .map(ShelfBook.fromJson)
         .toList();
+  }
+
+  bool _closing = false;
+
+  String _errorMessage(AppLocalizations l10n, Object? error) {
+    if (error is TimeoutException) return l10n.serverTimeout;
+    if (error is _ShelfLoadException) return l10n.errorLoadingData;
+    // IOClient wraps socket/DNS failures in ClientException.
+    if (error is http.ClientException) return l10n.cannotReachServer;
+    return l10n.errorLoadingData; // Unexpected response shape.
+  }
+
+  void _close(LibraryResult result) {
+    // Not while this route is already leaving: pop() would remove the
+    // login page underneath.
+    final route = mounted ? ModalRoute.of(context) : null;
+    if (_closing || route == null || !route.isCurrent) return;
+    _closing = true;
+    Navigator.of(context).pop(result);
   }
 
   void _refresh() {
@@ -154,7 +187,18 @@ class _LibraryPageState extends State<LibraryPage> {
                     return Padding(
                       padding: const EdgeInsets.all(8),
                       child: Text(
-                        l10n.errorLoadingData,
+                        _errorMessage(l10n, snapshot.error),
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.bodySmall,
+                      ),
+                    );
+                  }
+                  if (snapshot.data!.isEmpty) {
+                    return Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: Text(
+                        l10n.nothingInProgress,
+                        textAlign: TextAlign.center,
                         style: theme.textTheme.bodySmall,
                       ),
                     );
@@ -188,6 +232,14 @@ class _LibraryPageState extends State<LibraryPage> {
       ),
     );
   }
+}
+
+class _ShelfLoadException implements Exception {
+  const _ShelfLoadException(this.statusCode);
+  final int statusCode;
+
+  @override
+  String toString() => 'Failed to load shelves (HTTP $statusCode)';
 }
 
 class _BookCard extends StatelessWidget {
