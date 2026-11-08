@@ -9,7 +9,6 @@ import 'package:abs_wear/library/data/json_cache.dart';
 import 'package:abs_wear/library/view/library_page.dart';
 import 'package:abs_wear/player/player.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
@@ -359,13 +358,13 @@ class LoginPageState extends State<LoginPage> {
           preferredSize: const ui.Size.fromHeight(40),
           child: AppBar(
             title: Center(
-              child: SvgPicture.asset(
-                'assets/static/ABSWear_round.svg',
-                height: 45,
-                colorFilter: ColorFilter.mode(
-                  theme.colorScheme.onSurface,
-                  BlendMode.srcIn,
-                ),
+              child: Image.asset(
+                'assets/static/logo.png',
+                // Fits the 40 dp bar, clear of the round screen's edge.
+                height: 34,
+                cacheHeight: (34 * MediaQuery.devicePixelRatioOf(context))
+                    .round(),
+                semanticLabel: 'ABS Wear',
               ),
             ),
           ),
