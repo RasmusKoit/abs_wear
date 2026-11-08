@@ -2,10 +2,12 @@ import 'dart:async';
 
 import 'package:abs_wear/app/view/crown_scrollbar.dart';
 import 'package:abs_wear/l10n/l10n.dart';
+import 'package:abs_wear/library/data/downloads.dart';
 import 'package:abs_wear/library/data/json_cache.dart';
 import 'package:abs_wear/library/data/library_api.dart';
 import 'package:abs_wear/library/view/book_tile.dart';
 import 'package:abs_wear/library/view/browse_page.dart';
+import 'package:abs_wear/library/view/downloads_page.dart';
 import 'package:abs_wear/library/view/libraries_page.dart';
 import 'package:abs_wear/player/player.dart';
 import 'package:flutter/material.dart';
@@ -85,6 +87,7 @@ class _LibraryPageState extends State<LibraryPage> {
     // Independent of the shelf, so the title and switcher show even when
     // Continue Listening fails.
     unawaited(_refreshLibraries());
+    unawaited(_refreshDownloads());
     final cached = await JsonCache.read(_cacheKey);
     if (!mounted) return;
     if (cached is List && _books == null) {
@@ -185,6 +188,37 @@ class _LibraryPageState extends State<LibraryPage> {
     Navigator.of(context).pop(result);
   }
 
+  /// Whether anything is downloaded (shows the Downloads entry, which also
+  /// works offline).
+  bool _hasDownloads = false;
+
+  Future<void> _refreshDownloads() async {
+    try {
+      final items = await listDownloads(widget.serverUrl);
+      if (mounted) setState(() => _hasDownloads = items.isNotEmpty);
+    } on Object catch (e) {
+      debugPrint('Could not list downloads: $e');
+    }
+  }
+
+  Future<void> _openDownloads() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute<void>(
+        builder: (context) => DownloadsPage(
+          serverUrl: widget.serverUrl,
+          token: widget.token,
+          user: widget.user,
+        ),
+      ),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 500));
+    await AudioPlayerController.lastClose;
+    if (!mounted) return;
+    unawaited(_refreshDownloads());
+    unawaited(_refresh());
+  }
+
   Future<void> _openBook(ShelfBook book) async {
     await Navigator.push(
       context,
@@ -202,7 +236,9 @@ class _LibraryPageState extends State<LibraryPage> {
     // its final position (it closes after the page transition).
     await Future<void>.delayed(const Duration(milliseconds: 500));
     await AudioPlayerController.lastClose;
-    if (mounted) unawaited(_refresh());
+    if (!mounted) return;
+    unawaited(_refresh());
+    unawaited(_refreshDownloads());
   }
 
   Future<void> _browse() async {
@@ -225,7 +261,10 @@ class _LibraryPageState extends State<LibraryPage> {
     }
     // A book opened from the list may still be saving its position.
     await AudioPlayerController.lastClose;
-    if (mounted) unawaited(_refresh());
+    if (!mounted) return;
+    unawaited(_refresh());
+    // A book may have been downloaded or deleted from the list.
+    unawaited(_refreshDownloads());
   }
 
   Future<void> _switchLibrary() async {
@@ -290,6 +329,17 @@ class _LibraryPageState extends State<LibraryPage> {
                   onTap: () => unawaited(_browse()),
                 ),
               ),
+              if (_hasDownloads)
+                Card(
+                  child: ListTile(
+                    title: Text(
+                      l10n.downloads,
+                      style: theme.textTheme.bodySmall,
+                    ),
+                    trailing: const Icon(Icons.download_done_rounded),
+                    onTap: () => unawaited(_openDownloads()),
+                  ),
+                ),
               if ((_libraries?.length ?? 0) > 1)
                 Card(
                   child: ListTile(

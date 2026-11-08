@@ -237,5 +237,13 @@
     "sleepTimerOff": "Off",
     "@sleepTimerOff": {
         "description": "Sleep timer not set"
+    },
+    "downloads": "Downloads",
+    "@downloads": {
+        "description": "List of books downloaded to the watch"
+    },
+    "noDownloads": "Nothing downloaded.",
+    "@noDownloads": {
+        "description": "Empty downloads list"
     }
 }

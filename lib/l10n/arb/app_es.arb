@@ -93,5 +93,7 @@
     "slower": "Más lento",
     "faster": "Más rápido",
     "sleepTimer": "Temporizador",
-    "sleepTimerOff": "Desactivado"
+    "sleepTimerOff": "Desactivado",
+    "downloads": "Descargas",
+    "noDownloads": "No hay descargas."
 }
