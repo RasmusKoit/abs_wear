@@ -1,18 +1,18 @@
 {
     "@@locale": "es",
-    "serverUrlLabel": "URL del servidor",
+    "serverUrlLabel": "Server URL",
     "@serverUrlLabel": {
         "description": "Label for the server URL input field"
     },
-    "usernameLabel": "Usuario",
+    "usernameLabel": "Username",
     "@usernameLabel": {
         "description": "Username for the input field"
     },
-    "passwordLabel": "Contraseña",
+    "passwordLabel": "Password",
     "@passwordLabel": {
         "description": "Password for the input field"
     },
-    "hello": "Hola {username}",
+    "hello": "Hello {username}",
     "@hello": {
         "description": "Hello text with parameter: username",
         "placeholders": {
@@ -22,35 +22,35 @@
             }
         }
     },
-    "library": "Biblioteca",
+    "library": "Library",
     "@library": {
         "description": "Text for Library"
     },
-    "logout": "Cerrar sesión",
+    "logout": "Logout",
     "@logout": {
         "description": "Text for logout"
     },
-    "login": "Iniciar sesión",
+    "login": "Login",
     "@login": {
         "description": "Text for login"
     },
-    "continueListening": "Seguir escuchando",
+    "continueListening": "Continue Listening",
     "@continueListening": {
         "description": "Text for Continue Listening"
     },
-    "refresh": "Actualizar",
+    "refresh": "Refresh",
     "@refresh": {
         "description": "Text for refresh"
     },
-    "errorLoadingData": "Error al cargar los datos",
+    "errorLoadingData": "Error loading data",
     "@errorLoadingData": {
         "description": "Error loading data"
     },
-    "controls": "Controles",
+    "controls": "Controls",
     "@controls": {
         "description": "Text for controls"
     },
-    "localListening": "Escucha sin conexión",
+    "localListening": "Local Listening",
     "@localListening": {
         "description": "Text for local listening"
     },
@@ -76,6 +76,8 @@
     "deleteDownloadConfirm": "¿Eliminar el libro descargado del reloj?",
     "volumeUp": "Subir volumen",
     "volumeDown": "Bajar volumen",
+    "couldNotStartPlayback": "No se pudo iniciar la reproducción.",
+    "playingOffline": "Sin conexión: reproduciendo el libro descargado. El progreso se sincronizará después.",
     "previousChapter": "Capítulo anterior",
     "nextChapter": "Capítulo siguiente",
     "back10": "Retroceder 10 segundos",

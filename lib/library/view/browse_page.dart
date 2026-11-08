@@ -212,6 +212,7 @@ class _BrowsePageState extends State<BrowsePage> {
         token: widget.token,
         serverUrl: widget.serverUrl,
         libraryItemId: book.id,
+        user: widget.user,
       ),
     ),
   );
