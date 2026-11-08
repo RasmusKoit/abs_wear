@@ -10,6 +10,7 @@ import 'package:abs_wear/player/darts/network_lock.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:http/io_client.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:path_provider/path_provider.dart';
@@ -108,7 +109,12 @@ enum DownloadResult { done, noSpace, failed }
 
 class AudioPlayerController extends ChangeNotifier {
   AudioPlayerController({http.Client? client})
-    : _client = client ?? http.Client();
+    : _client = client ?? IOClient(HttpClient()..idleTimeout = _idleTimeout);
+
+  /// Shorter than the server's keep-alive (Node's default is 5 s), so a
+  /// request never goes out on a connection the server is closing ("Connection
+  /// closed before full header was received").
+  static const _idleTimeout = Duration(seconds: 3);
 
   /// Completes when the previously opened book has released its player and
   /// closed its session. just_audio_background supports a single player, and
@@ -1318,24 +1324,7 @@ class AudioPlayerController extends ChangeNotifier {
           receivedBytes += t.size;
           continue;
         }
-        // Abortable so a timed-out request releases its connection.
-        final abort = Completer<void>();
-        final request = http.AbortableRequest(
-          'GET',
-          Uri.parse(
-            '$serverUrl/api/items/$libraryItemId/file/${t.ino}/download',
-          ),
-          abortTrigger: abort.future,
-        )..headers.addAll(_authHeaders);
-        final http.StreamedResponse response;
-        try {
-          response = await _client
-              .send(request)
-              .timeout(const Duration(seconds: 30));
-        } on TimeoutException {
-          abort.complete();
-          rethrow;
-        }
+        final response = await _requestDownload(t);
         if (response.statusCode != 200) {
           await response.stream.listen(null).cancel();
           throw HttpException('HTTP ${response.statusCode} for ${t.filename}');
@@ -1453,6 +1442,30 @@ class AudioPlayerController extends ChangeNotifier {
     }
     if (wasPlaying) unawaited(player.play());
     _notify();
+  }
+
+  /// Starts the download of one file. Retries once when the connection
+  /// drops before the response starts, which a reused keep-alive
+  /// connection can do.
+  Future<http.StreamedResponse> _requestDownload(BookTrack t) async {
+    for (var attempt = 1; ; attempt++) {
+      // Abortable so a timed-out request releases its connection.
+      final abort = Completer<void>();
+      final request = http.AbortableRequest(
+        'GET',
+        Uri.parse('$serverUrl/api/items/$libraryItemId/file/${t.ino}/download'),
+        abortTrigger: abort.future,
+      )..headers.addAll(_authHeaders);
+      try {
+        return await _client.send(request).timeout(const Duration(seconds: 30));
+      } on TimeoutException {
+        abort.complete();
+        rethrow;
+      } on http.ClientException catch (e) {
+        if (attempt >= 2 || _closed) rethrow;
+        debugPrint('Download request failed, retrying: $e');
+      }
+    }
   }
 
   /// Replaces the server session with a new one that streams the book as
