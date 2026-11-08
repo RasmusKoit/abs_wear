@@ -1,18 +1,18 @@
 {
     "@@locale": "es",
-    "serverUrlLabel": "Server URL",
+    "serverUrlLabel": "URL del servidor",
     "@serverUrlLabel": {
         "description": "Label for the server URL input field"
     },
-    "usernameLabel": "Username",
+    "usernameLabel": "Usuario",
     "@usernameLabel": {
         "description": "Username for the input field"
     },
-    "passwordLabel": "Password",
+    "passwordLabel": "Contraseña",
     "@passwordLabel": {
         "description": "Password for the input field"
     },
-    "hello": "Hello {username}",
+    "hello": "Hola {username}",
     "@hello": {
         "description": "Hello text with parameter: username",
         "placeholders": {
@@ -22,35 +22,35 @@
             }
         }
     },
-    "library": "Library",
+    "library": "Biblioteca",
     "@library": {
         "description": "Text for Library"
     },
-    "logout": "Logout",
+    "logout": "Cerrar sesión",
     "@logout": {
         "description": "Text for logout"
     },
-    "login": "Login",
+    "login": "Iniciar sesión",
     "@login": {
         "description": "Text for login"
     },
-    "continueListening": "Continue Listening",
+    "continueListening": "Seguir escuchando",
     "@continueListening": {
         "description": "Text for Continue Listening"
     },
-    "refresh": "Refresh",
+    "refresh": "Actualizar",
     "@refresh": {
         "description": "Text for refresh"
     },
-    "errorLoadingData": "Error loading data",
+    "errorLoadingData": "Error al cargar los datos",
     "@errorLoadingData": {
         "description": "Error loading data"
     },
-    "controls": "Controls",
+    "controls": "Controles",
     "@controls": {
         "description": "Text for controls"
     },
-    "localListening": "Local Listening",
+    "localListening": "Escucha sin conexión",
     "@localListening": {
         "description": "Text for local listening"
     },
@@ -72,5 +72,12 @@
     "deleteDownload": "Eliminar descarga",
     "deleteDownloadConfirm": "¿Eliminar el libro descargado del reloj?",
     "volumeUp": "Subir volumen",
-    "volumeDown": "Bajar volumen"
+    "volumeDown": "Bajar volumen",
+    "previousChapter": "Capítulo anterior",
+    "nextChapter": "Capítulo siguiente",
+    "back10": "Retroceder 10 segundos",
+    "forward10": "Avanzar 10 segundos",
+    "play": "Reproducir",
+    "pause": "Pausa",
+    "timeLeftLabel": "Quedan {time} del capítulo"
 }
