@@ -23,6 +23,15 @@ void main() {
       expect(listener.isAmbientModeActive, isTrue);
     });
 
+    test('counts ambient updates so dimmed UI can redraw', () async {
+      final listener = AmbientModeListener.instance;
+      final before = listener.updates.value;
+
+      await simulatePlatformCall('ambient_mode', 'onUpdateAmbient');
+
+      expect(listener.updates.value, before + 1);
+    });
+
     test('updates when ambient mode is deactivated', () async {
       final listener = AmbientModeListener.instance..value = true;
 

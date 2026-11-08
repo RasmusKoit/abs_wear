@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:abs_wear/ambient_mode/ambient_mode.dart';
 import 'package:abs_wear/player/components/scrolling_text.dart';
 import 'package:abs_wear/player/components/time_left_widget.dart';
 import 'package:abs_wear/player/darts/audio_player.dart';
@@ -23,65 +24,114 @@ class PlayerViewPage extends StatelessWidget {
         if (!controller.isLoaded) {
           return const Center(child: CircularProgressIndicator());
         }
-        return StreamBuilder<double>(
-          stream: controller.bookPositionStream,
-          builder: (context, _) => Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const SizedBox(height: 8),
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 35,
-                  vertical: 2.5,
+        final ambient = AmbientModeListener.instance;
+        return ValueListenableBuilder<bool>(
+          valueListenable: ambient,
+          builder: (context, isAmbient, _) => isAmbient
+              // Ambient: redraw only on the system's (minutely) updates.
+              ? ValueListenableBuilder<int>(
+                  valueListenable: ambient.updates,
+                  builder: (context, tick, _) =>
+                      _ambientContent(theme, tick, ambient.burnInProtection),
+                )
+              : StreamBuilder<double>(
+                  stream: controller.bookPositionStream,
+                  builder: (context, _) => _content(theme),
                 ),
-                child: ScrollingText(
-                  text: controller.bookTitle,
-                  style: theme.textTheme.labelMedium!,
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 30),
-                child: ScrollingText(
-                  text: controller.chapterName,
-                  style: theme.textTheme.labelSmall!,
-                ),
-              ),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.skip_previous),
-                    onPressed: () =>
-                        unawaited(controller.seekToPreviousChapter()),
-                  ),
-                  _PlayPauseButton(controller: controller),
-                  IconButton(
-                    icon: const Icon(Icons.skip_next),
-                    onPressed: () => unawaited(controller.seekToNextChapter()),
-                  ),
-                ],
-              ),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.replay_10_rounded),
-                    onPressed: () => unawaited(controller.seekRelative(-10)),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.forward_10_rounded),
-                    onPressed: () => unawaited(controller.seekRelative(10)),
-                  ),
-                ],
-              ),
-              TimeLeftWidget(
-                timeLeft: formatDuration(controller.timeLeft),
-                style: theme.textTheme.labelSmall!,
-              ),
-            ],
-          ),
         );
       },
+    );
+  }
+
+  /// Always-on variant: no buttons (few lit pixels), minutes only (it
+  /// redraws about once a minute), shifted a little on each update when
+  /// the display needs burn-in protection.
+  Widget _ambientContent(ThemeData theme, int tick, bool burnIn) {
+    final controller = playerController;
+    final left = controller.timeLeft;
+    final shift = burnIn ? Offset((tick % 3 - 1) * 4, (tick % 2) * 4) : null;
+    final content = Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 35),
+          child: ScrollingText(
+            text: controller.bookTitle,
+            style: theme.textTheme.labelMedium!,
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 30),
+          child: ScrollingText(
+            text: controller.chapterName,
+            style: theme.textTheme.labelSmall!,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Text(
+          '${left.inHours.toString().padLeft(2, '0')}:'
+          '${(left.inMinutes % 60).toString().padLeft(2, '0')}',
+          style: theme.textTheme.labelSmall,
+        ),
+      ],
+    );
+    return shift == null
+        ? content
+        : Transform.translate(offset: shift, child: content);
+  }
+
+  Widget _content(ThemeData theme) {
+    final controller = playerController;
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        const SizedBox(height: 8),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 35, vertical: 2.5),
+          child: ScrollingText(
+            text: controller.bookTitle,
+            style: theme.textTheme.labelMedium!,
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 30),
+          child: ScrollingText(
+            text: controller.chapterName,
+            style: theme.textTheme.labelSmall!,
+          ),
+        ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.skip_previous),
+              onPressed: () => unawaited(controller.seekToPreviousChapter()),
+            ),
+            _PlayPauseButton(controller: controller),
+            IconButton(
+              icon: const Icon(Icons.skip_next),
+              onPressed: () => unawaited(controller.seekToNextChapter()),
+            ),
+          ],
+        ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.replay_10_rounded),
+              onPressed: () => unawaited(controller.seekRelative(-10)),
+            ),
+            IconButton(
+              icon: const Icon(Icons.forward_10_rounded),
+              onPressed: () => unawaited(controller.seekRelative(10)),
+            ),
+          ],
+        ),
+        TimeLeftWidget(
+          timeLeft: formatDuration(controller.timeLeft),
+          style: theme.textTheme.labelSmall!,
+        ),
+      ],
     );
   }
 }
