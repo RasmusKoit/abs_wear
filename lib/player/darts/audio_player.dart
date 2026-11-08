@@ -214,37 +214,52 @@ class AudioPlayerController extends ChangeNotifier {
   ];
 
   /// Listening time left before playback pauses; null when off. Counts
-  /// down only while playing.
+  /// down only while audio is actually heard (not paused or buffering).
   final ValueNotifier<Duration?> sleepRemaining = ValueNotifier(null);
   Timer? _sleepTimer;
+  final Stopwatch _sleepClock = Stopwatch();
+  Duration _sleepTarget = Duration.zero;
 
-  /// Moves to the next sleep option (or off after the last).
+  /// Index in [sleepOptions] of the running timer; -1 when off.
+  int _sleepChoice = -1;
+
+  /// Moves to the option after the chosen one (or off after the last).
   void cycleSleepTimer() {
-    final current = sleepRemaining.value;
-    final next = current == null
-        ? sleepOptions.first
-        : sleepOptions.where((d) => d > current).firstOrNull;
-    setSleepTimer(next);
+    final next = _sleepChoice + 1;
+    setSleepTimer(next < sleepOptions.length ? next : null);
   }
 
-  void setSleepTimer(Duration? duration) {
+  /// Starts the timer with [sleepOptions] at [choice], or turns it off.
+  void setSleepTimer(int? choice) {
     _sleepTimer?.cancel();
     _sleepTimer = null;
+    _sleepClock
+      ..stop()
+      ..reset();
+    _sleepChoice = choice ?? -1;
     if (_closed) return;
-    sleepRemaining.value = duration;
-    if (duration == null) return;
+    if (choice == null) {
+      sleepRemaining.value = null;
+      return;
+    }
+    _sleepTarget = sleepOptions[choice];
+    sleepRemaining.value = _sleepTarget;
+    if (_audible) _sleepClock.start();
+    // The clock measures time; the tick only shows it (late ticks don't
+    // slow the timer down).
     _sleepTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      final left = sleepRemaining.value;
-      if (left == null || !player.playing) return;
-      final next = left - const Duration(seconds: 1);
-      if (next > Duration.zero) {
-        sleepRemaining.value = next;
+      final left = _sleepTarget - _sleepClock.elapsed;
+      if (left > Duration.zero) {
+        sleepRemaining.value = Duration(seconds: left.inSeconds + 1);
         return;
       }
       setSleepTimer(null);
       unawaited(player.pause());
     });
   }
+
+  bool get _audible =>
+      player.playing && player.processingState == ProcessingState.ready;
 
   bool _closed = false;
 
@@ -399,11 +414,11 @@ class AudioPlayerController extends ChangeNotifier {
         return false;
       }
     }
+    await _applySavedSpeed();
     if (_closed) {
       unawaited(_closeOrphanSession());
       return false;
     }
-    await _applySavedSpeed();
     _stateSub = player.playerStateStream.listen(_onPlayerState);
     _errorSub = player.errorStream.listen(_onPlayerError);
     isLoaded = true;
@@ -678,6 +693,9 @@ class AudioPlayerController extends ChangeNotifier {
     final audible =
         state.playing && state.processingState == ProcessingState.ready;
     audible ? _listenClock.start() : _listenClock.stop();
+    if (_sleepTimer != null) {
+      audible ? _sleepClock.start() : _sleepClock.stop();
+    }
     // Keep the network up while streaming, also while loading with the
     // screen off.
     unawaited(NetworkLock.set(hold: state.playing && _streaming));
@@ -987,7 +1005,8 @@ class AudioPlayerController extends ChangeNotifier {
     final pos = bookPosition;
     final i = chapterIndexAt(pos);
     final end = i >= 0 ? chapters[i].end : duration;
-    final seconds = (end - pos).clamp(0, double.infinity);
+    // Real time at the current speed, like the other ABS apps.
+    final seconds = (end - pos).clamp(0, double.infinity) / speed;
     return Duration(seconds: seconds.floor());
   }
 

@@ -183,10 +183,14 @@ class _ControlViewPageState extends State<ControlViewPage> {
                     ),
                     SizedBox(
                       width: 48,
-                      child: Text(
-                        '${_formatSpeed(_controller.speed)}x',
-                        textAlign: TextAlign.center,
-                        style: theme.textTheme.labelLarge,
+                      // Shrinks rather than wrapping at large text sizes.
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          '${_formatSpeed(_controller.speed)}x',
+                          maxLines: 1,
+                          style: theme.textTheme.labelLarge,
+                        ),
                       ),
                     ),
                     IconButton(
