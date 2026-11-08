@@ -7,6 +7,15 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:rotary_scrollbar/rotary_scrollbar.dart';
 
+/// Why the library page closed itself, for the login page to act on.
+enum LibraryResult {
+  /// The server rejected the token (401): log in again.
+  sessionExpired,
+
+  /// The saved library no longer exists (404): pick another one.
+  libraryMissing,
+}
+
 /// A book on the "Continue Listening" shelf.
 @immutable
 class ShelfBook {
@@ -79,6 +88,13 @@ class _LibraryPageState extends State<LibraryPage> {
           headers: _authHeaders,
         )
         .timeout(const Duration(seconds: 20));
+    if (response.statusCode == 401 || response.statusCode == 404) {
+      _close(
+        response.statusCode == 401
+            ? LibraryResult.sessionExpired
+            : LibraryResult.libraryMissing,
+      );
+    }
     if (response.statusCode != 200) {
       throw http.ClientException(
         'Failed to load shelves (HTTP ${response.statusCode})',
@@ -92,6 +108,14 @@ class _LibraryPageState extends State<LibraryPage> {
         .cast<Map<String, dynamic>>()
         .map(ShelfBook.fromJson)
         .toList();
+  }
+
+  bool _closing = false;
+
+  void _close(LibraryResult result) {
+    if (_closing || !mounted) return;
+    _closing = true;
+    Navigator.of(context).pop(result);
   }
 
   void _refresh() {
@@ -154,7 +178,20 @@ class _LibraryPageState extends State<LibraryPage> {
                     return Padding(
                       padding: const EdgeInsets.all(8),
                       child: Text(
-                        l10n.errorLoadingData,
+                        snapshot.error is http.ClientException
+                            ? l10n.errorLoadingData
+                            : l10n.cannotReachServer,
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.bodySmall,
+                      ),
+                    );
+                  }
+                  if (snapshot.data!.isEmpty) {
+                    return Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: Text(
+                        l10n.nothingInProgress,
+                        textAlign: TextAlign.center,
                         style: theme.textTheme.bodySmall,
                       ),
                     );

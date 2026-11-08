@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:abs_wear/l10n/l10n.dart';
@@ -8,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
 import 'package:rotary_scrollbar/rotary_scrollbar.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -22,10 +24,14 @@ class LoginPageState extends State<LoginPage> {
   final TextEditingController serverUrlController = TextEditingController();
   final TextEditingController usernameController = TextEditingController();
   final TextEditingController passwordController = TextEditingController();
-  final _pageController = PageController();
+  final _scrollController = ScrollController();
   String _token = '';
   String defaultLibraryId = '';
   bool _loggingIn = false;
+
+  /// True until saved credentials have been read, so a logged-in user
+  /// doesn't see the login form flash on every start.
+  bool _checking = true;
   late AppLocalizations l10n;
 
   @override
@@ -39,7 +45,7 @@ class LoginPageState extends State<LoginPage> {
     serverUrlController.dispose();
     usernameController.dispose();
     passwordController.dispose();
-    _pageController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -51,6 +57,16 @@ class LoginPageState extends State<LoginPage> {
   }
 
   Future<void> _checkToken() async {
+    try {
+      await _restoreSession();
+    } on Object catch (e) {
+      debugPrint('Could not restore session: $e');
+    } finally {
+      if (mounted) setState(() => _checking = false);
+    }
+  }
+
+  Future<void> _restoreSession() async {
     final prefs = await SharedPreferences.getInstance();
     final savedToken = prefs.getString('token');
     final savedServerUrl = prefs.getString('serverUrl');
@@ -63,15 +79,18 @@ class LoginPageState extends State<LoginPage> {
     if (libraryId.isEmpty) {
       // Older installs could save a token without a library; resolve one
       // now rather than showing a library that can never load.
+      if (mounted) setState(() => _checking = false);
       try {
-        libraryId = await _firstLibraryId(savedServerUrl, savedToken) ?? '';
+        libraryId = await _pickLibraryId(savedServerUrl, savedToken) ?? '';
       } on Object catch (e) {
         debugPrint('Could not resolve library: $e');
       }
+      // The user may have logged in while this was resolving.
+      if (!mounted || _token.isNotEmpty || _loggingIn) return;
       if (libraryId.isEmpty) return; // Fall back to the login form.
       await prefs.setString('defaultLibraryId', libraryId);
     }
-    if (!mounted) return;
+    if (!mounted || _token.isNotEmpty || _loggingIn) return;
     setState(() {
       _token = savedToken;
       serverUrlController.text = savedServerUrl;
@@ -82,7 +101,7 @@ class LoginPageState extends State<LoginPage> {
 
   Future<void> _toast(String msg) => Fluttertoast.showToast(
     msg: msg,
-    toastLength: Toast.LENGTH_SHORT,
+    toastLength: Toast.LENGTH_LONG,
     gravity: ToastGravity.CENTER,
   );
 
@@ -93,7 +112,7 @@ class LoginPageState extends State<LoginPage> {
     if (uri == null ||
         !(uri.scheme == 'http' || uri.scheme == 'https') ||
         uri.host.isEmpty) {
-      await _toast('Enter a full URL, e.g. https://abs.example.com');
+      await _toast(l10n.invalidUrl);
       return;
     }
     setState(() => _loggingIn = true);
@@ -105,19 +124,25 @@ class LoginPageState extends State<LoginPage> {
             body: jsonEncode({'username': username, 'password': password}),
           )
           .timeout(const Duration(seconds: 20));
+      if (response.statusCode == 401) {
+        await _toast(l10n.wrongCredentials);
+        return;
+      }
       if (response.statusCode != 200) {
-        await _toast('Wrong username or password.');
+        // e.g. 404 from a wrong reverse-proxy path, or a 5xx.
+        await _toast(l10n.serverError(response.statusCode));
         return;
       }
       final data = jsonDecode(response.body) as Map<String, dynamic>;
       final user = data['user'] as Map<String, dynamic>;
       final token = user['token'] as String;
-      // Users without a default library (e.g. root) get the first one.
-      final libraryId =
-          data['userDefaultLibraryId'] as String? ??
-          await _firstLibraryId(url, token);
+      final libraryId = await _pickLibraryId(
+        url,
+        token,
+        preferred: data['userDefaultLibraryId'] as String?,
+      );
       if (libraryId == null) {
-        await _toast('No libraries on this server.');
+        await _toast(l10n.noLibraries);
         return;
       }
 
@@ -126,23 +151,33 @@ class LoginPageState extends State<LoginPage> {
       await prefs.setString('username', username);
       await prefs.setString('token', token);
       await prefs.setString('defaultLibraryId', libraryId);
+      // Don't keep the password in memory once it has done its job.
+      passwordController.clear();
       if (!mounted) return;
       setState(() {
         _token = token;
         defaultLibraryId = libraryId;
         serverUrlController.text = url;
       });
+    } on TimeoutException {
+      await _toast(l10n.serverTimeout);
     } on Object catch (e) {
       // Network errors are Exceptions, but bad responses throw TypeError
       // from the casts above; both should end in a message, not silence.
       debugPrint('Login failed: $e');
-      await _toast('Error with URL');
+      await _toast(l10n.cannotReachServer);
     } finally {
       if (mounted) setState(() => _loggingIn = false);
     }
   }
 
-  Future<String?> _firstLibraryId(String url, String token) async {
+  /// The user's default library if it holds books (the player can't play
+  /// podcasts yet), otherwise the first book library. Null when none.
+  Future<String?> _pickLibraryId(
+    String url,
+    String token, {
+    String? preferred,
+  }) async {
     final response = await http
         .get(
           Uri.parse('$url/api/libraries'),
@@ -151,20 +186,123 @@ class LoginPageState extends State<LoginPage> {
         .timeout(const Duration(seconds: 20));
     if (response.statusCode != 200) return null;
     final body = jsonDecode(response.body) as Map<String, dynamic>;
-    final libraries = (body['libraries'] as List)
+    final books = (body['libraries'] as List)
         .cast<Map<String, dynamic>>()
-        .where((l) => l['mediaType'] == 'book');
-    return libraries.isEmpty ? null : libraries.first['id'] as String;
+        .where((l) => l['mediaType'] == 'book')
+        .map((l) => l['id'] as String)
+        .toList();
+    if (preferred != null && books.contains(preferred)) return preferred;
+    return books.isEmpty ? null : books.first;
   }
 
-  Future<void> logout() async {
+  /// Forgets the session. With [deleteDownloads] (an explicit logout) the
+  /// server token is revoked and downloaded books are removed, so nothing
+  /// of this account stays on a shared watch.
+  Future<void> logout({bool deleteDownloads = false}) async {
+    final token = _token;
+    final url = serverUrlController.text;
     final prefs = await SharedPreferences.getInstance();
     passwordController.clear();
     await prefs.remove('token');
-    // set the token to an empty string
-    setState(() {
-      _token = '';
-    });
+    await prefs.remove('defaultLibraryId');
+    if (mounted) {
+      setState(() {
+        _token = '';
+        defaultLibraryId = '';
+      });
+    }
+    if (!deleteDownloads) return;
+    unawaited(_revokeToken(url, token));
+    try {
+      final docs = await getApplicationDocumentsDirectory();
+      // The documents directory holds only per-book download folders.
+      for (final entry in docs.listSync()) {
+        if (entry is Directory) entry.deleteSync(recursive: true);
+      }
+    } on Object catch (e) {
+      debugPrint('Could not delete downloads: $e');
+    }
+  }
+
+  Future<void> _revokeToken(String url, String token) async {
+    if (token.isEmpty) return;
+    try {
+      await http
+          .post(
+            Uri.parse('$url/logout'),
+            headers: {'Authorization': 'Bearer $token'},
+          )
+          .timeout(const Duration(seconds: 10));
+    } on Object catch (e) {
+      debugPrint('Server logout failed: $e');
+    }
+  }
+
+  Future<void> _confirmLogout() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        content: Text(l10n.logoutConfirm, textAlign: TextAlign.center),
+        actionsAlignment: MainAxisAlignment.center,
+        actions: [
+          IconButton(
+            tooltip: l10n.cancel,
+            icon: const Icon(Icons.close_rounded),
+            onPressed: () => Navigator.pop(context, false),
+          ),
+          IconButton(
+            tooltip: l10n.logout,
+            icon: const Icon(Icons.check_rounded),
+            onPressed: () => Navigator.pop(context, true),
+          ),
+        ],
+      ),
+    );
+    if (confirmed ?? false) await logout(deleteDownloads: true);
+  }
+
+  Future<void> _openLibrary() async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute<LibraryResult>(
+        builder: (context) => LibraryPage(
+          serverUrl: serverUrlController.text,
+          token: _token,
+          libraryId: defaultLibraryId,
+          user: usernameController.text,
+        ),
+      ),
+    );
+    if (!mounted) return;
+    switch (result) {
+      case LibraryResult.sessionExpired:
+        // Token revoked or expired: log in again, keep the downloads.
+        await logout();
+        unawaited(_toast(l10n.sessionExpired));
+      case LibraryResult.libraryMissing:
+        await _reresolveLibrary();
+      case null:
+        break;
+    }
+  }
+
+  /// The saved library was deleted on the server; switch to another one.
+  Future<void> _reresolveLibrary() async {
+    String? id;
+    try {
+      id = await _pickLibraryId(serverUrlController.text, _token);
+    } on Object catch (e) {
+      debugPrint('Could not resolve library: $e');
+    }
+    if (!mounted) return;
+    if (id == null) {
+      unawaited(_toast(l10n.noLibraries));
+      return;
+    }
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('defaultLibraryId', id);
+    setState(() => defaultLibraryId = id!);
+    await _openLibrary();
   }
 
   @override
@@ -175,7 +313,7 @@ class LoginPageState extends State<LoginPage> {
       padding: 1,
       hasHapticFeedback: false,
       autoHide: false,
-      controller: _pageController,
+      controller: _scrollController,
       child: Scaffold(
         appBar: PreferredSize(
           preferredSize: const ui.Size.fromHeight(40),
@@ -193,10 +331,15 @@ class LoginPageState extends State<LoginPage> {
           ),
         ),
         body: ListView(
-          controller: _pageController,
+          controller: _scrollController,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           children: [
-            if (_token == '')
+            if (_checking)
+              const Padding(
+                padding: EdgeInsets.all(24),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else if (_token == '')
               _buildLoginForm(theme)
             else
               _buildLoggedInState(theme),
@@ -221,6 +364,7 @@ class LoginPageState extends State<LoginPage> {
           ),
           maxLines: null,
           minLines: 1,
+          autocorrect: false,
           keyboardType: TextInputType.visiblePassword, // Disable newline
         ),
         TextFormField(
@@ -234,6 +378,7 @@ class LoginPageState extends State<LoginPage> {
           ),
           maxLines: null,
           minLines: 1,
+          autocorrect: false,
           keyboardType: TextInputType.visiblePassword, // Disable newline
         ),
         TextFormField(
@@ -246,6 +391,8 @@ class LoginPageState extends State<LoginPage> {
             labelStyle: theme.textTheme.labelSmall,
           ),
           obscureText: true,
+          autocorrect: false,
+          enableSuggestions: false,
         ),
         const SizedBox(height: 8),
         ElevatedButton(
@@ -258,7 +405,7 @@ class LoginPageState extends State<LoginPage> {
                   if (serverUrl.isEmpty ||
                       username.isEmpty ||
                       password.isEmpty) {
-                    unawaited(_toast('Fill in all fields.'));
+                    unawaited(_toast(l10n.fillAllFields));
                     return;
                   }
                   unawaited(login(serverUrl, username, password));
@@ -296,31 +443,16 @@ class LoginPageState extends State<LoginPage> {
           ),
         ),
         ElevatedButton(
-          onPressed: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute<LibraryPage>(
-                builder: (context) => LibraryPage(
-                  serverUrl: serverUrlController.text,
-                  token: _token,
-                  libraryId: defaultLibraryId,
-                  user: usernameController.text,
-                ),
-              ),
-            );
-          },
+          onPressed: () => unawaited(_openLibrary()),
           child: Text(l10n.library, style: theme.textTheme.bodyMedium),
         ),
         const SizedBox(height: 8),
         Center(
           child: ElevatedButton(
-            // make the logout button red
             style: ElevatedButton.styleFrom(
               backgroundColor: theme.colorScheme.error,
             ),
-            onPressed: () async {
-              await logout();
-            },
+            onPressed: () => unawaited(_confirmLogout()),
             child: Text(l10n.logout, style: theme.textTheme.bodyMedium),
           ),
         ),

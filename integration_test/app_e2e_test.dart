@@ -197,6 +197,20 @@ void main() {
     expect(find.text('Hello $absUser'), findsNothing);
   });
 
+  testWidgets('an expired token returns to the login form', (tester) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('serverUrl', absUrl);
+    await prefs.setString('username', absUser);
+    await prefs.setString('token', 'revoked-token');
+    await prefs.setString('defaultLibraryId', 'any');
+    await tester.pumpWidget(const App());
+    await pumpUntil(tester, find.text('Hello $absUser'));
+    await scrollAndTap(tester, find.widgetWithText(ElevatedButton, 'Library'));
+    // The 401 pops the library and clears the token.
+    await pumpUntil(tester, find.widgetWithText(TextFormField, 'Password'));
+    expect(prefs.getString('token'), isNull);
+  });
+
   testWidgets('logs in and lists Continue Listening', (tester) async {
     await logInAndOpenLibrary(tester);
 
