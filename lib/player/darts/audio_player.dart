@@ -1455,8 +1455,6 @@ class AudioPlayerController extends ChangeNotifier {
     _notify();
   }
 
-  /// Closes the session on the server (saving the final position) and then
-  /// releases the player. Safe to call without awaiting from dispose().
   /// Replaces the server session with a new one that streams the book as
   /// HLS where needed, starting at [position]. Keeps the current session
   /// when that fails.
@@ -1494,6 +1492,8 @@ class AudioPlayerController extends ChangeNotifier {
     }
   }
 
+  /// Closes the session on the server (saving the final position) and then
+  /// releases the player. Safe to call without awaiting from dispose().
   Future<void> close() {
     if (_closed) return _previousClose;
     _closed = true;
