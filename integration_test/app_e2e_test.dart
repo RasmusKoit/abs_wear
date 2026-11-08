@@ -352,6 +352,9 @@ void main() {
     // page disposes after the transition, then closes the session.
     await pumpFor(tester, const Duration(milliseconds: 500));
     await tester.runAsync(() => AudioPlayerController.lastClose);
+    // The library refreshes right after the close (and may reorder).
+    await pumpFor(tester, const Duration(milliseconds: 300));
+    await pumpUntil(tester, find.byIcon(Icons.refresh));
     await scrollAndTap(tester, find.text('Single File Book'));
     // Still 45s in (Chapter One), not reset to 0 -> 00:00:15 left.
     await pumpUntil(tester, find.text('00:00:15'));
@@ -651,18 +654,41 @@ void main() {
       () => simulateAmbientCall('onEnterAmbient', {'burnInProtection': true}),
     );
     await tester.pump();
-    // No buttons; minutes-only time left; title and chapter stay.
+    // No buttons; minutes-only time left; title and chapter stay; the
+    // dimmed (black) theme is on.
     expect(find.byIcon(Icons.pause), findsNothing);
     expect(find.text('00:00'), findsOneWidget);
     expect(find.textContaining('Chapter One'), findsWidgets);
+    expect(
+      Theme.of(tester.element(find.text('00:00'))).colorScheme.surface,
+      Colors.black,
+    );
+    // Burn-in protection shifts the content on each ambient update.
+    Offset shift() {
+      final transform = tester.widget<Transform>(
+        find
+            .ancestor(of: find.text('00:00'), matching: find.byType(Transform))
+            .first,
+      );
+      final t = transform.transform.getTranslation();
+      return Offset(t.x, t.y);
+    }
+
+    final before = shift();
     await tester.runAsync(() => simulateAmbientCall('onUpdateAmbient'));
     await tester.pump();
+    expect(shift(), isNot(before));
 
-    // Audio keeps playing while dimmed.
+    // Audio keeps playing while dimmed: about 3 s pass, so time left drops
+    // from 13-14 s to at most 11 s (a stall would leave it near 13).
     await pumpFor(tester, const Duration(seconds: 3));
     await tester.runAsync(() => simulateAmbientCall('onExitAmbient'));
+    await tester.pump();
+    final controller = tester
+        .widget<PlayerViewPage>(find.byType(PlayerViewPage))
+        .playerController;
+    expect(controller.timeLeft.inSeconds, inInclusiveRange(1, 11));
     await pumpUntil(tester, find.byIcon(Icons.pause));
-    await pumpUntil(tester, find.text('00:00:09'));
     await tester.tap(find.byIcon(Icons.pause));
     await pumpUntil(tester, find.byIcon(Icons.play_arrow));
   });
