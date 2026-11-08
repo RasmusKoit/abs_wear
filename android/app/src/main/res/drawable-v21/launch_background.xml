@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Splash before Android 12 (Wear OS 3): the colored app logo on black.
+     splash_logo.png carries transparent padding for the Android 12+ splash,
+     so the logo itself shows at two thirds of this size. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@android:color/black" />
+    <item
+        android:width="144dp"
+        android:height="144dp"
+        android:gravity="center"
+        android:drawable="@drawable/splash_logo" />
+</layer-list>
