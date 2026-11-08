@@ -138,6 +138,14 @@
     "@downloadNoSpace": {
         "description": "Download failed: disk full"
     },
+    "cancelDownload": "Cancel download",
+    "@cancelDownload": {
+        "description": "Stop the running download"
+    },
+    "downloadCanceled": "Download canceled.",
+    "@downloadCanceled": {
+        "description": "The user stopped the download"
+    },
     "deleteDownload": "Delete download",
     "@deleteDownload": {
         "description": "Delete downloaded files"

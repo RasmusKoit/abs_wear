@@ -63,14 +63,19 @@ class _ControlViewPageState extends State<ControlViewPage> {
 
   Future<void> _download() async {
     final l10n = context.l10n;
-    final result = await _controller.downloadBook();
+    final result = await _controller.downloadBook(
+      cancelLabel: l10n.cancel,
+      channelName: l10n.downloads,
+    );
     // Leaving the player cancels the download; no toast on another page.
-    if (!mounted) return;
+    // (Not `mounted`: this page may have been rebuilt meanwhile.)
+    if (!_controller.isOpen) return;
     unawaited(
       _toast(switch (result) {
         DownloadResult.done => l10n.downloadDone,
         DownloadResult.noSpace => l10n.downloadNoSpace,
         DownloadResult.failed => l10n.downloadFailed,
+        DownloadResult.canceled => l10n.downloadCanceled,
       }),
     );
   }
@@ -238,14 +243,29 @@ class _ControlViewPageState extends State<ControlViewPage> {
         valueListenable: _controller.downloadProgress,
         builder: (context, progress, _) => Column(
           children: [
-            SizedBox.square(
-              dimension: 48,
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: CircularProgressIndicator(
-                  value: progress,
-                  strokeWidth: 2.5,
-                  color: theme.colorScheme.secondary,
+            // Tap the progress ring to stop the download.
+            IconButton(
+              tooltip: l10n.cancelDownload,
+              onPressed: _controller.cancelDownload,
+              icon: SizedBox.square(
+                dimension: 24,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    SizedBox.square(
+                      dimension: 24,
+                      child: CircularProgressIndicator(
+                        value: progress,
+                        strokeWidth: 2.5,
+                        color: theme.colorScheme.secondary,
+                      ),
+                    ),
+                    Icon(
+                      Icons.close_rounded,
+                      size: 14,
+                      color: theme.colorScheme.secondary,
+                    ),
+                  ],
                 ),
               ),
             ),
