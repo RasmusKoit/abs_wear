@@ -79,6 +79,11 @@ class AudioPlayerController extends ChangeNotifier {
   AudioPlayerController({http.Client? client})
     : _client = client ?? http.Client();
 
+  /// Completes when the previously opened book has released its player and
+  /// closed its session. just_audio_background supports a single player, and
+  /// a new session must not start before the old one saved its position.
+  static Future<void> _previousClose = Future.value();
+
   final http.Client _client;
   final AudioPlayer player = AudioPlayer();
 
@@ -123,10 +128,24 @@ class AudioPlayerController extends ChangeNotifier {
     return _pendingPosition = offset + player.position.inMilliseconds / 1000;
   }
 
-  /// Real listening time (wall clock while playing), for session stats.
+  /// Real listening time (wall clock while audio is actually playing, not
+  /// buffering or finished), for session stats.
   final Stopwatch _listenClock = Stopwatch();
   Duration _reportedListening = Duration.zero;
-  StreamSubscription<bool>? _playingSub;
+  StreamSubscription<PlayerState>? _stateSub;
+  StreamSubscription<PlayerException>? _errorSub;
+  bool _wasPlaying = false;
+
+  /// True while sources are swapped; the stop/start it causes is not a
+  /// user pause and must not sync a transient position.
+  bool _reloading = false;
+
+  /// Set after a playback error: the native player is idle and must be
+  /// reloaded before it can play again.
+  bool _needsReload = false;
+
+  /// Called with a short message when playback fails (e.g. network loss).
+  void Function(String message)? onPlaybackError;
 
   /// Serialises syncs so overlapping calls don't double-report time.
   Future<void> _syncChain = Future.value();
@@ -144,10 +163,14 @@ class AudioPlayerController extends ChangeNotifier {
   int chapterIndexAt(double time) {
     var index = -1;
     for (var i = 0; i < chapters.length; i++) {
-      if (chapters[i].start <= time) index = i;
+      // Seeks are rounded to milliseconds, so allow a little slack or a seek
+      // to a chapter start could land just before it.
+      if (chapters[i].start <= time + _chapterSlack) index = i;
     }
     return index;
   }
+
+  static const _chapterSlack = 0.01;
 
   String get chapterName {
     final i = chapterIndexAt(bookPosition);
@@ -166,6 +189,13 @@ class AudioPlayerController extends ChangeNotifier {
     token = authToken;
 
     try {
+      // Let the previous book finish closing (bounded, it has its own
+      // request timeout) so its final position is saved first.
+      await _previousClose.timeout(
+        const Duration(seconds: 25),
+        onTimeout: () {},
+      );
+      if (_closed) return false;
       final response = await _client
           .post(
             Uri.parse('$serverUrl/api/items/$libraryItemId/play'),
@@ -173,9 +203,14 @@ class AudioPlayerController extends ChangeNotifier {
             body: await _deviceInfoBody(),
           )
           .timeout(const Duration(seconds: 20));
-      if (response.statusCode != 200 || _closed) return false;
+      if (response.statusCode != 200) return false;
 
       _applySession(jsonDecode(response.body) as Map<String, dynamic>);
+      if (_closed) {
+        // The page went away while the session was starting.
+        unawaited(_closeOrphanSession());
+        return false;
+      }
       if (tracks.isEmpty) return false;
       await _loadSources(initialTime: _lastSyncedTime);
     } on Object catch (e) {
@@ -183,13 +218,64 @@ class AudioPlayerController extends ChangeNotifier {
       debugPrint('Could not start playback: $e');
       return false;
     }
-    if (_closed) return false;
-    _playingSub = player.playingStream.listen((playing) {
-      playing ? _listenClock.start() : _listenClock.stop();
-    });
+    if (_closed) {
+      unawaited(_closeOrphanSession());
+      return false;
+    }
+    _stateSub = player.playerStateStream.listen(_onPlayerState);
+    _errorSub = player.errorStream.listen(_onPlayerError);
     isLoaded = true;
     _notify();
     return true;
+  }
+
+  void _onPlayerState(PlayerState state) {
+    final audible =
+        state.playing && state.processingState == ProcessingState.ready;
+    audible ? _listenClock.start() : _listenClock.stop();
+    if (state.processingState == ProcessingState.completed && state.playing) {
+      // End of the book: stop so the UI shows play and the pause syncs.
+      unawaited(player.pause());
+    }
+    // Any pause (button, notification, headphones unplugged, audio focus
+    // loss) saves progress right away; the app may be killed after it.
+    if (_wasPlaying && !state.playing && !_reloading) {
+      unawaited(syncOpenSession());
+    }
+    _wasPlaying = state.playing;
+  }
+
+  void _onPlayerError(PlayerException e) {
+    debugPrint('Playback error: ${e.code} ${e.message}');
+    if (_closed) return;
+    _needsReload = true;
+    unawaited(player.pause());
+    onPlaybackError?.call('Playback error. Tap play to retry.');
+    _notify();
+  }
+
+  /// Closes a session that was started after the player was closed.
+  /// Uses its own client because the controller's is already closed.
+  Future<void> _closeOrphanSession() async {
+    if (sessionId.isEmpty) return;
+    final client = http.Client();
+    try {
+      await client
+          .post(
+            Uri.parse('$serverUrl/api/session/$sessionId/close'),
+            headers: {..._authHeaders, 'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'currentTime': _lastSyncedTime,
+              'timeListened': 0,
+              'duration': duration,
+            }),
+          )
+          .timeout(const Duration(seconds: 20));
+    } on Object catch (e) {
+      debugPrint('Could not close orphan session: $e');
+    } finally {
+      client.close();
+    }
   }
 
   void _applySession(Map<String, dynamic> json) {
@@ -312,6 +398,14 @@ class AudioPlayerController extends ChangeNotifier {
     final clamped = time.clamp(0, duration).toDouble();
     final (index, offset) = _trackAt(clamped);
     _pendingPosition = clamped;
+    if (player.processingState == ProcessingState.loading) {
+      // just_audio ignores seeks while loading; apply it once loaded.
+      _notify();
+      await player.processingStateStream
+          .firstWhere((s) => s != ProcessingState.loading)
+          .timeout(const Duration(seconds: 30));
+      if (_closed || _pendingPosition != clamped) return;
+    }
     await player.seek(
       Duration(milliseconds: (offset * 1000).round()),
       index: index,
@@ -353,24 +447,43 @@ class AudioPlayerController extends ChangeNotifier {
     return Duration(seconds: seconds.floor());
   }
 
+  /// Pausing syncs progress through the player state listener.
   Future<void> togglePlayPause() async {
     if (player.playing) {
       await player.pause();
-      unawaited(syncOpenSession());
-    } else {
-      unawaited(player.play());
+      return;
     }
+    if (_needsReload) {
+      _needsReload = false;
+      final pos = bookPosition;
+      await player.stop();
+      await _loadSources(initialTime: pos);
+    }
+    unawaited(player.play());
+  }
+
+  /// Periodic sync: skipped while paused with nothing new to report.
+  Future<void> periodicSync() {
+    final idle =
+        !player.playing &&
+        bookPosition == _lastSyncedTime &&
+        _listenClock.elapsed == _reportedListening;
+    return idle ? Future.value() : syncOpenSession();
   }
 
   /// Reports progress to the server. With [close], ends the session.
   /// Calls are serialised so overlapping syncs never double-count time.
-  Future<void> syncOpenSession({bool close = false}) {
-    return _syncChain = _syncChain.then((_) => _sync(close: close));
+  /// [position] overrides the player's position, for callers that are about
+  /// to stop or release the player.
+  Future<void> syncOpenSession({bool close = false, double? position}) {
+    return _syncChain = _syncChain.then(
+      (_) => _sync(close: close, position: position),
+    );
   }
 
-  Future<void> _sync({required bool close}) async {
+  Future<void> _sync({required bool close, double? position}) async {
     if (sessionId.isEmpty) return;
-    final current = bookPosition;
+    final current = position ?? bookPosition;
     final listened = _listenClock.elapsed - _reportedListening;
     try {
       final response = await _client
@@ -466,25 +579,42 @@ class AudioPlayerController extends ChangeNotifier {
   Future<void> reloadSources() async {
     final wasPlaying = player.playing;
     final pos = bookPosition;
-    // Sync while the player still reports the real position.
-    await syncOpenSession();
-    await player.stop();
-    await _loadSources(initialTime: pos);
+    // Don't wait for the sync: it may be queued behind a slow one, and the
+    // user may pause or seek meanwhile.
+    unawaited(syncOpenSession(position: pos));
+    _needsReload = false;
+    _reloading = true;
+    try {
+      await player.stop();
+      await _loadSources(initialTime: pos);
+    } finally {
+      _reloading = false;
+    }
     if (wasPlaying) unawaited(player.play());
     _notify();
   }
 
   /// Closes the session on the server (saving the final position) and then
   /// releases the player. Safe to call without awaiting from dispose().
-  Future<void> close() async {
-    if (_closed) return;
+  Future<void> close() {
+    if (_closed) return _previousClose;
     _closed = true;
+    return _previousClose = _close();
+  }
+
+  Future<void> _close() async {
     try {
-      await player.pause();
-      await syncOpenSession(close: true);
-    } finally {
-      await _playingSub?.cancel();
+      // Record the final position, then release the player right away so
+      // the next book can start; the close request uses the recorded one.
+      final position = bookPosition;
+      _listenClock.stop();
+      await _stateSub?.cancel();
+      await _errorSub?.cancel();
       await player.dispose();
+      await syncOpenSession(close: true, position: position);
+    } on Object catch (e) {
+      debugPrint('Error closing player: $e');
+    } finally {
       _client.close();
       downloadProgress.dispose();
       super.dispose();
