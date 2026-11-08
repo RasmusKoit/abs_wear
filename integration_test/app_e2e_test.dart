@@ -569,8 +569,9 @@ void main() {
     await pumpUntil(tester, find.text('All podcasts'));
     await pumpFor(tester, const Duration(seconds: 1));
     await scrollAndTap(tester, find.text('All podcasts'));
-    await pumpUntil(tester, find.text('Test Podcast'));
-    await tester.tap(find.text('Test Podcast'));
+    await pumpUntil(tester, find.text('Test Podcast').at(1));
+    // The library page below also shows the podcast's name.
+    await tester.tap(find.text('Test Podcast').last);
     await pumpUntil(tester, find.text('Episode 2'));
     await tester.tap(find.text('Episode 2'));
     await pumpUntil(tester, find.byIcon(Icons.play_arrow));

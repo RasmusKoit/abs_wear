@@ -278,7 +278,10 @@ class AudioPlayerController extends ChangeNotifier {
       final canPlayOffline = _metaFile(await localDirPath()).existsSync();
       final response = await _client
           .post(
-            Uri.parse('$serverUrl/api/items/$_mediaPath/play'),
+            Uri.parse(
+              '$serverUrl/api/items/$libraryItemId/play'
+              '${episodeId == null ? '' : '/$episodeId'}',
+            ),
             headers: {..._authHeaders, 'Content-Type': 'application/json'},
             body: await _deviceInfoBody(),
           )
