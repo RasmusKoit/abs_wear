@@ -1,44 +1,16 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:abs_wear/l10n/l10n.dart';
+import 'package:abs_wear/library/data/json_cache.dart';
+import 'package:abs_wear/library/data/library_api.dart';
+import 'package:abs_wear/library/view/book_tile.dart';
+import 'package:abs_wear/library/view/browse_page.dart';
 import 'package:abs_wear/player/player.dart';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'package:rotary_scrollbar/rotary_scrollbar.dart';
 
-/// Why the library page closed itself, for the login page to act on.
-enum LibraryResult {
-  /// The server rejected the token (401): log in again.
-  sessionExpired,
-
-  /// The saved library no longer exists (404): pick another one.
-  libraryMissing,
-}
-
-/// A book on the "Continue Listening" shelf.
-@immutable
-class ShelfBook {
-  const ShelfBook({
-    required this.id,
-    required this.title,
-    required this.author,
-  });
-
-  factory ShelfBook.fromJson(Map<String, dynamic> json) {
-    final media = json['media'] as Map<String, dynamic>? ?? const {};
-    final metadata = media['metadata'] as Map<String, dynamic>? ?? const {};
-    return ShelfBook(
-      id: json['id'] as String,
-      title: metadata['title'] as String? ?? '',
-      author: metadata['authorName'] as String? ?? '',
-    );
-  }
-
-  final String id;
-  final String title;
-  final String author;
-}
+export 'package:abs_wear/library/data/library_api.dart'
+    show LibraryResult, ShelfBook;
 
 class LibraryPage extends StatefulWidget {
   const LibraryPage({
@@ -59,17 +31,18 @@ class LibraryPage extends StatefulWidget {
 
 class _LibraryPageState extends State<LibraryPage> {
   final _scrollController = ScrollController();
-  late Future<List<ShelfBook>> _books;
 
-  Map<String, String> get _authHeaders => {
-    'Authorization': 'Bearer ${widget.token}',
-  };
+  /// Continue Listening; null until the cache or the server answered.
+  List<ShelfBook>? _books;
+  bool _loading = false;
+  Object? _error;
+
+  String get _cacheKey => 'shelf_${widget.libraryId}';
 
   @override
   void initState() {
     super.initState();
-    // Fetch once here; fetching inside build() refetched on every rebuild.
-    _books = _fetchContinueListening();
+    unawaited(_showCachedThenRefresh());
   }
 
   @override
@@ -78,28 +51,57 @@ class _LibraryPageState extends State<LibraryPage> {
     super.dispose();
   }
 
-  Future<List<ShelfBook>> _fetchContinueListening() async {
-    final response = await http
-        .get(
-          Uri.parse(
-            '${widget.serverUrl}/api/libraries/${widget.libraryId}'
-            '/personalized?limit=10',
-          ),
-          headers: _authHeaders,
-        )
-        .timeout(const Duration(seconds: 20));
-    if (response.statusCode == 401 || response.statusCode == 404) {
-      _close(
-        response.statusCode == 401
-            ? LibraryResult.sessionExpired
-            : LibraryResult.libraryMissing,
+  /// The saved shelf shows instantly (also offline); the server's answer
+  /// replaces it when it arrives.
+  Future<void> _showCachedThenRefresh() async {
+    final cached = await JsonCache.read(_cacheKey);
+    if (!mounted) return;
+    if (cached is List && _books == null) {
+      setState(() {
+        _books = cached
+            .cast<Map<String, dynamic>>()
+            .map(ShelfBook.fromCache)
+            .toList();
+      });
+    }
+    await _refresh();
+  }
+
+  Future<void> _refresh() async {
+    if (_loading) return;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final books = await _fetchContinueListening();
+      if (!mounted) return;
+      setState(() => _books = books);
+      unawaited(
+        JsonCache.write(_cacheKey, [for (final b in books) b.toCache()]),
       );
+    } on Object catch (e) {
+      if (!mounted) return;
+      final result = e is ApiException ? e.result : null;
+      if (result != null) {
+        _close(result);
+        return;
+      }
+      setState(() => _error = e);
+    } finally {
+      if (mounted) setState(() => _loading = false);
     }
-    if (response.statusCode != 200) {
-      throw _ShelfLoadException(response.statusCode);
-    }
-    final shelves = (jsonDecode(response.body) as List)
-        .cast<Map<String, dynamic>>();
+  }
+
+  Future<List<ShelfBook>> _fetchContinueListening() async {
+    final shelves =
+        (await getJson(
+                  '${widget.serverUrl}/api/libraries/${widget.libraryId}'
+                  '/personalized?limit=10',
+                  widget.token,
+                )
+                as List)
+            .cast<Map<String, dynamic>>();
     final shelf = shelves.where((s) => s['id'] == 'continue-listening');
     if (shelf.isEmpty) return const [];
     return (shelf.first['entities'] as List)
@@ -110,14 +112,6 @@ class _LibraryPageState extends State<LibraryPage> {
 
   bool _closing = false;
 
-  String _errorMessage(AppLocalizations l10n, Object? error) {
-    if (error is TimeoutException) return l10n.serverTimeout;
-    if (error is _ShelfLoadException) return l10n.errorLoadingData;
-    // IOClient wraps socket/DNS failures in ClientException.
-    if (error is http.ClientException) return l10n.cannotReachServer;
-    return l10n.errorLoadingData; // Unexpected response shape.
-  }
-
   void _close(LibraryResult result) {
     // Not while this route is already leaving: pop() would remove the
     // login page underneath.
@@ -125,13 +119,6 @@ class _LibraryPageState extends State<LibraryPage> {
     if (_closing || route == null || !route.isCurrent) return;
     _closing = true;
     Navigator.of(context).pop(result);
-  }
-
-  void _refresh() {
-    final books = _fetchContinueListening();
-    setState(() {
-      _books = books;
-    });
   }
 
   Future<void> _openBook(ShelfBook book) async {
@@ -146,7 +133,26 @@ class _LibraryPageState extends State<LibraryPage> {
       ),
     );
     // Progress changed while listening; reload so ordering is current.
-    if (mounted) _refresh();
+    if (mounted) unawaited(_refresh());
+  }
+
+  Future<void> _browse() async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute<LibraryResult>(
+        builder: (context) => BrowsePage(
+          serverUrl: widget.serverUrl,
+          token: widget.token,
+          libraryId: widget.libraryId,
+        ),
+      ),
+    );
+    if (!mounted) return;
+    if (result != null) {
+      _close(result);
+    } else {
+      unawaited(_refresh());
+    }
   }
 
   @override
@@ -174,55 +180,24 @@ class _LibraryPageState extends State<LibraryPage> {
           child: Column(
             children: [
               Text(l10n.continueListening),
-              FutureBuilder<List<ShelfBook>>(
-                future: _books,
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState != ConnectionState.done) {
-                    return const Padding(
-                      padding: EdgeInsets.all(16),
-                      child: CircularProgressIndicator(),
-                    );
-                  }
-                  if (snapshot.hasError) {
-                    return Padding(
-                      padding: const EdgeInsets.all(8),
-                      child: Text(
-                        _errorMessage(l10n, snapshot.error),
-                        textAlign: TextAlign.center,
-                        style: theme.textTheme.bodySmall,
-                      ),
-                    );
-                  }
-                  if (snapshot.data!.isEmpty) {
-                    return Padding(
-                      padding: const EdgeInsets.all(8),
-                      child: Text(
-                        l10n.nothingInProgress,
-                        textAlign: TextAlign.center,
-                        style: theme.textTheme.bodySmall,
-                      ),
-                    );
-                  }
-                  return Column(
-                    children: [
-                      for (final book in snapshot.data!)
-                        _BookCard(
-                          book: book,
-                          coverUrl:
-                              '${widget.serverUrl}/api/items/'
-                              '${book.id}/cover?width=100',
-                          headers: _authHeaders,
-                          onTap: () => unawaited(_openBook(book)),
-                        ),
-                    ],
-                  );
-                },
+              ..._shelf(l10n, theme),
+              Card(
+                child: ListTile(
+                  title: Text(l10n.allBooks, style: theme.textTheme.bodySmall),
+                  trailing: const Icon(Icons.library_books_rounded),
+                  onTap: () => unawaited(_browse()),
+                ),
               ),
               Card(
                 child: ListTile(
                   title: Text(l10n.refresh, style: theme.textTheme.bodySmall),
-                  trailing: const Icon(Icons.refresh),
-                  onTap: _refresh,
+                  trailing: _loading
+                      ? const SizedBox.square(
+                          dimension: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.refresh),
+                  onTap: () => unawaited(_refresh()),
                 ),
               ),
               const SizedBox(height: 48),
@@ -232,27 +207,54 @@ class _LibraryPageState extends State<LibraryPage> {
       ),
     );
   }
-}
 
-class _ShelfLoadException implements Exception {
-  const _ShelfLoadException(this.statusCode);
-  final int statusCode;
-
-  @override
-  String toString() => 'Failed to load shelves (HTTP $statusCode)';
+  List<Widget> _shelf(AppLocalizations l10n, ThemeData theme) {
+    Widget message(String text) => Padding(
+      padding: const EdgeInsets.all(8),
+      child: Text(
+        text,
+        textAlign: TextAlign.center,
+        style: theme.textTheme.bodySmall,
+      ),
+    );
+    final books = _books;
+    if (books == null) {
+      return [
+        if (_error != null)
+          message(errorMessage(l10n, _error))
+        else
+          const Padding(
+            padding: EdgeInsets.all(16),
+            child: CircularProgressIndicator(),
+          ),
+      ];
+    }
+    return [
+      // Showing the saved shelf because the server can't be reached.
+      if (_error != null) message(l10n.offlineSavedList),
+      if (books.isEmpty) message(l10n.nothingInProgress),
+      for (final book in books)
+        _BookCard(
+          book: book,
+          serverUrl: widget.serverUrl,
+          token: widget.token,
+          onTap: () => unawaited(_openBook(book)),
+        ),
+    ];
+  }
 }
 
 class _BookCard extends StatelessWidget {
   const _BookCard({
     required this.book,
-    required this.coverUrl,
-    required this.headers,
+    required this.serverUrl,
+    required this.token,
     required this.onTap,
   });
 
   final ShelfBook book;
-  final String coverUrl;
-  final Map<String, String> headers;
+  final String serverUrl;
+  final String token;
   final VoidCallback onTap;
 
   @override
@@ -273,19 +275,11 @@ class _BookCard extends StatelessWidget {
                   Expanded(
                     child: Text(book.author, style: theme.textTheme.labelSmall),
                   ),
-                  Image.network(
-                    coverUrl,
-                    // Token in a header, not the URL (URLs end up in logs).
-                    headers: headers,
-                    width: 50,
-                    height: 50,
-                    cacheWidth: 100,
-                    // Books without cover art return 404; show a placeholder
-                    // instead of Flutter's oversized error widget.
-                    errorBuilder: (_, _, _) => const SizedBox.square(
-                      dimension: 50,
-                      child: Icon(Icons.book_rounded),
-                    ),
+                  BookCover(
+                    serverUrl: serverUrl,
+                    token: token,
+                    bookId: book.id,
+                    size: 50,
                   ),
                 ],
               ),

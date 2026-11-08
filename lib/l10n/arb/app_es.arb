@@ -64,5 +64,8 @@
     "sessionExpired": "La sesión ha caducado. Inicia sesión de nuevo.",
     "logoutConfirm": "¿Cerrar sesión? Se eliminarán los libros descargados.",
     "cancel": "Cancelar",
-    "nothingInProgress": "Nada en curso."
+    "nothingInProgress": "Nada en curso.",
+    "allBooks": "Todos los libros",
+    "bookCount": "{count, plural, =1{1 libro} other{{count} libros}}",
+    "offlineSavedList": "Sin conexión. Mostrando la lista guardada. Toca para reintentar."
 }
