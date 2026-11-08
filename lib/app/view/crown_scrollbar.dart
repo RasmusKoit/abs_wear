@@ -35,6 +35,7 @@ class _CrownScrollbarState extends State<CrownScrollbar> {
   /// Where consecutive detents are heading, so fast turns add up instead
   /// of restarting from the current (animating) offset.
   double? _target;
+  int _detent = 0;
 
   @override
   void initState() {
@@ -74,11 +75,13 @@ class _CrownScrollbarState extends State<CrownScrollbar> {
       position.maxScrollExtent,
     );
     _target = to;
+    final detent = ++_detent;
     unawaited(
       controller
           .animateTo(to, duration: _duration, curve: Curves.easeOut)
           .whenComplete(() {
-            if (_target == to) _target = null;
+            // Only the latest detent's animation ends the run.
+            if (detent == _detent) _target = null;
           }),
     );
   }
