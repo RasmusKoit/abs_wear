@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:abs_wear/l10n/l10n.dart';
 import 'package:abs_wear/player/player.dart';
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
@@ -41,10 +42,11 @@ class _PlayerPageState extends State<PlayerPage> {
       widget.token,
     );
     if (!mounted) return;
+    final l10n = context.l10n;
     if (!ok) {
       unawaited(
         Fluttertoast.showToast(
-          msg: 'Could not start playback',
+          msg: l10n.couldNotStartPlayback,
           gravity: ToastGravity.CENTER,
         ),
       );
@@ -53,7 +55,16 @@ class _PlayerPageState extends State<PlayerPage> {
       if (route != null) Navigator.of(context).removeRoute(route);
       return;
     }
+    if (_playerController.isOffline) {
+      unawaited(
+        Fluttertoast.showToast(
+          msg: l10n.playingOffline,
+          gravity: ToastGravity.CENTER,
+        ),
+      );
+    }
     // Keep the server's progress in sync while the player is open.
+    // Offline, this saves progress on the watch instead.
     _syncTimer = Timer.periodic(
       const Duration(minutes: 1),
       (_) => unawaited(_playerController.periodicSync()),

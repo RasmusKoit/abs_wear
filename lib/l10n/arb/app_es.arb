@@ -75,5 +75,7 @@
     "deleteDownload": "Eliminar descarga",
     "deleteDownloadConfirm": "¿Eliminar el libro descargado del reloj?",
     "volumeUp": "Subir volumen",
-    "volumeDown": "Bajar volumen"
+    "volumeDown": "Bajar volumen",
+    "couldNotStartPlayback": "No se pudo iniciar la reproducción.",
+    "playingOffline": "Sin conexión: reproduciendo el libro descargado. El progreso se sincronizará después."
 }

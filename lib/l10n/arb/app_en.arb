@@ -153,5 +153,13 @@
     "volumeDown": "Volume down",
     "@volumeDown": {
         "description": "Decrease volume"
+    },
+    "couldNotStartPlayback": "Could not start playback.",
+    "@couldNotStartPlayback": {
+        "description": "Player failed to start (offline and not downloaded, or server error)"
+    },
+    "playingOffline": "Offline: playing the downloaded book. Progress syncs later.",
+    "@playingOffline": {
+        "description": "Player started without the server"
     }
 }

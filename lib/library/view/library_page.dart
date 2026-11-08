@@ -86,6 +86,10 @@ class _LibraryPageState extends State<LibraryPage> {
       final books = await _fetchContinueListening();
       if (!mounted) return;
       setState(() => _books = books);
+      // Online again: send progress made while offline.
+      unawaited(
+        AudioPlayerController.pushLocalProgress(widget.serverUrl, widget.token),
+      );
       unawaited(
         JsonCache.write(_cacheKey, [for (final b in books) b.toCache()]),
       );
