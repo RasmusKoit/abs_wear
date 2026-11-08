@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:abs_wear/ambient_mode/ambient_mode.dart';
+import 'package:abs_wear/l10n/l10n.dart';
 import 'package:abs_wear/player/components/scrolling_text.dart';
 import 'package:abs_wear/player/components/time_left_widget.dart';
 import 'package:abs_wear/player/darts/audio_player.dart';
@@ -36,7 +37,7 @@ class PlayerViewPage extends StatelessWidget {
                 )
               : StreamBuilder<double>(
                   stream: controller.bookPositionStream,
-                  builder: (context, _) => _content(theme),
+                  builder: (context, _) => _content(context, theme),
                 ),
         );
       },
@@ -80,7 +81,7 @@ class PlayerViewPage extends StatelessWidget {
         : Transform.translate(offset: shift, child: content);
   }
 
-  Widget _content(ThemeData theme) {
+  Widget _content(BuildContext context, ThemeData theme) {
     final controller = playerController;
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
@@ -104,11 +105,13 @@ class PlayerViewPage extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             IconButton(
+              tooltip: context.l10n.previousChapter,
               icon: const Icon(Icons.skip_previous),
               onPressed: () => unawaited(controller.seekToPreviousChapter()),
             ),
             _PlayPauseButton(controller: controller),
             IconButton(
+              tooltip: context.l10n.nextChapter,
               icon: const Icon(Icons.skip_next),
               onPressed: () => unawaited(controller.seekToNextChapter()),
             ),
@@ -118,10 +121,12 @@ class PlayerViewPage extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             IconButton(
+              tooltip: context.l10n.back10,
               icon: const Icon(Icons.replay_10_rounded),
               onPressed: () => unawaited(controller.seekRelative(-10)),
             ),
             IconButton(
+              tooltip: context.l10n.forward10,
               icon: const Icon(Icons.forward_10_rounded),
               onPressed: () => unawaited(controller.seekRelative(10)),
             ),
@@ -163,6 +168,7 @@ class _PlayPauseButton extends StatelessWidget {
         }
         final playing = state?.playing ?? false;
         return IconButton(
+          tooltip: playing ? context.l10n.pause : context.l10n.play,
           icon: Icon(playing ? Icons.pause : Icons.play_arrow),
           onPressed: () => unawaited(controller.togglePlayPause()),
         );

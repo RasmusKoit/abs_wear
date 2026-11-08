@@ -1,12 +1,12 @@
 import 'dart:async';
 
+import 'package:abs_wear/app/view/crown_scrollbar.dart';
 import 'package:abs_wear/l10n/l10n.dart';
 import 'package:abs_wear/library/data/json_cache.dart';
 import 'package:abs_wear/library/data/library_api.dart';
 import 'package:abs_wear/library/view/book_tile.dart';
 import 'package:abs_wear/player/player.dart';
 import 'package:flutter/material.dart';
-import 'package:rotary_scrollbar/rotary_scrollbar.dart';
 
 /// Every book in the library, A to Z, loaded a page at a time as the user
 /// scrolls, so libraries with thousands of books stay fast and light.
@@ -221,11 +221,7 @@ class _BrowsePageState extends State<BrowsePage> {
     final l10n = context.l10n;
     final theme = Theme.of(context);
     final showFooter = _hasMore || _error != null || _loading;
-    return RotaryScrollbar(
-      width: 2,
-      padding: 1,
-      hasHapticFeedback: false,
-      autoHide: false,
+    return CrownScrollbar(
       controller: _scrollController,
       child: Scaffold(
         appBar: PreferredSize(

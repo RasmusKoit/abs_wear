@@ -1,3 +1,4 @@
+import 'package:abs_wear/l10n/l10n.dart';
 import 'package:flutter/material.dart';
 
 class TimeLeftWidget extends StatelessWidget {
@@ -11,6 +12,10 @@ class TimeLeftWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Text(timeLeft, style: style);
+    return Text(
+      timeLeft,
+      style: style,
+      semanticsLabel: context.l10n.timeLeftLabel(timeLeft),
+    );
   }
 }
