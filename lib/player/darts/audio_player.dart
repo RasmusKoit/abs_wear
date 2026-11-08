@@ -962,6 +962,14 @@ class AudioPlayerController extends ChangeNotifier {
     return dir.existsSync() && dir.listSync().isNotEmpty;
   }
 
+  /// The server's HLS URLs need no token (they carry the session id), and
+  /// without headers just_audio loads them directly instead of through its
+  /// local proxy, which would parse the playlist on the UI isolate and keep
+  /// a handler per segment (tens of thousands for a long book). Only over
+  /// HTTPS: the network security config allows the native player cleartext
+  /// HTTP only to the proxy on 127.0.0.1.
+  bool get _https => serverUrl.startsWith('https:');
+
   /// (Re)loads all tracks into the player, preferring local files, and
   /// positions it at [initialTime] seconds into the book.
   Future<void> _loadSources({required double initialTime}) async {
@@ -985,11 +993,7 @@ class AudioPlayerController extends ChangeNotifier {
           local
               ? Uri.file(_localFile(dir, t).path)
               : Uri.parse('$serverUrl${t.contentUrl}'),
-          // The server's HLS URLs carry the session id instead of needing
-          // the token. Without headers just_audio skips its proxy, which
-          // would parse the playlist on the UI isolate and keep a handler
-          // per segment (tens of thousands for a long book).
-          headers: local || t.isHls ? null : _authHeaders,
+          headers: local || (t.isHls && _https) ? null : _authHeaders,
           tag: MediaItem(
             id: '$_mediaPath/${t.index}',
             title: bookTitle,
