@@ -570,7 +570,11 @@ class AudioPlayerController extends ChangeNotifier {
     _notify();
 
     final dir = Directory(await localDirPath());
-    final totalBytes = tracks.fold<int>(0, (sum, t) => sum + t.size);
+    // Byte progress only when every size is known; otherwise by file.
+    final sizesKnown = tracks.every((t) => t.size > 0);
+    final totalBytes = sizesKnown
+        ? tracks.fold<int>(0, (sum, t) => sum + t.size)
+        : 0;
     var receivedBytes = 0;
     var result = DownloadResult.failed;
     File? part;
@@ -578,22 +582,32 @@ class AudioPlayerController extends ChangeNotifier {
       dir.createSync(recursive: true);
       for (final (i, t) in tracks.indexed) {
         final target = _localFile(dir.path, t);
+        // A finished file only exists after a complete download and rename.
         if (target.existsSync() &&
-            target.lengthSync() == t.size &&
-            t.size > 0) {
+            (t.size == 0 || target.lengthSync() == t.size)) {
           receivedBytes += t.size;
           continue;
         }
-        final request = http.Request(
+        // Abortable so a timed-out request releases its connection.
+        final abort = Completer<void>();
+        final request = http.AbortableRequest(
           'GET',
           Uri.parse(
             '$serverUrl/api/items/$libraryItemId/file/${t.ino}/download',
           ),
+          abortTrigger: abort.future,
         )..headers.addAll(_authHeaders);
-        final response = await _client
-            .send(request)
-            .timeout(const Duration(seconds: 30));
+        final http.StreamedResponse response;
+        try {
+          response = await _client
+              .send(request)
+              .timeout(const Duration(seconds: 30));
+        } on TimeoutException {
+          abort.complete();
+          rethrow;
+        }
         if (response.statusCode != 200) {
+          await response.stream.listen(null).cancel();
           throw HttpException('HTTP ${response.statusCode} for ${t.filename}');
         }
         part = File('${target.path}.part');
@@ -647,6 +661,7 @@ class AudioPlayerController extends ChangeNotifier {
   Future<void> deleteDownload() async {
     final dir = Directory(await localDirPath());
     if (dir.existsSync()) dir.deleteSync(recursive: true);
+    _notify(); // Show "not downloaded" before the slower reload.
     await reloadSources();
   }
 

@@ -64,6 +64,8 @@ class _ControlViewPageState extends State<ControlViewPage> {
   Future<void> _download() async {
     final l10n = context.l10n;
     final result = await _controller.downloadBook();
+    // Leaving the player cancels the download; no toast on another page.
+    if (!mounted) return;
     unawaited(
       _toast(switch (result) {
         DownloadResult.done => l10n.downloadDone,
@@ -188,6 +190,14 @@ class _ControlViewPageState extends State<ControlViewPage> {
         ),
       );
     }
+    final download = IconButton(
+      tooltip: l10n.download,
+      icon: Icon(Icons.download_rounded, color: theme.colorScheme.secondary),
+      onPressed: _controller.isLoaded ? () => unawaited(_download()) : null,
+    );
+    // Until the session is loaded the track list is unknown, so the local
+    // state can't be judged (and nothing should be deleted mid-setup).
+    if (!_controller.isLoaded) return download;
     final delete = IconButton(
       tooltip: l10n.deleteDownload,
       icon: Icon(Icons.delete_forever_rounded, color: theme.colorScheme.error),
@@ -209,11 +219,6 @@ class _ControlViewPageState extends State<ControlViewPage> {
         ],
       );
     }
-    final download = IconButton(
-      tooltip: l10n.download,
-      icon: Icon(Icons.download_rounded, color: theme.colorScheme.secondary),
-      onPressed: _controller.isLoaded ? () => unawaited(_download()) : null,
-    );
     // Leftovers of a failed download: resume, or free the space.
     if (_local == _LocalState.partial) {
       return Row(
