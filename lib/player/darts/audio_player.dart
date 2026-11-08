@@ -163,12 +163,6 @@ class AudioPlayerController extends ChangeNotifier {
         targetBufferBytes: 16 * 1024 * 1024,
       ),
     ),
-    // Decode on the audio DSP when the device supports it, so the CPU can
-    // sleep during playback. Only where speed changes work offloaded too.
-    androidAudioOffloadPreferences: const AndroidAudioOffloadPreferences(
-      audioOffloadMode: AndroidAudioOffloadMode.enabled,
-      isSpeedChangeSupportRequired: true,
-    ),
   );
 
   /// The loaded audio is streamed from the server (not downloaded).
