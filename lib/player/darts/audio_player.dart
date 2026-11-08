@@ -13,6 +13,7 @@ import 'package:http/http.dart' as http;
 import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// One audio file of a library item. Multi-file books have several, each
 /// starting at [startOffset] seconds into the book.
@@ -173,6 +174,78 @@ class AudioPlayerController extends ChangeNotifier {
   /// 0..1 while downloading, null otherwise.
   final ValueNotifier<double?> downloadProgress = ValueNotifier(null);
 
+  /// Playback speeds offered; the choice is kept for all books.
+  static const speeds = [0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5];
+  static const _speedKey = 'playbackSpeed';
+
+  double get speed => player.speed;
+
+  /// Steps the speed up ([step] 1) or down (-1) through [speeds].
+  Future<void> changeSpeed(int step) async {
+    var i = speeds.indexWhere((s) => s >= speed - 0.01);
+    if (i < 0) i = speeds.length - 1;
+    final next = speeds[(i + step).clamp(0, speeds.length - 1)];
+    await player.setSpeed(next);
+    _notify();
+    try {
+      await (await SharedPreferences.getInstance()).setDouble(_speedKey, next);
+    } on Object catch (e) {
+      debugPrint('Could not save speed: $e');
+    }
+  }
+
+  Future<void> _applySavedSpeed() async {
+    try {
+      final saved = (await SharedPreferences.getInstance()).getDouble(
+        _speedKey,
+      );
+      if (saved != null && saved > 0) await player.setSpeed(saved);
+    } on Object catch (e) {
+      debugPrint('Could not restore speed: $e');
+    }
+  }
+
+  /// Sleep timer choices; tapping cycles through them, then off.
+  static const sleepOptions = [
+    Duration(minutes: 15),
+    Duration(minutes: 30),
+    Duration(minutes: 45),
+    Duration(minutes: 60),
+  ];
+
+  /// Listening time left before playback pauses; null when off. Counts
+  /// down only while playing.
+  final ValueNotifier<Duration?> sleepRemaining = ValueNotifier(null);
+  Timer? _sleepTimer;
+
+  /// Moves to the next sleep option (or off after the last).
+  void cycleSleepTimer() {
+    final current = sleepRemaining.value;
+    final next = current == null
+        ? sleepOptions.first
+        : sleepOptions.where((d) => d > current).firstOrNull;
+    setSleepTimer(next);
+  }
+
+  void setSleepTimer(Duration? duration) {
+    _sleepTimer?.cancel();
+    _sleepTimer = null;
+    if (_closed) return;
+    sleepRemaining.value = duration;
+    if (duration == null) return;
+    _sleepTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      final left = sleepRemaining.value;
+      if (left == null || !player.playing) return;
+      final next = left - const Duration(seconds: 1);
+      if (next > Duration.zero) {
+        sleepRemaining.value = next;
+        return;
+      }
+      setSleepTimer(null);
+      unawaited(player.pause());
+    });
+  }
+
   bool _closed = false;
 
   /// Where the player should be while its audio is not loaded yet. With
@@ -330,6 +403,7 @@ class AudioPlayerController extends ChangeNotifier {
       unawaited(_closeOrphanSession());
       return false;
     }
+    await _applySavedSpeed();
     _stateSub = player.playerStateStream.listen(_onPlayerState);
     _errorSub = player.errorStream.listen(_onPlayerError);
     isLoaded = true;
@@ -1188,6 +1262,8 @@ class AudioPlayerController extends ChangeNotifier {
       _openKeys.remove(_localKey);
       _client.close();
       downloadProgress.dispose();
+      _sleepTimer?.cancel();
+      sleepRemaining.dispose();
       super.dispose();
     }
   }

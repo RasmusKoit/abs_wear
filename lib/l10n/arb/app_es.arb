@@ -88,5 +88,10 @@
     "allPodcasts": "Todos los podcasts",
     "podcastCount": "{count, plural, =1{1 podcast} other{{count} podcasts}}",
     "libraries": "Bibliotecas",
-    "noEpisodes": "No hay episodios."
+    "noEpisodes": "No hay episodios.",
+    "speed": "Velocidad",
+    "slower": "Más lento",
+    "faster": "Más rápido",
+    "sleepTimer": "Temporizador",
+    "sleepTimerOff": "Desactivado"
 }

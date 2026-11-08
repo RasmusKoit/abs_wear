@@ -217,5 +217,25 @@
     "noEpisodes": "No episodes.",
     "@noEpisodes": {
         "description": "A podcast without episodes"
+    },
+    "speed": "Speed",
+    "@speed": {
+        "description": "Playback speed section"
+    },
+    "slower": "Slower",
+    "@slower": {
+        "description": "Decrease playback speed"
+    },
+    "faster": "Faster",
+    "@faster": {
+        "description": "Increase playback speed"
+    },
+    "sleepTimer": "Sleep timer",
+    "@sleepTimer": {
+        "description": "Pauses playback after a while; tap cycles 15/30/45/60 min/off"
+    },
+    "sleepTimerOff": "Off",
+    "@sleepTimerOff": {
+        "description": "Sleep timer not set"
     }
 }
