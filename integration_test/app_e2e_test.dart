@@ -41,7 +41,11 @@ Future<void> pumpFor(WidgetTester tester, Duration duration) async {
   }
 }
 
-/// Puts every test book back at 25% so each test starts from the same
+/// The seeded books the tests use (the server may also hold bulk books
+/// from generate_bulk.sh for paging tests).
+const testTitles = {'Single File Book', 'Multi File Book', 'No Chapters Book'};
+
+/// Puts the test books back at 25% so each test starts from the same
 /// server state (tests start sessions and sync progress).
 Future<void> resetServerProgress() async {
   final login = await http.post(
@@ -63,13 +67,17 @@ Future<void> resetServerProgress() async {
       (jsonDecode(libs.body) as Map<String, dynamic>)['libraries'] as List;
   for (final lib in libraries.cast<Map<String, dynamic>>()) {
     final items = await http.get(
-      Uri.parse('$absUrl/api/libraries/${lib['id']}/items?limit=50'),
+      Uri.parse(
+        '$absUrl/api/libraries/${lib['id']}/items?limit=5000&minified=1',
+      ),
       headers: headers,
     );
     final results =
         (jsonDecode(items.body) as Map<String, dynamic>)['results'] as List;
     for (final item in results.cast<Map<String, dynamic>>()) {
       final media = item['media'] as Map<String, dynamic>;
+      final title = (media['metadata'] as Map<String, dynamic>)['title'];
+      if (!testTitles.contains(title)) continue;
       final duration = (media['duration'] as num).toDouble();
       await http.patch(
         Uri.parse('$absUrl/api/me/progress/${item['id']}'),
@@ -113,6 +121,48 @@ Future<double> serverProgress(String title) async {
   return -1;
 }
 
+/// The library's size and the title at [index] (0-based, clamped) in the
+/// browser's A-Z order.
+Future<(int, String)> bookAt(int index) async {
+  final login = await http.post(
+    Uri.parse('$absUrl/login'),
+    headers: {'Content-Type': 'application/json'},
+    body: jsonEncode({'username': absUser, 'password': absPassword}),
+  );
+  final user =
+      (jsonDecode(login.body) as Map<String, dynamic>)['user']
+          as Map<String, dynamic>;
+  final headers = {'Authorization': 'Bearer ${user['token']}'};
+  final libs = await http.get(
+    Uri.parse('$absUrl/api/libraries'),
+    headers: headers,
+  );
+  final lib =
+      ((jsonDecode(libs.body) as Map<String, dynamic>)['libraries'] as List)
+              .first
+          as Map<String, dynamic>;
+  Future<Map<String, dynamic>> page(int i) async =>
+      jsonDecode(
+            (await http.get(
+              Uri.parse(
+                '$absUrl/api/libraries/${lib['id']}/items?limit=1&page=$i'
+                '&sort=media.metadata.title&minified=1',
+              ),
+              headers: headers,
+            )).body,
+          )
+          as Map<String, dynamic>;
+  final total = ((await page(0))['total'] as num).toInt();
+  final item =
+      ((await page(index.clamp(0, total - 1)))['results'] as List).first
+          as Map<String, dynamic>;
+  final media = item['media'] as Map<String, dynamic>;
+  return (
+    total,
+    (media['metadata'] as Map<String, dynamic>)['title'] as String,
+  );
+}
+
 /// Scrolls [finder] into view (watch screens are tiny) and taps it.
 Future<void> scrollAndTap(WidgetTester tester, Finder finder) async {
   await tester.ensureVisible(finder);
@@ -141,6 +191,8 @@ Future<void> logInAndOpenLibrary(WidgetTester tester) async {
 
   await scrollAndTap(tester, find.widgetWithText(ElevatedButton, 'Library'));
   await pumpUntil(tester, find.text('Single File Book'));
+  // A saved shelf shows first; wait for the server's (it may reorder).
+  await pumpUntil(tester, find.byIcon(Icons.refresh));
 }
 
 void main() {
@@ -209,6 +261,20 @@ void main() {
     // The 401 pops the library and clears the token.
     await pumpUntil(tester, find.widgetWithText(TextFormField, 'Password'));
     expect(prefs.getString('token'), isNull);
+  });
+
+  testWidgets('browses the whole library page by page', (tester) async {
+    await logInAndOpenLibrary(tester);
+    // Pick a title a few pages in (30 per page), whatever the library size.
+    final (total, title) = await bookAt(150);
+    await scrollAndTap(tester, find.text('All books'));
+    await pumpUntil(tester, find.text('$total books'));
+    // Scroll down until the title shows; pages load on the way.
+    for (var i = 0; i < 400 && find.text(title).evaluate().isEmpty; i++) {
+      await tester.drag(find.byType(ListView), const Offset(0, -120));
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(find.text(title), findsOneWidget);
   });
 
   testWidgets('logs in and lists Continue Listening', (tester) async {
