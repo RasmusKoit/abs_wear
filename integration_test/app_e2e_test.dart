@@ -11,6 +11,7 @@ import 'package:abs_wear/library/view/browse_page.dart';
 import 'package:abs_wear/library/view/downloads_page.dart';
 import 'package:abs_wear/player/player.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:integration_test/integration_test.dart';
@@ -346,9 +347,14 @@ void main() {
     await scrollAndTap(tester, find.text('Single File Book'));
     await pumpUntil(tester, find.textContaining('Chapter One'));
     await tester.binding.handlePopRoute();
-    // Let the pop transition finish and the async session close land.
     await pumpUntil(tester, find.text('Continue Listening'));
-    await pumpFor(tester, const Duration(seconds: 2));
+    // Wait for the player's final sync itself (not a fixed delay): the
+    // page disposes after the transition, then closes the session.
+    await pumpFor(tester, const Duration(milliseconds: 500));
+    await tester.runAsync(() => AudioPlayerController.lastClose);
+    // The library refreshes right after the close (and may reorder).
+    await pumpFor(tester, const Duration(milliseconds: 300));
+    await pumpUntil(tester, find.byIcon(Icons.refresh));
     await scrollAndTap(tester, find.text('Single File Book'));
     // Still 45s in (Chapter One), not reset to 0 -> 00:00:15 left.
     await pumpUntil(tester, find.text('00:00:15'));
@@ -633,4 +639,69 @@ void main() {
     // A new book starts without a sleep timer.
     expect(find.text('Off'), findsOneWidget);
   });
+
+  testWidgets('ambient mode shows a dimmed player and keeps playing', (
+    tester,
+  ) async {
+    await logInAndOpenLibrary(tester);
+    await scrollAndTap(tester, find.text('Single File Book'));
+    await pumpUntil(tester, find.byIcon(Icons.play_arrow));
+    await tester.tap(find.byIcon(Icons.play_arrow));
+    await pumpUntil(tester, find.text('00:00:13'));
+
+    // The same message MainActivity sends when the watch dims.
+    await tester.runAsync(
+      () => simulateAmbientCall('onEnterAmbient', {'burnInProtection': true}),
+    );
+    await tester.pump();
+    // No buttons; minutes-only time left; title and chapter stay; the
+    // dimmed (black) theme is on.
+    expect(find.byIcon(Icons.pause), findsNothing);
+    expect(find.text('00:00'), findsOneWidget);
+    expect(find.textContaining('Chapter One'), findsWidgets);
+    expect(
+      Theme.of(tester.element(find.text('00:00'))).colorScheme.surface,
+      Colors.black,
+    );
+    // Burn-in protection shifts the content on each ambient update.
+    Offset shift() {
+      final transform = tester.widget<Transform>(
+        find
+            .ancestor(of: find.text('00:00'), matching: find.byType(Transform))
+            .first,
+      );
+      final t = transform.transform.getTranslation();
+      return Offset(t.x, t.y);
+    }
+
+    final before = shift();
+    await tester.runAsync(() => simulateAmbientCall('onUpdateAmbient'));
+    await tester.pump();
+    expect(shift(), isNot(before));
+
+    // Audio keeps playing while dimmed: about 3 s pass, so time left drops
+    // from 13-14 s to at most 11 s (a stall would leave it near 13).
+    await pumpFor(tester, const Duration(seconds: 3));
+    await tester.runAsync(() => simulateAmbientCall('onExitAmbient'));
+    await tester.pump();
+    final controller = tester
+        .widget<PlayerViewPage>(find.byType(PlayerViewPage))
+        .playerController;
+    expect(controller.timeLeft.inSeconds, inInclusiveRange(1, 11));
+    await pumpUntil(tester, find.byIcon(Icons.pause));
+    await tester.tap(find.byIcon(Icons.pause));
+    await pumpUntil(tester, find.byIcon(Icons.play_arrow));
+  });
+}
+
+/// Delivers an ambient-mode call as if it came from MainActivity.
+Future<void> simulateAmbientCall(String method, [Object? arguments]) async {
+  await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+      .handlePlatformMessage(
+        'ambient_mode',
+        const StandardMethodCodec().encodeMethodCall(
+          MethodCall(method, arguments),
+        ),
+        null,
+      );
 }
