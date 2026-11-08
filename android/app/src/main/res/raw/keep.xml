@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  audio_service looks its notification icons up by name at runtime, so
+  release resource shrinking can't see they are used and strips them. Without
+  them every media session update fails ("You must specify an icon resource
+  id to build a CustomAction") and the media controls never show.
+-->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@drawable/audio_service_*" />
