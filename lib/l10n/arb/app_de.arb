@@ -30,6 +30,8 @@
     "downloadDone": "Hörbuch heruntergeladen.",
     "downloadFailed": "Download fehlgeschlagen. Zum Fortsetzen erneut herunterladen.",
     "downloadNoSpace": "Nicht genug Speicher auf der Uhr.",
+    "cancelDownload": "Download abbrechen",
+    "downloadCanceled": "Download abgebrochen.",
     "deleteDownload": "Download löschen",
     "deleteDownloadConfirm": "Heruntergeladenes Buch von der Uhr löschen?",
     "volumeUp": "Lauter",

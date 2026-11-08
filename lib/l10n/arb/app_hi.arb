@@ -30,6 +30,8 @@
     "downloadDone": "ऑडियोबुक डाउनलोड हो गई।",
     "downloadFailed": "डाउनलोड विफल। जारी रखने के लिए डाउनलोड टैप करें।",
     "downloadNoSpace": "घड़ी में पर्याप्त जगह नहीं है।",
+    "cancelDownload": "डाउनलोड रद्द करें",
+    "downloadCanceled": "डाउनलोड रद्द किया गया।",
     "deleteDownload": "डाउनलोड हटाएं",
     "deleteDownloadConfirm": "डाउनलोड की गई किताब घड़ी से हटाएं?",
     "volumeUp": "आवाज़ बढ़ाएं",

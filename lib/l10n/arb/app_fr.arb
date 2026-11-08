@@ -30,6 +30,8 @@
     "downloadDone": "Livre audio téléchargé.",
     "downloadFailed": "Échec du téléchargement. Touchez Télécharger pour reprendre.",
     "downloadNoSpace": "Espace insuffisant sur la montre.",
+    "cancelDownload": "Annuler le téléchargement",
+    "downloadCanceled": "Téléchargement annulé.",
     "deleteDownload": "Supprimer le téléchargement",
     "deleteDownloadConfirm": "Supprimer le livre téléchargé de la montre ?",
     "volumeUp": "Plus fort",

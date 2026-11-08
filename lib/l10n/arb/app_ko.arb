@@ -30,6 +30,8 @@
     "downloadDone": "오디오북을 다운로드했습니다.",
     "downloadFailed": "다운로드 실패. 다운로드를 탭하여 재개하세요.",
     "downloadNoSpace": "시계 저장 공간이 부족합니다.",
+    "cancelDownload": "다운로드 취소",
+    "downloadCanceled": "다운로드를 취소했습니다.",
     "deleteDownload": "다운로드 삭제",
     "deleteDownloadConfirm": "다운로드한 책을 시계에서 삭제할까요?",
     "volumeUp": "볼륨 높이기",

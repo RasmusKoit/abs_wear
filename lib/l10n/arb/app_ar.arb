@@ -30,6 +30,8 @@
     "downloadDone": "تم تنزيل الكتاب الصوتي.",
     "downloadFailed": "فشل التنزيل. انقر على تنزيل للاستئناف.",
     "downloadNoSpace": "لا توجد مساحة كافية على الساعة.",
+    "cancelDownload": "إلغاء التنزيل",
+    "downloadCanceled": "تم إلغاء التنزيل.",
     "deleteDownload": "حذف التنزيل",
     "deleteDownloadConfirm": "حذف الكتاب الذي تم تنزيله من الساعة؟",
     "volumeUp": "رفع الصوت",

@@ -30,6 +30,8 @@
     "downloadDone": "オーディオブックをダウンロードしました。",
     "downloadFailed": "ダウンロード失敗。ダウンロードをタップして再開。",
     "downloadNoSpace": "ウォッチの空き容量が足りません。",
+    "cancelDownload": "ダウンロードをキャンセル",
+    "downloadCanceled": "ダウンロードをキャンセルしました。",
     "deleteDownload": "ダウンロードを削除",
     "deleteDownloadConfirm": "ダウンロードした本をウォッチから削除しますか？",
     "volumeUp": "音量を上げる",

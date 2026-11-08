@@ -30,6 +30,8 @@
     "downloadDone": "Buku audio diunduh.",
     "downloadFailed": "Unduhan gagal. Ketuk Unduh untuk melanjutkan.",
     "downloadNoSpace": "Penyimpanan jam tidak cukup.",
+    "cancelDownload": "Batalkan unduhan",
+    "downloadCanceled": "Unduhan dibatalkan.",
     "deleteDownload": "Hapus unduhan",
     "deleteDownloadConfirm": "Hapus buku yang diunduh dari jam?",
     "volumeUp": "Volume naik",

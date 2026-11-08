@@ -30,6 +30,8 @@
     "downloadDone": "Audioraamat on alla laaditud.",
     "downloadFailed": "Allalaadimine ebaõnnestus. Jätkamiseks puuduta allalaadimist.",
     "downloadNoSpace": "Kellas pole piisavalt ruumi.",
+    "cancelDownload": "Tühista allalaadimine",
+    "downloadCanceled": "Allalaadimine tühistati.",
     "deleteDownload": "Kustuta allalaadimine",
     "deleteDownloadConfirm": "Kas kustutada allalaaditud raamat kellast?",
     "volumeUp": "Valjemaks",

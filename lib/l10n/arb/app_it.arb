@@ -30,6 +30,8 @@
     "downloadDone": "Audiolibro scaricato.",
     "downloadFailed": "Download non riuscito. Tocca Scarica per riprendere.",
     "downloadNoSpace": "Spazio insufficiente sull'orologio.",
+    "cancelDownload": "Annulla download",
+    "downloadCanceled": "Download annullato.",
     "deleteDownload": "Elimina download",
     "deleteDownloadConfirm": "Eliminare il libro scaricato dall'orologio?",
     "volumeUp": "Alza volume",

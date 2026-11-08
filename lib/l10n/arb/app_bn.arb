@@ -30,6 +30,8 @@
     "downloadDone": "অডিওবুক ডাউনলোড হয়েছে।",
     "downloadFailed": "ডাউনলোড ব্যর্থ। আবার শুরু করতে ডাউনলোড ট্যাপ করুন।",
     "downloadNoSpace": "ঘড়িতে যথেষ্ট জায়গা নেই।",
+    "cancelDownload": "ডাউনলোড বাতিল করুন",
+    "downloadCanceled": "ডাউনলোড বাতিল হয়েছে।",
     "deleteDownload": "ডাউনলোড মুছুন",
     "deleteDownloadConfirm": "ডাউনলোড করা বইটি ঘড়ি থেকে মুছবেন?",
     "volumeUp": "ভলিউম বাড়ান",

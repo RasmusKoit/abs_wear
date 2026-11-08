@@ -30,6 +30,8 @@
     "downloadDone": "Sesli kitap indirildi.",
     "downloadFailed": "İndirme başarısız. Devam etmek için İndir'e dokunun.",
     "downloadNoSpace": "Saatte yeterli alan yok.",
+    "cancelDownload": "İndirmeyi iptal et",
+    "downloadCanceled": "İndirme iptal edildi.",
     "deleteDownload": "İndirmeyi sil",
     "deleteDownloadConfirm": "İndirilen kitap saatten silinsin mi?",
     "volumeUp": "Sesi aç",

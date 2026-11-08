@@ -30,6 +30,8 @@
     "downloadDone": "Đã tải sách nói.",
     "downloadFailed": "Tải xuống thất bại. Chạm Tải xuống để tiếp tục.",
     "downloadNoSpace": "Đồng hồ không đủ dung lượng.",
+    "cancelDownload": "Hủy tải xuống",
+    "downloadCanceled": "Đã hủy tải xuống.",
     "deleteDownload": "Xóa bản tải",
     "deleteDownloadConfirm": "Xóa sách đã tải khỏi đồng hồ?",
     "volumeUp": "Tăng âm lượng",

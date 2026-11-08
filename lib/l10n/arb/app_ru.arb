@@ -30,6 +30,8 @@
     "downloadDone": "Аудиокнига скачана.",
     "downloadFailed": "Ошибка скачивания. Нажмите «Скачать», чтобы продолжить.",
     "downloadNoSpace": "Недостаточно места на часах.",
+    "cancelDownload": "Отменить загрузку",
+    "downloadCanceled": "Загрузка отменена.",
     "deleteDownload": "Удалить загрузку",
     "deleteDownloadConfirm": "Удалить скачанную книгу с часов?",
     "volumeUp": "Громче",
