@@ -638,8 +638,9 @@ void main() {
       i < 4 && find.byIcon(Icons.play_arrow).hitTestable().evaluate().isEmpty;
       i++
     ) {
-      // Gone once the page has switched back.
-      final handle = find.text('30:00');
+      // A fixed label: the timer's text counts down. Gone once the page
+      // has switched back.
+      final handle = find.text('Speed');
       if (handle.evaluate().isEmpty) break;
       await tester.drag(handle, const Offset(0, 250));
       await pumpFor(tester, const Duration(milliseconds: 600));
