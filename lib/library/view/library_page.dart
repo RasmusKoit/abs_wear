@@ -261,7 +261,10 @@ class _LibraryPageState extends State<LibraryPage> {
     }
     // A book opened from the list may still be saving its position.
     await AudioPlayerController.lastClose;
-    if (mounted) unawaited(_refresh());
+    if (!mounted) return;
+    unawaited(_refresh());
+    // A book may have been downloaded or deleted from the list.
+    unawaited(_refreshDownloads());
   }
 
   Future<void> _switchLibrary() async {

@@ -41,7 +41,13 @@ class _DownloadsPageState extends State<DownloadsPage> {
   }
 
   Future<void> _load() async {
-    final items = await listDownloads(widget.serverUrl);
+    List<DownloadedItem> items;
+    try {
+      items = await listDownloads(widget.serverUrl);
+    } on Object catch (e) {
+      debugPrint('Could not list downloads: $e');
+      items = const [];
+    }
     if (mounted) setState(() => _items = items);
   }
 

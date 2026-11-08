@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
@@ -26,25 +27,31 @@ class DownloadedItem {
 
 /// Downloads on the watch for [serverUrl], read from the session details
 /// saved next to each download (so this works offline). Newest first.
+/// The files are scanned off the UI isolate.
 Future<List<DownloadedItem>> listDownloads(String serverUrl) async {
-  final docs = await getApplicationDocumentsDirectory();
+  final docs = (await getApplicationDocumentsDirectory()).path;
+  return await Isolate.run(() => _scan(docs, serverUrl));
+}
+
+List<DownloadedItem> _scan(String docsPath, String serverUrl) {
   final found = <(DownloadedItem, DateTime)>[];
+  final docs = Directory(docsPath);
+  if (!docs.existsSync()) return const [];
   for (final dir in docs.listSync().whereType<Directory>()) {
-    final meta = File('${dir.path}/session.json');
-    if (!meta.existsSync()) continue;
     try {
+      final meta = File('${dir.path}/session.json');
+      if (!meta.existsSync()) continue;
       final json = jsonDecode(meta.readAsStringSync()) as Map<String, dynamic>;
-      // Older downloads didn't record their server; show them anyway.
-      final server = json['server'] as String?;
-      if (server != null && server != serverUrl) continue;
+      // Downloads from before the server and ids were recorded are left
+      // out (they can't be matched to this server); playing them online
+      // once records them.
+      final itemId = json['itemId'] as String?;
+      if (json['server'] != serverUrl || itemId == null) continue;
       final metadata = json['mediaMetadata'] as Map<String, dynamic>?;
       final cover = File('${dir.path}/cover.jpg');
       found.add((
         DownloadedItem(
-          // Older downloads: the folder is named after the book.
-          itemId:
-              json['itemId'] as String? ??
-              dir.uri.pathSegments.where((s) => s.isNotEmpty).last,
+          itemId: itemId,
           episodeId: json['episodeId'] as String?,
           title:
               json['displayTitle'] as String? ??
