@@ -124,6 +124,9 @@ class AudioPlayerController extends ChangeNotifier {
 
   /// Author (or, for an episode, the podcast), for the media notification.
   String bookAuthor = '';
+
+  /// The item has cover art on the server.
+  bool _hasCover = true;
   String libraryItemId = '';
 
   /// Set when playing a podcast episode ([libraryItemId] is the podcast).
@@ -302,7 +305,14 @@ class AudioPlayerController extends ChangeNotifier {
         if (tracks.isEmpty) return false;
         await _resumeLocalProgress();
         await _loadSources(initialTime: _pendingPosition);
-        if (await isDownloaded()) unawaited(_saveSessionMeta());
+        if (await isDownloaded()) {
+          unawaited(_saveSessionMeta());
+          // Downloads from before covers were saved get theirs now.
+          final dir = await localDirPath();
+          if (_hasCover && !_coverFile(dir).existsSync()) {
+            unawaited(_downloadCover(dir));
+          }
+        }
         // Send progress made offline right away.
         if (_carriedListening > Duration.zero) unawaited(syncOpenSession());
       }
@@ -670,12 +680,20 @@ class AudioPlayerController extends ChangeNotifier {
         libItem is Map<String, dynamic> && libItem['libraryFiles'] is List
         ? (libItem['libraryFiles'] as List).cast<Map<String, dynamic>>()
         : const <Map<String, dynamic>>[];
+    final libMedia = libItem is Map<String, dynamic> ? libItem['media'] : null;
+    // Unknown (no such field) counts as having one.
+    _hasCover =
+        json['hasCover'] as bool? ??
+        !(libMedia is Map<String, dynamic> &&
+            libMedia.containsKey('coverPath') &&
+            libMedia['coverPath'] == null);
     final mediaMeta = json['mediaMetadata'];
     _sessionMeta = {
       'duration': json['duration'],
       'currentTime': json['currentTime'],
       'displayTitle': json['displayTitle'],
       'displayAuthor': json['displayAuthor'],
+      'hasCover': _hasCover,
       'mediaMetadata': {
         'title': mediaMeta is Map<String, dynamic> ? mediaMeta['title'] : null,
       },
@@ -786,10 +804,14 @@ class AudioPlayerController extends ChangeNotifier {
     final dir = await localDirPath();
     // Cover art for the media notification: the saved copy when there is
     // one, else from the server (the header keeps the token out of the URL).
+    // None when there is no cover, or offline without a saved copy (each
+    // failed fetch would be retried and logged on every track change).
     final coverFile = _coverFile(dir);
     final cover = coverFile.existsSync()
         ? Uri.file(coverFile.path)
-        : Uri.parse('$serverUrl/api/items/$libraryItemId/cover?width=400');
+        : _hasCover && !isOffline
+        ? Uri.parse('$serverUrl/api/items/$libraryItemId/cover?width=400')
+        : null;
     final sources = [
       for (final t in tracks)
         AudioSource.uri(
@@ -803,7 +825,9 @@ class AudioPlayerController extends ChangeNotifier {
             album: bookTitle,
             artist: bookAuthor.isEmpty ? null : bookAuthor,
             artUri: cover,
-            artHeaders: cover.scheme == 'file' ? null : _authHeaders,
+            artHeaders: cover == null || cover.scheme == 'file'
+                ? null
+                : _authHeaders,
           ),
         ),
     ];
@@ -1083,6 +1107,8 @@ class AudioPlayerController extends ChangeNotifier {
   /// Saves the cover next to the audio, so the media notification shows it
   /// offline too. Best effort: a book without a cover is fine.
   Future<void> _downloadCover(String dir) async {
+    if (!_hasCover) return;
+    final part = File('${_coverFile(dir).path}.part');
     try {
       final response = await _client
           .get(
@@ -1090,10 +1116,17 @@ class AudioPlayerController extends ChangeNotifier {
             headers: _authHeaders,
           )
           .timeout(const Duration(seconds: 20));
-      if (response.statusCode != 200) return;
-      await _coverFile(dir).writeAsBytes(response.bodyBytes, flush: true);
+      if (response.statusCode != 200 || response.bodyBytes.isEmpty) return;
+      // Renamed only when complete: a broken file would never be replaced.
+      await part.writeAsBytes(response.bodyBytes, flush: true);
+      await part.rename(_coverFile(dir).path);
     } on Object catch (e) {
       debugPrint('Could not save cover: $e');
+      try {
+        if (part.existsSync()) part.deleteSync();
+      } on FileSystemException {
+        // The folder may be gone (download deleted meanwhile).
+      }
     }
   }
 
