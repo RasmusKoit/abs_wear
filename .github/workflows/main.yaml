@@ -30,6 +30,11 @@ jobs:
       - name: Unit and widget tests
         run: flutter test --test-randomize-ordering-seed random
 
+      # Catches Gradle/AGP/R8 and manifest breakage that analyze and unit
+      # tests can't see. Debug-signed (no release key in PR builds).
+      - name: Build release APK
+        run: flutter build apk --release --flavor production -t lib/main_production.dart
+
   spell-check:
     uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/spell_check.yml@v1
     with:
