@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -31,7 +32,23 @@ class JsonCache {
     }
   }
 
+  /// Writes to the same key run one after another.
+  static final Map<String, Future<void>> _writes = {};
+
   static Future<void> write(String key, Object? value) async {
+    final previous = _writes[key] ?? Future<void>.value();
+    final done = Completer<void>();
+    _writes[key] = done.future;
+    try {
+      await previous;
+      await _write(key, value);
+    } finally {
+      done.complete();
+      if (identical(_writes[key], done.future)) unawaited(_writes.remove(key));
+    }
+  }
+
+  static Future<void> _write(String key, Object? value) async {
     try {
       final dir = await _dir();
       dir.createSync(recursive: true);

@@ -37,7 +37,9 @@ class _LibraryPageState extends State<LibraryPage> {
   bool _loading = false;
   Object? _error;
 
-  String get _cacheKey => 'shelf_${widget.libraryId}';
+  String get _cacheKey =>
+      'shelf_${'${widget.serverUrl}|${widget.user}'.hashCode}_'
+      '${widget.libraryId}';
 
   @override
   void initState() {
@@ -67,8 +69,15 @@ class _LibraryPageState extends State<LibraryPage> {
     await _refresh();
   }
 
+  /// A refresh asked for while one runs (e.g. after the player closed)
+  /// runs again when it finishes.
+  bool _refreshAgain = false;
+
   Future<void> _refresh() async {
-    if (_loading) return;
+    if (_loading) {
+      _refreshAgain = true;
+      return;
+    }
     setState(() {
       _loading = true;
       _error = null;
@@ -90,6 +99,10 @@ class _LibraryPageState extends State<LibraryPage> {
       setState(() => _error = e);
     } finally {
       if (mounted) setState(() => _loading = false);
+    }
+    if (_refreshAgain && mounted) {
+      _refreshAgain = false;
+      await _refresh();
     }
   }
 
@@ -132,7 +145,10 @@ class _LibraryPageState extends State<LibraryPage> {
         ),
       ),
     );
-    // Progress changed while listening; reload so ordering is current.
+    // Progress changed while listening; reload once the player has sent
+    // its final position (it closes after the page transition).
+    await Future<void>.delayed(const Duration(milliseconds: 500));
+    await AudioPlayerController.lastClose;
     if (mounted) unawaited(_refresh());
   }
 
@@ -144,6 +160,7 @@ class _LibraryPageState extends State<LibraryPage> {
           serverUrl: widget.serverUrl,
           token: widget.token,
           libraryId: widget.libraryId,
+          user: widget.user,
         ),
       ),
     );

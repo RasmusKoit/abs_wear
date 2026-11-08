@@ -84,6 +84,11 @@ class AudioPlayerController extends ChangeNotifier {
   /// a new session must not start before the old one saved its position.
   static Future<void> _previousClose = Future.value();
 
+  /// Completes once the last closed player has saved its final position
+  /// (bounded, so callers never wait forever).
+  static Future<void> get lastClose =>
+      _previousClose.timeout(const Duration(seconds: 45), onTimeout: () {});
+
   final http.Client _client;
   final AudioPlayer player = AudioPlayer();
 

@@ -15,12 +15,16 @@ class BrowsePage extends StatefulWidget {
     required this.serverUrl,
     required this.token,
     required this.libraryId,
+    required this.user,
     super.key,
   });
 
   final String serverUrl;
   final String token;
   final String libraryId;
+
+  /// Part of the cache key, so another account never sees this list.
+  final String user;
 
   @override
   State<BrowsePage> createState() => _BrowsePageState();
@@ -35,23 +39,36 @@ class _BrowsePageState extends State<BrowsePage> {
   final _scrollController = ScrollController();
   final List<ShelfBook> _books = [];
 
-  /// Total on the server; null until the first page arrives.
+  /// Total on the server; null until known (from the cache or server).
   int? _total;
+
+  /// The server returned a short page: nothing more to load.
+  bool _reachedEnd = false;
+
+  /// Page 0 was checked against the server this visit. Until then paging
+  /// waits, so it can't mix with a list that is about to be replaced.
+  bool _validated = false;
   int _nextPage = 0;
   bool _loading = false;
   Object? _error;
 
+  /// Bumped when the list restarts; replies for older lists are dropped.
+  int _generation = 0;
+
   /// True while showing the saved list because the server is unreachable.
-  bool _offline = false;
+  bool get _offline => _error != null && !_validated && _books.isNotEmpty;
 
-  String get _cacheKey => 'browse_${widget.libraryId}';
+  String get _cacheKey =>
+      'browse_${'${widget.serverUrl}|${widget.user}'.hashCode}_'
+      '${widget.libraryId}';
 
-  bool get _hasMore => _total == null || _books.length < _total!;
+  bool get _hasMore =>
+      !_reachedEnd && (_total == null || _books.length < _total!);
 
   @override
   void initState() {
     super.initState();
-    unawaited(_start());
+    unawaited(_showCached().then((_) => _checkFirstPage()));
   }
 
   @override
@@ -60,25 +77,31 @@ class _BrowsePageState extends State<BrowsePage> {
     super.dispose();
   }
 
-  /// Shows the saved list right away, then checks the first page: if it
-  /// still matches, paging continues after the saved books; if the library
-  /// changed, the list starts over from the server.
-  Future<void> _start() async {
+  Future<void> _showCached() async {
     final cached = await JsonCache.read(_cacheKey);
-    if (!mounted) return;
-    if (cached is Map<String, dynamic> && cached['books'] is List) {
-      setState(() {
-        _books.addAll(
-          (cached['books'] as List).cast<Map<String, dynamic>>().map(
-            ShelfBook.fromCache,
-          ),
-        );
-        _total = cached['total'] as int?;
-      });
-    }
+    if (!mounted || cached is! Map<String, dynamic>) return;
+    final books = cached['books'];
+    if (books is! List) return;
+    setState(() {
+      _books.addAll(
+        books.cast<Map<String, dynamic>>().map(ShelfBook.fromCache),
+      );
+      _total = cached['total'] as int?;
+    });
+  }
+
+  /// Compares the server's first page with what is shown: if it still
+  /// matches, paging continues after the saved books; if the library
+  /// changed, the list starts over from the server.
+  Future<void> _checkFirstPage() async {
+    final generation = ++_generation;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
       final (page, total) = await _fetchPage(0);
-      if (!mounted) return;
+      if (!mounted || generation != _generation) return;
       final unchanged =
           _books.length >= page.length &&
           total == _total &&
@@ -92,18 +115,20 @@ class _BrowsePageState extends State<BrowsePage> {
             ..addAll(page);
         }
         _total = total;
+        _reachedEnd = page.length < _pageSize || _books.length >= total;
         _nextPage = (_books.length / _pageSize).ceil();
-        _error = null;
-        _offline = false;
+        _validated = true;
       });
       unawaited(_save());
     } on Object catch (e) {
-      if (!mounted) return;
-      if (_handleAuthError(e)) return;
-      setState(() {
-        _error = e;
-        _offline = _books.isNotEmpty;
-      });
+      if (!mounted || generation != _generation || _handleAuthError(e)) {
+        return;
+      }
+      setState(() => _error = e);
+    } finally {
+      if (mounted && generation == _generation) {
+        setState(() => _loading = false);
+      }
     }
   }
 
@@ -124,29 +149,32 @@ class _BrowsePageState extends State<BrowsePage> {
   }
 
   Future<void> _loadMore() async {
-    if (_loading || !_hasMore || _offline) return;
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+    // A failed load waits for the user's retry instead of looping.
+    if (_loading || !_validated || !_hasMore || _error != null) return;
+    final generation = _generation;
+    final pageNumber = _nextPage;
+    setState(() => _loading = true);
     try {
-      final (page, total) = await _fetchPage(_nextPage);
-      if (!mounted) return;
+      final (page, total) = await _fetchPage(pageNumber);
+      if (!mounted || generation != _generation) return;
       setState(() {
         // Skip duplicates in case the library changed while paging.
         final known = {for (final b in _books) b.id};
         _books.addAll(page.where((b) => !known.contains(b.id)));
         _total = total;
-        _nextPage++;
-        // A short page means the end, whatever the total says.
-        if (page.length < _pageSize) _total = _books.length;
+        _nextPage = pageNumber + 1;
+        _reachedEnd = page.length < _pageSize;
       });
       unawaited(_save());
     } on Object catch (e) {
-      if (!mounted || _handleAuthError(e)) return;
+      if (!mounted || generation != _generation || _handleAuthError(e)) {
+        return;
+      }
       setState(() => _error = e);
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted && generation == _generation) {
+        setState(() => _loading = false);
+      }
     }
   }
 
@@ -156,22 +184,23 @@ class _BrowsePageState extends State<BrowsePage> {
   });
 
   /// 401/404: leave, and let the library and login pages handle it.
+  /// Returns true when handled (also while another page is on top, so
+  /// the error isn't retried in a loop).
   bool _handleAuthError(Object e) {
     final result = e is ApiException ? e.result : null;
     if (result == null) return false;
+    _error = e;
     final route = ModalRoute.of(context);
     if (route != null && route.isCurrent) Navigator.of(context).pop(result);
     return true;
   }
 
   void _retry() {
-    setState(() {
-      _offline = false;
-      _error = null;
-    });
-    if (_total == null || _books.isEmpty) {
-      unawaited(_start());
+    if (_loading) return;
+    if (!_validated) {
+      unawaited(_checkFirstPage());
     } else {
+      setState(() => _error = null);
       unawaited(_loadMore());
     }
   }
@@ -191,7 +220,7 @@ class _BrowsePageState extends State<BrowsePage> {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final theme = Theme.of(context);
-    final showFooter = _hasMore || _error != null || _offline;
+    final showFooter = _hasMore || _error != null || _loading;
     return RotaryScrollbar(
       width: 2,
       padding: 1,
@@ -220,9 +249,9 @@ class _BrowsePageState extends State<BrowsePage> {
             if (index >= _books.length) return _footer(l10n, theme);
             if (index >= _books.length - _prefetchRows) {
               // Near the end: fetch the next page after this frame.
-              WidgetsBinding.instance.addPostFrameCallback(
-                (_) => unawaited(_loadMore()),
-              );
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) unawaited(_loadMore());
+              });
             }
             final book = _books[index];
             return BookTile(
