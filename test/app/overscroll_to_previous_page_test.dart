@@ -78,6 +78,34 @@ void main() {
     expect(list.offset, greaterThan(afterUp + 150));
   });
 
+  testWidgets('a drag that scrolls up to the top stops there', (tester) async {
+    await pump(tester);
+    await toSecondPage(tester);
+    list.jumpTo(100);
+    await tester.pump();
+
+    // Scrolls 100 px to the top, then keeps pulling in the same drag.
+    await tester.drag(find.text('row 5'), const Offset(0, 300));
+    await tester.pumpAndSettle();
+    expect(list.offset, 0);
+    expect(pages.page, 1);
+
+    // A new pull from the top goes back.
+    await tester.drag(find.text('row 2'), const Offset(0, 200));
+    await tester.pumpAndSettle();
+    expect(pages.page, 0);
+  });
+
+  testWidgets('a short twitch at the top stays on the page', (tester) async {
+    await pump(tester);
+    await toSecondPage(tester);
+
+    // Past the touch slop, but less than the threshold.
+    await tester.drag(find.text('row 2'), const Offset(0, 30));
+    await tester.pumpAndSettle();
+    expect(pages.page, 1);
+  });
+
   testWidgets('a fling into the top stays on the page', (tester) async {
     await pump(tester);
     await toSecondPage(tester);
