@@ -27,6 +27,7 @@ class BookTrack {
     required this.filename,
     required this.ino,
     required this.size,
+    this.mimeType,
   });
 
   factory BookTrack.fromJson(
@@ -44,6 +45,7 @@ class BookTrack {
       filename: metadata['filename'] as String? ?? '$ino.audio',
       ino: ino,
       size: sizesByIno[ino] ?? 0,
+      mimeType: json['mimeType'] as String?,
     );
   }
 
@@ -55,7 +57,32 @@ class BookTrack {
   final String ino;
   final int size;
 
+  /// As the server reports it; null in sessions saved by older versions.
+  final String? mimeType;
+
   double get end => startOffset + duration;
+
+  /// An HLS playlist the server remuxes the book into, not a file.
+  bool get isHls => contentUrl.contains('.m3u8');
+
+  Map<String, dynamic> toJson() => {
+    'index': index,
+    'startOffset': startOffset,
+    'duration': duration,
+    'contentUrl': contentUrl,
+    'metadata': {'filename': filename},
+    'mimeType': ?mimeType,
+  };
+
+  /// Streamed from the file as is, without the server remuxing it to HLS.
+  bool get directPlayable {
+    final type = mimeType;
+    if (type != null) {
+      return AudioPlayerController.directPlayMimeTypes.contains(type);
+    }
+    final name = filename.toLowerCase();
+    return !const ['.m4b', '.m4a', '.mp4', '.aac'].any(name.endsWith);
+  }
 }
 
 @immutable
@@ -118,7 +145,16 @@ class AudioPlayerController extends ChangeNotifier {
   /// The loaded audio is streamed from the server (not downloaded).
   bool _streaming = false;
 
+  /// The book's audio files (what a download saves).
   List<BookTrack> tracks = [];
+
+  /// What the server streams: [tracks] for direct play, or one HLS track
+  /// for the whole book when the server remuxes it.
+  List<BookTrack> _streamTracks = [];
+
+  /// The tracks loaded in the player: [tracks] when playing downloaded
+  /// files, else [_streamTracks]. Player indexes refer to this list.
+  List<BookTrack> _playing = [];
   List<BookChapter> chapters = [];
   String sessionId = '';
   String bookTitle = '';
@@ -284,7 +320,7 @@ class AudioPlayerController extends ChangeNotifier {
       return _pendingPosition;
     }
     final index = player.currentIndex ?? 0;
-    final offset = index < tracks.length ? tracks[index].startOffset : 0;
+    final offset = index < _playing.length ? _playing[index].startOffset : 0;
     return _pendingPosition = offset + player.position.inMilliseconds / 1000;
   }
 
@@ -298,6 +334,10 @@ class AudioPlayerController extends ChangeNotifier {
 
   /// Seeks waiting for loading to finish (just_audio drops them otherwise).
   int _queuedSeeks = 0;
+
+  /// [_loadSources] is waiting for the server's stream; seeks only move
+  /// the pending position meanwhile.
+  bool _awaitingStream = false;
   int _seekSeq = 0;
 
   /// True while sources are swapped; the stop/start it causes is not a
@@ -377,7 +417,11 @@ class AudioPlayerController extends ChangeNotifier {
               '${episodeId == null ? '' : '/$episodeId'}',
             ),
             headers: {..._authHeaders, 'Content-Type': 'application/json'},
-            body: await _deviceInfoBody(),
+            // A downloaded book plays its files; podcast episodes are
+            // small enough to play directly.
+            body: await _deviceInfoBody(
+              directPlay: canPlayOffline || episodeId != null,
+            ),
           )
           .timeout(Duration(seconds: canPlayOffline ? 5 : 20));
       if (response.statusCode == 401) return false; // Log in again.
@@ -390,7 +434,10 @@ class AudioPlayerController extends ChangeNotifier {
           unawaited(_closeOrphanSession());
           return false;
         }
-        if (tracks.isEmpty) return false;
+        if (_streamTracks.isEmpty) {
+          unawaited(_closeOrphanSession());
+          return false;
+        }
         await _resumeLocalProgress();
         await _loadSources(initialTime: _pendingPosition);
         if (await isDownloaded()) {
@@ -732,9 +779,9 @@ class AudioPlayerController extends ChangeNotifier {
     // The player is idle now, so bookPosition would return a stale cached
     // value; the error event carries the real position.
     final index = e.index ?? player.currentIndex ?? 0;
-    if (index < tracks.length) {
+    if (index < _playing.length) {
       _pendingPosition =
-          tracks[index].startOffset + player.position.inMilliseconds / 1000;
+          _playing[index].startOffset + player.position.inMilliseconds / 1000;
     }
     _needsReload = true;
     unawaited(player.pause());
@@ -779,6 +826,27 @@ class AudioPlayerController extends ChangeNotifier {
         !(libMedia is Map<String, dynamic> &&
             libMedia.containsKey('coverPath') &&
             libMedia['coverPath'] == null);
+    final sizesByIno = <String, int>{};
+    for (final f in files) {
+      final size = (f['metadata'] as Map<String, dynamic>?)?['size'];
+      if (size is num) sizesByIno[f['ino'] as String] = size.toInt();
+    }
+    List<BookTrack> parse(Object? list) =>
+        (list is List ? list : const <Object?>[])
+            .cast<Map<String, dynamic>>()
+            .map((t) => BookTrack.fromJson(t, sizesByIno))
+            .toList()
+          ..sort((a, b) => a.startOffset.compareTo(b.startOffset));
+    final streamTracks = parse(json['audioTracks']);
+    // An HLS session streams one playlist; the files to download are the
+    // item's tracks.
+    final hls = streamTracks.any((t) => t.isHls);
+    final fileTracks = !hls
+        ? streamTracks
+        : libMedia is Map<String, dynamic>
+        ? parse(libMedia['tracks'])
+        : <BookTrack>[];
+
     final mediaMeta = json['mediaMetadata'];
     _sessionMeta = {
       // For the downloads list.
@@ -793,7 +861,8 @@ class AudioPlayerController extends ChangeNotifier {
       'mediaMetadata': {
         'title': mediaMeta is Map<String, dynamic> ? mediaMeta['title'] : null,
       },
-      'audioTracks': json['audioTracks'],
+      // The files, not an HLS stream: offline play uses these.
+      'audioTracks': [for (final t in fileTracks) t.toJson()],
       'chapters': json['chapters'],
       'libraryItem': {
         'libraryFiles': [
@@ -817,29 +886,31 @@ class AudioPlayerController extends ChangeNotifier {
         json['displayTitle'] as String? ?? metadata['title'] as String? ?? '';
     bookAuthor = json['displayAuthor'] as String? ?? '';
 
-    final sizesByIno = <String, int>{};
-    final item = json['libraryItem'];
-    if (item is Map<String, dynamic> && item['libraryFiles'] is List) {
-      for (final f
-          in (item['libraryFiles'] as List).cast<Map<String, dynamic>>()) {
-        final size = (f['metadata'] as Map<String, dynamic>?)?['size'];
-        if (size is num) sizesByIno[f['ino'] as String] = size.toInt();
-      }
-    }
-
-    tracks =
-        (json['audioTracks'] as List? ?? const [])
-            .cast<Map<String, dynamic>>()
-            .map((t) => BookTrack.fromJson(t, sizesByIno))
-            .toList()
-          ..sort((a, b) => a.startOffset.compareTo(b.startOffset));
+    tracks = fileTracks;
+    _streamTracks = streamTracks;
     chapters = (json['chapters'] as List? ?? const [])
         .cast<Map<String, dynamic>>()
         .map(BookChapter.fromJson)
         .toList();
   }
 
-  Future<String> _deviceInfoBody() async {
+  /// Formats the player streams straight from the file. Not MP4 (m4b,
+  /// m4a): the player must download and parse an MP4's whole index before
+  /// it can play, which for a long audiobook is tens of MB and can run the
+  /// watch out of memory; the server remuxes those to HLS instead. Not ADTS
+  /// AAC either, which can't be seeked without reading from the start.
+  static const directPlayMimeTypes = [
+    'audio/mpeg',
+    'audio/flac',
+    'audio/x-flac',
+    'audio/ogg',
+    'audio/opus',
+    'audio/wav',
+    'audio/x-wav',
+    'audio/webm',
+  ];
+
+  Future<String> _deviceInfoBody({required bool directPlay}) async {
     final info = await DeviceInfoPlugin().androidInfo;
     return jsonEncode({
       'deviceInfo': {
@@ -854,7 +925,10 @@ class AudioPlayerController extends ChangeNotifier {
             : info.manufacturer,
       },
       'mediaPlayer': 'JustAudio',
-      'forceDirectPlay': true,
+      if (directPlay)
+        'forceDirectPlay': true
+      else
+        'supportedMimeTypes': directPlayMimeTypes,
     });
   }
 
@@ -892,11 +966,20 @@ class AudioPlayerController extends ChangeNotifier {
     return dir.existsSync() && dir.listSync().isNotEmpty;
   }
 
+  /// The server's HLS URLs need no token (they carry the session id), and
+  /// without headers just_audio loads them directly instead of through its
+  /// local proxy, which would parse the playlist on the UI isolate and keep
+  /// a handler per segment (tens of thousands for a long book). Only over
+  /// HTTPS: the network security config allows the native player cleartext
+  /// HTTP only to the proxy on 127.0.0.1.
+  bool get _https => serverUrl.startsWith('https:');
+
   /// (Re)loads all tracks into the player, preferring local files, and
   /// positions it at [initialTime] seconds into the book.
   Future<void> _loadSources({required double initialTime}) async {
     final local = await isDownloaded();
     _streaming = !local;
+    final playing = local ? tracks : _streamTracks;
     final dir = await localDirPath();
     // Cover art for the media notification: the saved copy when there is
     // one, else from the server (the header keeps the token out of the URL).
@@ -909,12 +992,12 @@ class AudioPlayerController extends ChangeNotifier {
         ? Uri.parse('$serverUrl/api/items/$libraryItemId/cover?width=400')
         : null;
     final sources = [
-      for (final t in tracks)
+      for (final t in playing)
         AudioSource.uri(
           local
               ? Uri.file(_localFile(dir, t).path)
               : Uri.parse('$serverUrl${t.contentUrl}'),
-          headers: local ? null : _authHeaders,
+          headers: local || (t.isHls && _https) ? null : _authHeaders,
           tag: MediaItem(
             id: '$_mediaPath/${t.index}',
             title: bookTitle,
@@ -927,8 +1010,24 @@ class AudioPlayerController extends ChangeNotifier {
           ),
         ),
     ];
-    final (index, offset) = _trackAt(initialTime);
+    _playing = playing;
     _pendingPosition = initialTime;
+    if (!local) {
+      // Seeks made while waiting only move the pending position; the audio
+      // loads where the last one went.
+      _awaitingStream = true;
+      try {
+        var waitedFor = initialTime;
+        await _awaitHlsSegment(waitedFor);
+        while (_pendingPosition != waitedFor && !_closed) {
+          waitedFor = _pendingPosition;
+          await _awaitHlsSegment(waitedFor);
+        }
+      } finally {
+        _awaitingStream = false;
+      }
+    }
+    final (index, offset) = _trackAt(_pendingPosition);
     await player.setAudioSources(
       sources,
       initialIndex: index,
@@ -939,11 +1038,11 @@ class AudioPlayerController extends ChangeNotifier {
 
   /// Track index and position within that track for a book time.
   (int, double) _trackAt(double time) {
-    for (var i = 0; i < tracks.length; i++) {
-      if (time < tracks[i].end || i == tracks.length - 1) {
-        final offset = (time - tracks[i].startOffset).clamp(
+    for (var i = 0; i < _playing.length; i++) {
+      if (time < _playing[i].end || i == _playing.length - 1) {
+        final offset = (time - _playing[i].startOffset).clamp(
           0,
-          tracks[i].duration,
+          _playing[i].duration,
         );
         return (i, offset.toDouble());
       }
@@ -951,11 +1050,67 @@ class AudioPlayerController extends ChangeNotifier {
     return (0, 0);
   }
 
+  /// The server's HLS segment length (fixed in Audiobookshelf).
+  static const _hlsSegmentSeconds = 6;
+
+  /// [time] (in the single HLS track) is already loaded ahead.
+  bool _isBuffered(double time) {
+    final position = player.position.inMilliseconds / 1000;
+    final buffered = player.bufferedPosition.inMilliseconds / 1000;
+    return time >= position && time <= buffered;
+  }
+
+  /// Waits, at most 10 s, until the server has made the HLS segment at
+  /// [time]. The server answers 404 for a segment it hasn't made yet (and
+  /// starts making it there), which the player takes as a fatal error.
+  Future<void> _awaitHlsSegment(
+    double time, {
+    bool Function()? isCurrent,
+  }) async {
+    final track = _playing.firstOrNull;
+    if (track == null || !track.isHls) return;
+    final dir = track.contentUrl.substring(
+      0,
+      track.contentUrl.lastIndexOf('/'),
+    );
+    final segment = (time / _hlsSegmentSeconds).floor();
+    final uri = Uri.parse('$serverUrl$dir/output-$segment.ts');
+    final waited = Stopwatch()..start();
+    var missing = false;
+    while (!_closed &&
+        (isCurrent?.call() ?? true) &&
+        waited.elapsed < const Duration(seconds: 10)) {
+      try {
+        final response = await _client
+            .head(uri)
+            .timeout(const Duration(seconds: 5));
+        // Anything but "not made yet" is for the player to handle.
+        if (response.statusCode != 404) {
+          // A segment that just appeared may still be being written.
+          if (missing) {
+            await Future<void>.delayed(const Duration(milliseconds: 300));
+          }
+          return;
+        }
+        missing = true;
+      } on Object catch (e) {
+        debugPrint('Could not check the stream: $e');
+        return;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+    }
+  }
+
   Future<void> seekToBookTime(double time) async {
     final clamped = time.clamp(0, duration).toDouble();
-    final (index, offset) = _trackAt(clamped);
     _pendingPosition = clamped;
     final seq = ++_seekSeq;
+    if (_awaitingStream) {
+      // The audio is about to load; it starts at the pending position.
+      _notify();
+      return;
+    }
+    final (index, offset) = _trackAt(clamped);
     if (player.processingState == ProcessingState.loading) {
       // just_audio ignores seeks while loading; apply it once loaded.
       _queuedSeeks++;
@@ -970,6 +1125,18 @@ class AudioPlayerController extends ChangeNotifier {
         _queuedSeeks--;
       }
       // A newer seek supersedes this one.
+      if (_closed || seq != _seekSeq) return;
+    }
+    if (_playing.any((t) => t.isHls) && !_isBuffered(clamped)) {
+      // Counts as queued, so the position shows the target meanwhile and
+      // further skips add up from it.
+      _queuedSeeks++;
+      _notify();
+      try {
+        await _awaitHlsSegment(clamped, isCurrent: () => seq == _seekSeq);
+      } finally {
+        _queuedSeeks--;
+      }
       if (_closed || seq != _seekSeq) return;
     }
     await player.seek(
@@ -1016,18 +1183,44 @@ class AudioPlayerController extends ChangeNotifier {
 
   /// Pausing syncs progress through the player state listener.
   Future<void> togglePlayPause() async {
+    final pending = _playAfterReload;
+    if (pending != null) {
+      // Reloading after an error: a second tap cancels the play.
+      _playAfterReload = !pending;
+      return;
+    }
+    // The audio is being swapped (download added or deleted); it resumes
+    // on its own if it was playing.
+    if (_reloading) return;
     if (player.playing) {
       await player.pause();
       return;
     }
     if (_needsReload) {
       _needsReload = false;
-      final pos = bookPosition;
-      await player.stop();
-      await _loadSources(initialTime: pos);
+      _playAfterReload = true;
+      var play = true;
+      try {
+        final pos = bookPosition;
+        await player.stop();
+        // The server's HLS stream may be gone (e.g. it restarted); a new
+        // session brings a fresh one.
+        if (_streamTracks.any((t) => t.isHls) && !await isDownloaded()) {
+          await _reopenStream(pos);
+        }
+        await _loadSources(initialTime: _pendingPosition);
+      } finally {
+        play = _playAfterReload ?? false;
+        _playAfterReload = null;
+      }
+      if (!play || _closed) return;
     }
     unawaited(player.play());
   }
+
+  /// While play reloads the audio after an error: whether to play once it
+  /// is loaded.
+  bool? _playAfterReload;
 
   /// Periodic sync: skipped while paused with nothing new to report.
   Future<void> periodicSync() {
@@ -1246,12 +1439,57 @@ class AudioPlayerController extends ChangeNotifier {
     _reloading = true;
     try {
       await player.stop();
+      // A downloaded book's session plays its files directly; once the
+      // download is deleted, an MP4 book needs an HLS stream instead.
+      if (episodeId == null &&
+          !_streamTracks.any((t) => t.isHls) &&
+          tracks.any((t) => !t.directPlayable) &&
+          !await isDownloaded()) {
+        await _reopenStream(pos);
+      }
       await _loadSources(initialTime: pos);
     } finally {
       _reloading = false;
     }
     if (wasPlaying) unawaited(player.play());
     _notify();
+  }
+
+  /// Replaces the server session with a new one that streams the book as
+  /// HLS where needed, starting at [position]. Keeps the current session
+  /// when that fails.
+  Future<void> _reopenStream(double position) async {
+    if (isOffline || _closed) return;
+    // Ends the old session with the progress so far, so the new stream
+    // starts where the player will.
+    if (sessionId.isNotEmpty) {
+      await syncOpenSession(close: true, position: position);
+    }
+    try {
+      final response = await _client
+          .post(
+            Uri.parse('$serverUrl/api/items/$libraryItemId/play'),
+            headers: {..._authHeaders, 'Content-Type': 'application/json'},
+            body: await _deviceInfoBody(directPlay: false),
+          )
+          .timeout(const Duration(seconds: 20));
+      if (response.statusCode != 200) return;
+      final json = jsonDecode(response.body) as Map<String, dynamic>;
+      final stream =
+          (json['audioTracks'] as List? ?? const <Object?>[])
+              .cast<Map<String, dynamic>>()
+              .map((t) => BookTrack.fromJson(t, const {}))
+              .toList()
+            ..sort((a, b) => a.startOffset.compareTo(b.startOffset));
+      sessionId = json['id'] as String;
+      if (_closed) {
+        unawaited(_closeOrphanSession());
+        return;
+      }
+      if (stream.isNotEmpty) _streamTracks = stream;
+    } on Object catch (e) {
+      debugPrint('Could not start a new stream: $e');
+    }
   }
 
   /// Closes the session on the server (saving the final position) and then
