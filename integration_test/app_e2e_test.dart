@@ -630,6 +630,18 @@ void main() {
     await tester.tap(find.text('15:00'));
     await pumpUntil(tester, find.text('30:00'));
 
+    // Pulling down at the top of the controls goes back to the player,
+    // even though the controls page scrolls.
+    for (
+      var i = 0;
+      i < 4 && find.byIcon(Icons.play_arrow).hitTestable().evaluate().isEmpty;
+      i++
+    ) {
+      await tester.drag(find.text('30:00'), const Offset(0, 250));
+      await pumpFor(tester, const Duration(milliseconds: 600));
+    }
+    expect(find.byIcon(Icons.play_arrow).hitTestable(), findsOneWidget);
+
     // The speed is kept for the next book.
     await tester.binding.handlePopRoute();
     await pumpUntil(tester, find.text('Continue Listening'));

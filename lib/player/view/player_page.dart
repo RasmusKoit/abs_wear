@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:abs_wear/app/view/crown_scrollbar.dart';
+import 'package:abs_wear/app/view/overscroll_to_previous_page.dart';
 import 'package:abs_wear/l10n/l10n.dart';
 import 'package:abs_wear/player/player.dart';
 import 'package:flutter/material.dart';
@@ -100,7 +101,10 @@ class _PlayerPageState extends State<PlayerPage> {
           controller: _pageController,
           children: [
             PlayerViewPage(playerController: _playerController),
-            ControlViewPage(playerController: _playerController),
+            OverscrollToPreviousPage(
+              controller: _pageController,
+              child: ControlViewPage(playerController: _playerController),
+            ),
           ],
         ),
       ),
