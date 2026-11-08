@@ -13,7 +13,7 @@ URL=${E2E_ABS_URL:-${ABS_E2E_URL:-}}
 DEVICE=${1:-$(adb devices | awk 'NR>1 && $2=="device" {print $1; exit}')}
 [ -n "$DEVICE" ] || { echo "No device connected (start an emulator or adb connect the watch)"; exit 1; }
 echo "Device: $DEVICE   Server: $URL"
-${FLUTTER:-flutter} test integration_test \
+"${FLUTTER:-flutter}" test integration_test \
   -d "$DEVICE" \
   --flavor development \
   --dart-define=ABS_URL="$URL" \
