@@ -41,6 +41,9 @@ class _ScrollingTextState extends State<ScrollingText>
   /// Whether the text overflowed at the last layout.
   bool _overflows = false;
 
+  /// The text this state already scheduled its automatic scroll for.
+  String? _autoScheduled;
+
   @override
   void didUpdateWidget(ScrollingText oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -62,11 +65,15 @@ class _ScrollingTextState extends State<ScrollingText>
       ..value = 0;
   }
 
-  /// Scrolls the text once after a short delay.
-  void _scheduleScroll({Duration delay = _delay}) {
+  /// Scrolls the text once after a short delay. An automatic scroll runs
+  /// only for text that hasn't scrolled by itself yet; it is marked when it
+  /// starts, so a line that goes away before then still scrolls next time.
+  void _scheduleScroll({Duration delay = _delay, bool auto = false}) {
     _start?.cancel();
     _start = Timer(delay, () {
+      _start = null;
       if (!mounted || !_overflows) return;
+      if (auto && !ScrollingText._scrolled.add(widget.text)) return;
       _scroll.forward(from: 0);
       setState(() {});
     });
@@ -89,19 +96,26 @@ class _ScrollingTextState extends State<ScrollingText>
       builder: (context, constraints) {
         final direction = Directionality.of(context);
         final scaler = MediaQuery.textScalerOf(context);
+        // Measure with the style the Text widgets will use.
+        final inherited = DefaultTextStyle.of(context);
+        final style = inherited.style.merge(widget.style);
         TextPainter measure(String text) => TextPainter(
-          text: TextSpan(text: text, style: widget.style),
+          text: TextSpan(text: text, style: style),
           textDirection: direction,
           textScaler: scaler,
+          textHeightBehavior: inherited.textHeightBehavior,
           maxLines: 1,
         )..layout();
         final textPainter = measure(widget.text);
         _overflows = textPainter.width > constraints.maxWidth;
+        final height = textPainter.height;
         textPainter.dispose();
         if (!_overflows) return staticText;
-        if (ScrollingText._scrolled.add(widget.text)) {
+        if (_autoScheduled != widget.text &&
+            !ScrollingText._scrolled.contains(widget.text)) {
+          _autoScheduled = widget.text;
           WidgetsBinding.instance.addPostFrameCallback(
-            (_) => _scheduleScroll(),
+            (_) => _scheduleScroll(auto: true),
           );
         }
         // One round: the text and the gap, after which the second copy sits
@@ -119,8 +133,10 @@ class _ScrollingTextState extends State<ScrollingText>
         } else {
           final sign = direction == TextDirection.rtl ? 1.0 : -1.0;
           line = ClipRect(
+            // A fixed size: in a Column the height is unbounded.
             child: SizedBox(
               width: constraints.maxWidth,
+              height: height,
               child: OverflowBox(
                 alignment: AlignmentDirectional.centerStart,
                 minWidth: 0,

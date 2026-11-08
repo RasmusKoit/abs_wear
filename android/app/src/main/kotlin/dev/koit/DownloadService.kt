@@ -239,11 +239,7 @@ object DownloadNetwork {
             manager.requestNetwork(request, cb)
             callback = cb
             main.postDelayed({
-                if (answered) return@postDelayed
-                timedOut = true
-                // No Wi-Fi in time: stop asking for it, so the radio isn't
-                // kept searching for the rest of the download.
-                if (callback === cb) release(context)
+                if (!answered) timedOut = true
                 answer(false)
             }, WAIT_MS)
         } catch (e: RuntimeException) {
@@ -254,12 +250,14 @@ object DownloadNetwork {
 
     /**
      * Routes over the default network again, for a server that the watch's
-     * Wi-Fi can't reach, and stops requesting Wi-Fi (it would only keep the
-     * radio up for nothing).
+     * Wi-Fi can't reach. Wi-Fi stays requested until [release].
      */
     fun useDefaultNetwork(context: Context) {
         useDefault = true
-        release(context)
+        if (bound == null) return
+        context.applicationContext.getSystemService(ConnectivityManager::class.java)
+            ?.bindProcessToNetwork(null)
+        bound = null
     }
 
     fun release(context: Context) {

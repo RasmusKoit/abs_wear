@@ -6,12 +6,19 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   const long = 'A very long book title that never fits on a watch';
 
+  // Like the player: a line in a Column, so its height is unbounded.
   Widget app(String text) => MaterialApp(
     home: Scaffold(
       body: Center(
         child: SizedBox(
           width: 120,
-          child: ScrollingText(text: text, style: const TextStyle()),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ScrollingText(text: text, style: const TextStyle()),
+              const Text('below'),
+            ],
+          ),
         ),
       ),
     ),
@@ -35,9 +42,12 @@ void main() {
     await tester.pumpWidget(app(long));
     await tester.pump();
     expect(find.text(long), findsOneWidget);
+    final height = tester.getSize(find.byType(ScrollingText)).height;
     await tester.pump(const Duration(milliseconds: 1600));
     await tester.pump(const Duration(milliseconds: 100));
     expect(doubled(long), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    expect(tester.getSize(find.byType(ScrollingText)).height, height);
     await tester.pump(const Duration(minutes: 1));
     await tester.pump();
     expect(doubled(long), findsNothing);
@@ -60,6 +70,19 @@ void main() {
     await tester.pump(const Duration(seconds: 3));
     expect(doubled(long), findsNothing);
     expect(tester.binding.hasScheduledFrame, isFalse);
+  });
+
+  testWidgets('a line closed before its scroll started still scrolls later', (
+    tester,
+  ) async {
+    await tester.pumpWidget(app(long));
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpWidget(app(long));
+    await tester.pump(const Duration(milliseconds: 1600));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(doubled(long), findsOneWidget);
+    await tester.pumpAndSettle();
   });
 
   testWidgets('a tap scrolls it again', (tester) async {

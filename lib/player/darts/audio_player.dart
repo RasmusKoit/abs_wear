@@ -152,14 +152,16 @@ class AudioPlayerController extends ChangeNotifier {
   final AudioPlayer player = AudioPlayer(
     // The default 50 s buffer runs dry within a minute when the network
     // drops (e.g. the watch switches from Wi-Fi to Bluetooth with the
-    // screen off). Audiobooks are low bitrate: buffer up to 10 min, at most
-    // 16 MB. Loading resumes only below 4 min, so the radio fetches about
-    // 6 min in one burst and then sleeps (min == max refilled one segment
-    // at a time and kept the radio awake for the whole book).
+    // screen off). Audiobooks are low bitrate: buffer up to 15 min, at most
+    // 16 MB. Loading resumes only below 3 min, so the radio fetches about
+    // 12 min in one burst and then sleeps (min == max refilled one segment
+    // at a time and kept the radio awake for the whole book). ExoPlayer
+    // multiplies the minimum by the speed: at 2.5x it is 7.5 min, still
+    // well below the maximum.
     audioLoadConfiguration: const AudioLoadConfiguration(
       androidLoadControl: AndroidLoadControl(
-        minBufferDuration: Duration(minutes: 4),
-        maxBufferDuration: Duration(minutes: 10),
+        minBufferDuration: Duration(minutes: 3),
+        maxBufferDuration: Duration(minutes: 15),
         targetBufferBytes: 16 * 1024 * 1024,
       ),
     ),
