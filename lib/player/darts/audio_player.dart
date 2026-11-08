@@ -121,6 +121,9 @@ class AudioPlayerController extends ChangeNotifier {
   List<BookChapter> chapters = [];
   String sessionId = '';
   String bookTitle = '';
+
+  /// Author (or, for an episode, the podcast), for the media notification.
+  String bookAuthor = '';
   String libraryItemId = '';
 
   /// Set when playing a podcast episode ([libraryItemId] is the podcast).
@@ -672,6 +675,7 @@ class AudioPlayerController extends ChangeNotifier {
       'duration': json['duration'],
       'currentTime': json['currentTime'],
       'displayTitle': json['displayTitle'],
+      'displayAuthor': json['displayAuthor'],
       'mediaMetadata': {
         'title': mediaMeta is Map<String, dynamic> ? mediaMeta['title'] : null,
       },
@@ -697,6 +701,7 @@ class AudioPlayerController extends ChangeNotifier {
     // For an episode this is the episode's title, not the podcast's.
     bookTitle =
         json['displayTitle'] as String? ?? metadata['title'] as String? ?? '';
+    bookAuthor = json['displayAuthor'] as String? ?? '';
 
     final sizesByIno = <String, int>{};
     final item = json['libraryItem'];
@@ -779,6 +784,12 @@ class AudioPlayerController extends ChangeNotifier {
     final local = await isDownloaded();
     _streaming = !local;
     final dir = await localDirPath();
+    // Cover art for the media notification: the saved copy when there is
+    // one, else from the server (the header keeps the token out of the URL).
+    final coverFile = _coverFile(dir);
+    final cover = coverFile.existsSync()
+        ? Uri.file(coverFile.path)
+        : Uri.parse('$serverUrl/api/items/$libraryItemId/cover?width=400');
     final sources = [
       for (final t in tracks)
         AudioSource.uri(
@@ -790,6 +801,9 @@ class AudioPlayerController extends ChangeNotifier {
             id: '$_mediaPath/${t.index}',
             title: bookTitle,
             album: bookTitle,
+            artist: bookAuthor.isEmpty ? null : bookAuthor,
+            artUri: cover,
+            artHeaders: cover.scheme == 'file' ? null : _authHeaders,
           ),
         ),
     ];
@@ -1058,9 +1072,29 @@ class AudioPlayerController extends ChangeNotifier {
     }
     if (result == DownloadResult.done && !_closed) {
       await _saveSessionMeta();
+      await _downloadCover(dir.path);
       await reloadSources();
     }
     return result;
+  }
+
+  File _coverFile(String dir) => File('$dir/cover.jpg');
+
+  /// Saves the cover next to the audio, so the media notification shows it
+  /// offline too. Best effort: a book without a cover is fine.
+  Future<void> _downloadCover(String dir) async {
+    try {
+      final response = await _client
+          .get(
+            Uri.parse('$serverUrl/api/items/$libraryItemId/cover?width=400'),
+            headers: _authHeaders,
+          )
+          .timeout(const Duration(seconds: 20));
+      if (response.statusCode != 200) return;
+      await _coverFile(dir).writeAsBytes(response.bodyBytes, flush: true);
+    } on Object catch (e) {
+      debugPrint('Could not save cover: $e');
+    }
   }
 
   Future<void> deleteDownload() async {
