@@ -1,8 +1,5 @@
 package dev.koit.abs_wear
 
-import android.Manifest
-import android.content.pm.PackageManager
-import android.os.Build
 import android.os.Bundle
 import android.view.MotionEvent
 import androidx.wear.ambient.AmbientLifecycleObserver
@@ -92,13 +89,5 @@ class MainActivity : AudioServiceActivity() {
         super.onCreate(savedInstanceState)
         ambientObserver = AmbientLifecycleObserver(this, ambientCallback)
         lifecycle.addObserver(ambientObserver)
-        // Media notifications are exempt from this permission, but some
-        // watches hide app notifications without it.
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
-            PackageManager.PERMISSION_GRANTED
-        ) {
-            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
-        }
     }
 }
