@@ -19,56 +19,57 @@ jobs:
       contents: write
 
     env:
-      SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
-      SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
-      SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
-      
+      # Inputs go through env, never straight into shell lines.
+      BUILD_NAME: ${{ inputs.build_name }}
+      BUILD_NUMBER: ${{ inputs.build_number }}
+      ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/android_keystore.jks
+      ANDROID_KEYSTORE_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+      ANDROID_KEYSTORE_PRIVATE_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+
     steps:
       - uses: actions/checkout@v4
-      
+
       - uses: subosito/flutter-action@v2
         with:
-          channel: "stable"
-      - run: flutter doctor -v
-      
-      - name: Checkout and get packages
-        uses: actions/checkout@v4
+          flutter-version: 3.47.9
+          channel: stable
+          cache: true
+
       - run: flutter pub get
 
-      - name: Decode Keystore
-        id: decode_keystore
-        uses: timheuer/base64-to-file@v1.2
-        with:
-          fileName: 'android_keystore.jks'
-          fileDir: '/home/runner/work/abs_wear/abs_wear/android/app/keystore/'
-          encodedString: ${{ secrets.KEYSTORE }}
-
-      - name: Create key.properties file
-        run: echo "storePassword=$SIGNING_STORE_PASSWORD" > /home/runner/work/abs_wear/abs_wear/android/key.properties && echo "keyPassword=$SIGNING_KEY_PASSWORD" >> /home/runner/work/abs_wear/abs_wear/android/key.properties && echo "keyAlias=$SIGNING_KEY_ALIAS" >> /home/runner/work/abs_wear/abs_wear/android/key.properties && echo "storeFile=keystore/android_keystore.jks" >> /home/runner/work/abs_wear/abs_wear/android/key.properties
-
-      - name: Build APK
-        run: flutter build apk --split-per-abi --release --build-number ${{ github.event.inputs.build_number }} --build-name ${{ github.event.inputs.build_name }} --target "lib/main_production.dart" --flavor production
+      - name: Decode keystore
         env:
-          ANDROID_KEYSTORE_PATH: "/home/runner/work/abs_wear/abs_wear/android/app/keystore/android_keystore.jks"
-          ANDROID_KEYSTORE_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
-          ANDROID_KEYSTORE_PRIVATE_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          KEYSTORE: ${{ secrets.KEYSTORE }}
+        run: echo "$KEYSTORE" | base64 --decode > "$ANDROID_KEYSTORE_PATH"
 
-      - name: Build APP BUNDLE
-        run: flutter build appbundle --build-number ${{ github.event.inputs.build_number }} --build-name ${{ github.event.inputs.build_name }} --target "lib/main_production.dart" --flavor production
-        env:
-          ANDROID_KEYSTORE_PATH: "/home/runner/work/abs_wear/abs_wear/android/app/keystore/android_keystore.jks"
-          ANDROID_KEYSTORE_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
-          ANDROID_KEYSTORE_PRIVATE_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+      - name: Build APKs
+        run: >
+          flutter build apk --split-per-abi --release
+          --build-name "$BUILD_NAME" --build-number "$BUILD_NUMBER"
+          --target lib/main_production.dart --flavor production
 
-      - name: Create Release
-        uses: ncipollo/release-action@v1.14.0
+      - name: Build app bundle
+        run: >
+          flutter build appbundle --release
+          --build-name "$BUILD_NAME" --build-number "$BUILD_NUMBER"
+          --target lib/main_production.dart --flavor production
+
+      - name: Remove keystore
+        if: always()
+        run: rm -f "$ANDROID_KEYSTORE_PATH"
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
         with:
-          artifacts: "build/app/outputs/flutter-apk/*.apk, build/app/outputs/bundle/productionRelease/*.aab"
+          name: abs-wear-${{ inputs.build_name }}+${{ inputs.build_number }}
+          path: |
+            build/app/outputs/flutter-apk/*.apk
+            build/app/outputs/bundle/productionRelease/*.aab
 
-      - name: Upload Build Artifact
-        uses: actions/upload-artifact@v4.3.1
+      - name: Create release
+        uses: ncipollo/release-action@v1
         with:
-          name: release-apk
-          path: build/app/outputs/apk/
+          tag: v${{ inputs.build_name }}+${{ inputs.build_number }}
+          commit: ${{ github.sha }}
+          artifacts: "build/app/outputs/flutter-apk/*.apk,build/app/outputs/bundle/productionRelease/*.aab"
