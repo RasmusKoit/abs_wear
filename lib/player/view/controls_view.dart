@@ -124,7 +124,10 @@ class _ControlViewPageState extends State<ControlViewPage> {
         title: Text(l10n.controls, style: theme.textTheme.bodyLarge),
       ),
       // Scrolls rather than overflowing on small screens or large text.
+      // Not primary: the page's round scrollbar makes the player's
+      // PageController the primary one, which this must not attach to.
       body: SingleChildScrollView(
+        primary: false,
         child: Padding(
           padding: const EdgeInsets.all(8),
           child: Column(
