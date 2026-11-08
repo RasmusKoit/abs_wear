@@ -56,6 +56,17 @@ class BookTrack {
   final int size;
 
   double get end => startOffset + duration;
+
+  /// An HLS playlist the server remuxes the book into, not a file.
+  bool get isHls => contentUrl.contains('.m3u8');
+
+  Map<String, dynamic> toJson() => {
+    'index': index,
+    'startOffset': startOffset,
+    'duration': duration,
+    'contentUrl': contentUrl,
+    'metadata': {'filename': filename},
+  };
 }
 
 @immutable
@@ -118,7 +129,16 @@ class AudioPlayerController extends ChangeNotifier {
   /// The loaded audio is streamed from the server (not downloaded).
   bool _streaming = false;
 
+  /// The book's audio files (what a download saves).
   List<BookTrack> tracks = [];
+
+  /// What the server streams: [tracks] for direct play, or one HLS track
+  /// for the whole book when the server remuxes it.
+  List<BookTrack> _streamTracks = [];
+
+  /// The tracks loaded in the player: [tracks] when playing downloaded
+  /// files, else [_streamTracks]. Player indexes refer to this list.
+  List<BookTrack> _playing = [];
   List<BookChapter> chapters = [];
   String sessionId = '';
   String bookTitle = '';
@@ -284,7 +304,7 @@ class AudioPlayerController extends ChangeNotifier {
       return _pendingPosition;
     }
     final index = player.currentIndex ?? 0;
-    final offset = index < tracks.length ? tracks[index].startOffset : 0;
+    final offset = index < _playing.length ? _playing[index].startOffset : 0;
     return _pendingPosition = offset + player.position.inMilliseconds / 1000;
   }
 
@@ -377,7 +397,11 @@ class AudioPlayerController extends ChangeNotifier {
               '${episodeId == null ? '' : '/$episodeId'}',
             ),
             headers: {..._authHeaders, 'Content-Type': 'application/json'},
-            body: await _deviceInfoBody(),
+            // A downloaded book plays its files; podcast episodes are
+            // small enough to play directly.
+            body: await _deviceInfoBody(
+              directPlay: canPlayOffline || episodeId != null,
+            ),
           )
           .timeout(Duration(seconds: canPlayOffline ? 5 : 20));
       if (response.statusCode == 401) return false; // Log in again.
@@ -732,9 +756,9 @@ class AudioPlayerController extends ChangeNotifier {
     // The player is idle now, so bookPosition would return a stale cached
     // value; the error event carries the real position.
     final index = e.index ?? player.currentIndex ?? 0;
-    if (index < tracks.length) {
+    if (index < _playing.length) {
       _pendingPosition =
-          tracks[index].startOffset + player.position.inMilliseconds / 1000;
+          _playing[index].startOffset + player.position.inMilliseconds / 1000;
     }
     _needsReload = true;
     unawaited(player.pause());
@@ -779,6 +803,25 @@ class AudioPlayerController extends ChangeNotifier {
         !(libMedia is Map<String, dynamic> &&
             libMedia.containsKey('coverPath') &&
             libMedia['coverPath'] == null);
+    final sizesByIno = <String, int>{};
+    for (final f in files) {
+      final size = (f['metadata'] as Map<String, dynamic>?)?['size'];
+      if (size is num) sizesByIno[f['ino'] as String] = size.toInt();
+    }
+    List<BookTrack> parse(Object? list) =>
+        (list is List ? list : const <Object?>[])
+            .cast<Map<String, dynamic>>()
+            .map((t) => BookTrack.fromJson(t, sizesByIno))
+            .toList()
+          ..sort((a, b) => a.startOffset.compareTo(b.startOffset));
+    final streamTracks = parse(json['audioTracks']);
+    // An HLS session streams one playlist; the files to download are the
+    // item's tracks.
+    final hls = streamTracks.any((t) => t.isHls);
+    final fileTracks = hls && libMedia is Map<String, dynamic>
+        ? parse(libMedia['tracks'])
+        : streamTracks;
+
     final mediaMeta = json['mediaMetadata'];
     _sessionMeta = {
       // For the downloads list.
@@ -793,7 +836,8 @@ class AudioPlayerController extends ChangeNotifier {
       'mediaMetadata': {
         'title': mediaMeta is Map<String, dynamic> ? mediaMeta['title'] : null,
       },
-      'audioTracks': json['audioTracks'],
+      // The files, not an HLS stream: offline play uses these.
+      'audioTracks': [for (final t in fileTracks) t.toJson()],
       'chapters': json['chapters'],
       'libraryItem': {
         'libraryFiles': [
@@ -817,29 +861,31 @@ class AudioPlayerController extends ChangeNotifier {
         json['displayTitle'] as String? ?? metadata['title'] as String? ?? '';
     bookAuthor = json['displayAuthor'] as String? ?? '';
 
-    final sizesByIno = <String, int>{};
-    final item = json['libraryItem'];
-    if (item is Map<String, dynamic> && item['libraryFiles'] is List) {
-      for (final f
-          in (item['libraryFiles'] as List).cast<Map<String, dynamic>>()) {
-        final size = (f['metadata'] as Map<String, dynamic>?)?['size'];
-        if (size is num) sizesByIno[f['ino'] as String] = size.toInt();
-      }
-    }
-
-    tracks =
-        (json['audioTracks'] as List? ?? const [])
-            .cast<Map<String, dynamic>>()
-            .map((t) => BookTrack.fromJson(t, sizesByIno))
-            .toList()
-          ..sort((a, b) => a.startOffset.compareTo(b.startOffset));
+    tracks = fileTracks;
+    _streamTracks = streamTracks;
     chapters = (json['chapters'] as List? ?? const [])
         .cast<Map<String, dynamic>>()
         .map(BookChapter.fromJson)
         .toList();
   }
 
-  Future<String> _deviceInfoBody() async {
+  /// Formats the player streams straight from the file. Not MP4 (m4b,
+  /// m4a): the player must download and parse an MP4's whole index before
+  /// it can play, which for a long audiobook is tens of MB and can run the
+  /// watch out of memory; the server remuxes those to HLS instead. Not ADTS
+  /// AAC either, which can't be seeked without reading from the start.
+  static const _directPlayMimeTypes = [
+    'audio/mpeg',
+    'audio/flac',
+    'audio/x-flac',
+    'audio/ogg',
+    'audio/opus',
+    'audio/wav',
+    'audio/x-wav',
+    'audio/webm',
+  ];
+
+  Future<String> _deviceInfoBody({required bool directPlay}) async {
     final info = await DeviceInfoPlugin().androidInfo;
     return jsonEncode({
       'deviceInfo': {
@@ -854,7 +900,10 @@ class AudioPlayerController extends ChangeNotifier {
             : info.manufacturer,
       },
       'mediaPlayer': 'JustAudio',
-      'forceDirectPlay': true,
+      if (directPlay)
+        'forceDirectPlay': true
+      else
+        'supportedMimeTypes': _directPlayMimeTypes,
     });
   }
 
@@ -897,6 +946,7 @@ class AudioPlayerController extends ChangeNotifier {
   Future<void> _loadSources({required double initialTime}) async {
     final local = await isDownloaded();
     _streaming = !local;
+    final playing = local ? tracks : _streamTracks;
     final dir = await localDirPath();
     // Cover art for the media notification: the saved copy when there is
     // one, else from the server (the header keeps the token out of the URL).
@@ -909,7 +959,7 @@ class AudioPlayerController extends ChangeNotifier {
         ? Uri.parse('$serverUrl/api/items/$libraryItemId/cover?width=400')
         : null;
     final sources = [
-      for (final t in tracks)
+      for (final t in playing)
         AudioSource.uri(
           local
               ? Uri.file(_localFile(dir, t).path)
@@ -927,6 +977,7 @@ class AudioPlayerController extends ChangeNotifier {
           ),
         ),
     ];
+    _playing = playing;
     final (index, offset) = _trackAt(initialTime);
     _pendingPosition = initialTime;
     await player.setAudioSources(
@@ -939,11 +990,11 @@ class AudioPlayerController extends ChangeNotifier {
 
   /// Track index and position within that track for a book time.
   (int, double) _trackAt(double time) {
-    for (var i = 0; i < tracks.length; i++) {
-      if (time < tracks[i].end || i == tracks.length - 1) {
-        final offset = (time - tracks[i].startOffset).clamp(
+    for (var i = 0; i < _playing.length; i++) {
+      if (time < _playing[i].end || i == _playing.length - 1) {
+        final offset = (time - _playing[i].startOffset).clamp(
           0,
-          tracks[i].duration,
+          _playing[i].duration,
         );
         return (i, offset.toDouble());
       }
