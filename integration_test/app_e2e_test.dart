@@ -6,6 +6,8 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:abs_wear/app/app.dart';
+import 'package:abs_wear/l10n/l10n.dart';
+import 'package:abs_wear/player/player.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -119,6 +121,36 @@ Future<double> serverProgress(String title) async {
     if (meta['title'] == title) return (p['currentTime'] as num).toDouble();
   }
   return -1;
+}
+
+/// The library item id of the book titled [title].
+Future<String> itemId(String title) async {
+  final login = await http.post(
+    Uri.parse('$absUrl/login'),
+    headers: {'Content-Type': 'application/json'},
+    body: jsonEncode({'username': absUser, 'password': absPassword}),
+  );
+  final user =
+      (jsonDecode(login.body) as Map<String, dynamic>)['user']
+          as Map<String, dynamic>;
+  final headers = {'Authorization': 'Bearer ${user['token']}'};
+  final me = await http.get(Uri.parse('$absUrl/api/me'), headers: headers);
+  final progress =
+      (jsonDecode(me.body) as Map<String, dynamic>)['mediaProgress'] as List;
+  for (final p in progress.cast<Map<String, dynamic>>()) {
+    final id = p['libraryItemId'] as String;
+    final item = await http.get(
+      Uri.parse('$absUrl/api/items/$id'),
+      headers: headers,
+    );
+    final media =
+        (jsonDecode(item.body) as Map<String, dynamic>)['media']
+            as Map<String, dynamic>;
+    if ((media['metadata'] as Map<String, dynamic>)['title'] == title) {
+      return id;
+    }
+  }
+  throw StateError('$title not found');
 }
 
 /// The library's size and the title at [index] (0-based, clamped) in the
@@ -342,6 +374,48 @@ void main() {
     await tester.tap(find.byIcon(Icons.play_arrow));
     await pumpUntil(tester, find.textContaining('Part 2'));
     expect(find.byIcon(Icons.pause), findsOneWidget);
+  });
+
+  testWidgets('a downloaded book plays without the server', (tester) async {
+    await logInAndOpenLibrary(tester);
+    await scrollAndTap(tester, find.text('No Chapters Book'));
+    await pumpUntil(tester, find.byIcon(Icons.play_arrow));
+    await tester.fling(find.byType(PageView), const Offset(0, -300), 1000);
+    await pumpUntil(tester, find.byIcon(Icons.download_rounded));
+    await scrollAndTap(tester, find.byIcon(Icons.download_rounded));
+    await pumpUntil(tester, find.byIcon(Icons.download_done_rounded));
+    await tester.binding.handlePopRoute();
+    await pumpUntil(tester, find.text('Continue Listening'));
+    await pumpFor(tester, const Duration(seconds: 2));
+
+    // Same book, but the server can't be reached (connection refused).
+    final id = await itemId('No Chapters Book');
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: PlayerPage(
+          libraryItemId: id,
+          serverUrl: 'http://127.0.0.1:9',
+          token: 'offline',
+          user: absUser,
+        ),
+      ),
+    );
+    await pumpUntil(tester, find.byIcon(Icons.play_arrow));
+    // Seeded at 25% of 10 min = 150 s; 450 s left (no chapters).
+    await pumpUntil(tester, find.text('00:07:30'));
+    await tester.tap(find.byIcon(Icons.play_arrow));
+    await pumpUntil(tester, find.text('00:07:27'));
+
+    // Clean up the download for the other tests.
+    await tester.tap(find.byIcon(Icons.pause));
+    await tester.fling(find.byType(PageView), const Offset(0, -300), 1000);
+    await pumpUntil(tester, find.byIcon(Icons.delete_forever_rounded));
+    await scrollAndTap(tester, find.byIcon(Icons.delete_forever_rounded));
+    await pumpUntil(tester, find.byIcon(Icons.check_rounded));
+    await tester.tap(find.byIcon(Icons.check_rounded));
+    await pumpUntil(tester, find.byIcon(Icons.download_rounded));
   });
 
   testWidgets('downloads a multi-file book with progress', (tester) async {
