@@ -2,27 +2,81 @@ import 'package:abs_wear/ambient_mode/ambient_mode.dart';
 import 'package:abs_wear/player/components/scrolling_text.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:text_scroll/text_scroll.dart';
 
 void main() {
-  Widget app() => const MaterialApp(
+  const long = 'A very long book title that never fits on a watch';
+
+  Widget app(String text) => MaterialApp(
     home: Scaffold(
-      body: ScrollingText(text: 'A long book title', style: TextStyle()),
+      body: Center(
+        child: SizedBox(
+          width: 120,
+          child: ScrollingText(text: text, style: const TextStyle()),
+        ),
+      ),
     ),
   );
 
+  setUp(ScrollingText.resetScrolled);
   tearDown(() => AmbientModeListener.instance.value = false);
 
-  testWidgets('scrolls the text normally', (tester) async {
-    AmbientModeListener.instance.value = false;
-    await tester.pumpWidget(app());
-    expect(find.byType(TextScroll), findsOneWidget);
+  Finder doubled(String text) => find.textContaining('$text\u00A0');
+
+  testWidgets('short text stays static and schedules nothing', (tester) async {
+    await tester.pumpWidget(app('Short'));
+    await tester.pump(const Duration(seconds: 2));
+    expect(find.text('Short'), findsOneWidget);
+    expect(tester.binding.hasScheduledFrame, isFalse);
+  });
+
+  testWidgets('long text scrolls once, then stops drawing frames', (
+    tester,
+  ) async {
+    await tester.pumpWidget(app(long));
+    await tester.pump();
+    expect(find.text(long), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 1600));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(doubled(long), findsOneWidget);
+    await tester.pump(const Duration(minutes: 1));
+    await tester.pump();
+    expect(doubled(long), findsNothing);
+    expect(find.text(long), findsOneWidget);
+    expect(tester.binding.hasScheduledFrame, isFalse);
+  });
+
+  /// Shows [long] and lets its first scroll run to the end.
+  Future<void> scrollOnce(WidgetTester tester) async {
+    await tester.pumpWidget(app(long));
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pumpAndSettle();
+    expect(doubled(long), findsNothing);
+  }
+
+  testWidgets('the same text does not scroll by itself again', (tester) async {
+    await scrollOnce(tester);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpWidget(app(long));
+    await tester.pump(const Duration(seconds: 3));
+    expect(doubled(long), findsNothing);
+    expect(tester.binding.hasScheduledFrame, isFalse);
+  });
+
+  testWidgets('a tap scrolls it again', (tester) async {
+    await scrollOnce(tester);
+    await tester.tap(find.text(long));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(doubled(long), findsOneWidget);
+    await tester.pumpAndSettle();
+    expect(doubled(long), findsNothing);
   });
 
   testWidgets('shows static text in ambient mode', (tester) async {
     AmbientModeListener.instance.value = true;
-    await tester.pumpWidget(app());
-    expect(find.byType(TextScroll), findsNothing);
-    expect(find.text('A long book title'), findsOneWidget);
+    await tester.pumpWidget(app(long));
+    await tester.pump(const Duration(seconds: 3));
+    expect(find.text(long), findsOneWidget);
+    expect(doubled(long), findsNothing);
   });
 }

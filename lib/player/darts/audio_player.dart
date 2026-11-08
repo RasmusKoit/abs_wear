@@ -5,6 +5,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:abs_wear/player/darts/download_keep_alive.dart';
 import 'package:abs_wear/player/darts/network_lock.dart';
@@ -151,13 +152,22 @@ class AudioPlayerController extends ChangeNotifier {
   final AudioPlayer player = AudioPlayer(
     // The default 50 s buffer runs dry within a minute when the network
     // drops (e.g. the watch switches from Wi-Fi to Bluetooth with the
-    // screen off). Audiobooks are low bitrate: buffer 10 min, at most 16 MB.
+    // screen off). Audiobooks are low bitrate: buffer up to 10 min, at most
+    // 16 MB. Loading resumes only below 4 min, so the radio fetches about
+    // 6 min in one burst and then sleeps (min == max refilled one segment
+    // at a time and kept the radio awake for the whole book).
     audioLoadConfiguration: const AudioLoadConfiguration(
       androidLoadControl: AndroidLoadControl(
-        minBufferDuration: Duration(minutes: 10),
+        minBufferDuration: Duration(minutes: 4),
         maxBufferDuration: Duration(minutes: 10),
         targetBufferBytes: 16 * 1024 * 1024,
       ),
+    ),
+    // Decode on the audio DSP when the device supports it, so the CPU can
+    // sleep during playback. Only where speed changes work offloaded too.
+    androidAudioOffloadPreferences: const AndroidAudioOffloadPreferences(
+      audioOffloadMode: AndroidAudioOffloadMode.enabled,
+      isSpeedChangeSupportRequired: true,
     ),
   );
 
@@ -299,10 +309,17 @@ class AudioPlayerController extends ChangeNotifier {
     }
     _sleepTarget = sleepOptions[choice];
     sleepRemaining.value = _sleepTarget;
-    if (_audible) _sleepClock.start();
-    // The clock measures time; the tick only shows it (late ticks don't
-    // slow the timer down).
-    _sleepTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+    if (_audible) {
+      _sleepClock.start();
+      _startSleepTick();
+    }
+  }
+
+  /// Counts the sleep timer down while audio plays; paused, the clock and
+  /// the tick stop (no wakeups while nothing changes). The clock measures
+  /// time; the tick only shows it (late ticks don't slow the timer down).
+  void _startSleepTick() {
+    _sleepTimer ??= Timer.periodic(const Duration(seconds: 1), (_) {
       final left = _sleepTarget - _sleepClock.elapsed;
       if (left > Duration.zero) {
         sleepRemaining.value = Duration(seconds: left.inSeconds + 1);
@@ -376,10 +393,6 @@ class AudioPlayerController extends ChangeNotifier {
   void _notify() {
     if (!_closed) notifyListeners();
   }
-
-  /// Emits the book position about four times a second.
-  Stream<double> get bookPositionStream =>
-      Stream.periodic(const Duration(milliseconds: 250), (_) => bookPosition);
 
   /// Index of the last chapter starting at or before [time] (so gaps
   /// between chapters belong to the previous one), or -1 before the first.
@@ -759,8 +772,15 @@ class AudioPlayerController extends ChangeNotifier {
     final audible =
         state.playing && state.processingState == ProcessingState.ready;
     audible ? _listenClock.start() : _listenClock.stop();
-    if (_sleepTimer != null) {
-      audible ? _sleepClock.start() : _sleepClock.stop();
+    if (_sleepChoice >= 0) {
+      if (audible) {
+        _sleepClock.start();
+        _startSleepTick();
+      } else {
+        _sleepClock.stop();
+        _sleepTimer?.cancel();
+        _sleepTimer = null;
+      }
     }
     // Keep the network up while streaming, also while loading with the
     // screen off.
@@ -1241,8 +1261,20 @@ class AudioPlayerController extends ChangeNotifier {
   /// is loaded.
   bool? _playAfterReload;
 
-  /// Periodic sync: skipped while paused with nothing new to report.
+  /// Failed syncs in a row, and when a paused player may retry: 2, 4, 8 …
+  /// up to 30 min, so a paused book left open doesn't post every minute.
+  int _failedSyncs = 0;
+  DateTime? _retryAt;
+
+  /// Periodic sync: skipped while paused with nothing new to report, or
+  /// while paused and backing off after failed syncs.
   Future<void> periodicSync() {
+    if (!player.playing) {
+      final retryAt = _retryAt;
+      if (retryAt != null && DateTime.now().isBefore(retryAt)) {
+        return Future.value();
+      }
+    }
     final idle =
         !player.playing &&
         bookPosition == _lastSyncedTime &&
@@ -1296,6 +1328,15 @@ class AudioPlayerController extends ChangeNotifier {
       }
     } on Object catch (e) {
       debugPrint('Error syncing session: $e');
+    }
+    if (synced) {
+      _failedSyncs = 0;
+      _retryAt = null;
+    } else {
+      _failedSyncs++;
+      _retryAt = DateTime.now().add(
+        Duration(minutes: min(30, 1 << min(_failedSyncs, 5))),
+      );
     }
     if (!synced) {
       // Keep the position on the watch until the server gets it (e.g. the
