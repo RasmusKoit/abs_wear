@@ -104,6 +104,24 @@
     "@nothingInProgress": {
         "description": "Empty Continue Listening shelf"
     },
+    "allBooks": "All books",
+    "@allBooks": {
+        "description": "Opens the full library list"
+    },
+    "bookCount": "{count, plural, =1{1 book} other{{count} books}}",
+    "@bookCount": {
+        "description": "Number of books in the library",
+        "placeholders": {
+            "count": {
+                "type": "int",
+                "example": "653"
+            }
+        }
+    },
+    "offlineSavedList": "Offline. Showing the saved list. Tap to retry.",
+    "@offlineSavedList": {
+        "description": "Shown when cached data is displayed"
+    },
     "download": "Download",
     "@download": {
         "description": "Download the book for offline listening"

@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:abs_wear/l10n/l10n.dart';
+import 'package:abs_wear/library/data/json_cache.dart';
 import 'package:abs_wear/library/view/library_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -220,6 +221,7 @@ class LoginPageState extends State<LoginPage> {
     }
     if (!deleteDownloads) return;
     unawaited(_revokeToken(url, token));
+    await JsonCache.clear();
     try {
       final docs = await getApplicationDocumentsDirectory();
       // The documents directory holds only per-book download folders.

@@ -15,6 +15,12 @@ Future<void> bootstrap(FutureOr<Widget> Function() builder) async {
     return true;
   };
 
+  // Watches have little memory: bound the decoded-image cache (book
+  // covers) well below Flutter's phone-sized default (1000 images/100 MB).
+  PaintingBinding.instance.imageCache
+    ..maximumSize = 150
+    ..maximumSizeBytes = 24 << 20;
+
   // Spoken audio: pause (rather than duck under) notifications and prompts.
   final session = await AudioSession.instance;
   await session.configure(const AudioSessionConfiguration.speech());
