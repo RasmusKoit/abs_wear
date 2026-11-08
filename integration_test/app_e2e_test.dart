@@ -604,7 +604,8 @@ void main() {
     await pumpUntil(tester, find.text('00:00:30'));
     expect(find.textContaining('Episode 2'), findsWidgets);
     await tester.tap(find.byIcon(Icons.play_arrow));
-    await pumpUntil(tester, find.text('00:00:27'));
+    // Well past 2 s, so the saved position clears the check below.
+    await pumpUntil(tester, find.text('00:00:25'));
     await tester.tap(find.byIcon(Icons.pause));
     await pumpUntil(tester, find.byIcon(Icons.play_arrow));
     await pumpFor(tester, const Duration(seconds: 2));
