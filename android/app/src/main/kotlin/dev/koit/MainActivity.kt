@@ -1,5 +1,8 @@
 package dev.koit.abs_wear
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.view.MotionEvent
 import androidx.wear.ambient.AmbientLifecycleObserver
@@ -57,6 +60,16 @@ class MainActivity : AudioServiceActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         ambientChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "ambient_mode")
+        val context = applicationContext
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "network_lock")
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "acquire" -> NetworkLock.acquire(context)
+                    "release" -> NetworkLock.release(context)
+                    else -> return@setMethodCallHandler result.notImplemented()
+                }
+                result.success(null)
+            }
     }
 
     /**
@@ -77,5 +90,13 @@ class MainActivity : AudioServiceActivity() {
         super.onCreate(savedInstanceState)
         ambientObserver = AmbientLifecycleObserver(this, ambientCallback)
         lifecycle.addObserver(ambientObserver)
+        // The media notification (and its controls) only shows with this
+        // permission on Android 13+.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
+        }
     }
 }
