@@ -29,6 +29,10 @@ class LoginPageState extends State<LoginPage> {
   String defaultLibraryId = '';
   bool _loggingIn = false;
 
+  /// Bumped by every login and logout, so a slow session restore that
+  /// started earlier can tell it is out of date.
+  int _sessionEpoch = 0;
+
   /// True until saved credentials have been read, so a logged-in user
   /// doesn't see the login form flash on every start.
   bool _checking = true;
@@ -67,6 +71,7 @@ class LoginPageState extends State<LoginPage> {
   }
 
   Future<void> _restoreSession() async {
+    final epoch = _sessionEpoch;
     final prefs = await SharedPreferences.getInstance();
     final savedToken = prefs.getString('token');
     final savedServerUrl = prefs.getString('serverUrl');
@@ -85,12 +90,12 @@ class LoginPageState extends State<LoginPage> {
       } on Object catch (e) {
         debugPrint('Could not resolve library: $e');
       }
-      // The user may have logged in while this was resolving.
-      if (!mounted || _token.isNotEmpty || _loggingIn) return;
+      // The user may have logged in or out while this was resolving.
+      if (!mounted || epoch != _sessionEpoch || _loggingIn) return;
       if (libraryId.isEmpty) return; // Fall back to the login form.
       await prefs.setString('defaultLibraryId', libraryId);
     }
-    if (!mounted || _token.isNotEmpty || _loggingIn) return;
+    if (!mounted || epoch != _sessionEpoch || _loggingIn) return;
     setState(() {
       _token = savedToken;
       serverUrlController.text = savedServerUrl;
@@ -115,6 +120,7 @@ class LoginPageState extends State<LoginPage> {
       await _toast(l10n.invalidUrl);
       return;
     }
+    _sessionEpoch++;
     setState(() => _loggingIn = true);
     try {
       final response = await http
@@ -196,9 +202,10 @@ class LoginPageState extends State<LoginPage> {
   }
 
   /// Forgets the session. With [deleteDownloads] (an explicit logout) the
-  /// server token is revoked and downloaded books are removed, so nothing
-  /// of this account stays on a shared watch.
+  /// server is told to end the session (best effort; legacy API tokens may
+  /// stay valid) and downloaded books are removed from the watch.
   Future<void> logout({bool deleteDownloads = false}) async {
+    _sessionEpoch++;
     final token = _token;
     final url = serverUrlController.text;
     final prefs = await SharedPreferences.getInstance();
@@ -242,7 +249,15 @@ class LoginPageState extends State<LoginPage> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        content: Text(l10n.logoutConfirm, textAlign: TextAlign.center),
+        // Round screens: use the width, keep content inside the circle.
+        insetPadding: const EdgeInsets.symmetric(horizontal: 12),
+        contentPadding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
+        actionsPadding: const EdgeInsets.only(bottom: 12),
+        content: Text(
+          l10n.logoutConfirm,
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
         actionsAlignment: MainAxisAlignment.center,
         actions: [
           IconButton(
@@ -280,14 +295,16 @@ class LoginPageState extends State<LoginPage> {
         await logout();
         unawaited(_toast(l10n.sessionExpired));
       case LibraryResult.libraryMissing:
-        await _reresolveLibrary();
+        await _reresolveLibrary(failedId: defaultLibraryId);
       case null:
         break;
     }
   }
 
   /// The saved library was deleted on the server; switch to another one.
-  Future<void> _reresolveLibrary() async {
+  /// Stops if the server offers the same library again (e.g. an old server
+  /// without the shelves route), rather than reopening it forever.
+  Future<void> _reresolveLibrary({required String failedId}) async {
     String? id;
     try {
       id = await _pickLibraryId(serverUrlController.text, _token);
@@ -295,8 +312,8 @@ class LoginPageState extends State<LoginPage> {
       debugPrint('Could not resolve library: $e');
     }
     if (!mounted) return;
-    if (id == null) {
-      unawaited(_toast(l10n.noLibraries));
+    if (id == null || id == failedId) {
+      unawaited(_toast(id == null ? l10n.noLibraries : l10n.errorLoadingData));
       return;
     }
     final prefs = await SharedPreferences.getInstance();

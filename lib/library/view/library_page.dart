@@ -96,9 +96,7 @@ class _LibraryPageState extends State<LibraryPage> {
       );
     }
     if (response.statusCode != 200) {
-      throw http.ClientException(
-        'Failed to load shelves (HTTP ${response.statusCode})',
-      );
+      throw _ShelfLoadException(response.statusCode);
     }
     final shelves = (jsonDecode(response.body) as List)
         .cast<Map<String, dynamic>>();
@@ -112,8 +110,19 @@ class _LibraryPageState extends State<LibraryPage> {
 
   bool _closing = false;
 
+  String _errorMessage(AppLocalizations l10n, Object? error) {
+    if (error is TimeoutException) return l10n.serverTimeout;
+    if (error is _ShelfLoadException) return l10n.errorLoadingData;
+    // IOClient wraps socket/DNS failures in ClientException.
+    if (error is http.ClientException) return l10n.cannotReachServer;
+    return l10n.errorLoadingData; // Unexpected response shape.
+  }
+
   void _close(LibraryResult result) {
-    if (_closing || !mounted) return;
+    // Not while this route is already leaving: pop() would remove the
+    // login page underneath.
+    final route = mounted ? ModalRoute.of(context) : null;
+    if (_closing || route == null || !route.isCurrent) return;
     _closing = true;
     Navigator.of(context).pop(result);
   }
@@ -178,9 +187,7 @@ class _LibraryPageState extends State<LibraryPage> {
                     return Padding(
                       padding: const EdgeInsets.all(8),
                       child: Text(
-                        snapshot.error is http.ClientException
-                            ? l10n.errorLoadingData
-                            : l10n.cannotReachServer,
+                        _errorMessage(l10n, snapshot.error),
                         textAlign: TextAlign.center,
                         style: theme.textTheme.bodySmall,
                       ),
@@ -225,6 +232,14 @@ class _LibraryPageState extends State<LibraryPage> {
       ),
     );
   }
+}
+
+class _ShelfLoadException implements Exception {
+  const _ShelfLoadException(this.statusCode);
+  final int statusCode;
+
+  @override
+  String toString() => 'Failed to load shelves (HTTP $statusCode)';
 }
 
 class _BookCard extends StatelessWidget {
