@@ -15,3 +15,4 @@ services:
       - ./data/config:/config
       - ./data/metadata:/metadata
       - ./data/audiobooks:/audiobooks:ro
+      - ./data/podcasts:/podcasts:ro

@@ -58,4 +58,11 @@ mkdir -p "$d"
 tone 262 600 "$d/No Chapters Book.mp3" -c:a libmp3lame -b:a 24k \
   -metadata title="No Chapters Book" -metadata artist="Test Author C" -metadata album="No Chapters Book"
 
-find "$OUT" -type f | sort
+# 4) A podcast with 3 short episodes (folder = podcast, file = episode).
+d="data/podcasts/Test Podcast"
+mkdir -p "$d"
+for i in 1 2 3; do
+  tone $((200 + i * 100)) 30 "$d/Episode 0${i}.mp3" -c:a libmp3lame -b:a 32k     -metadata title="Episode ${i}" -metadata artist="Test Host"     -metadata album="Test Podcast" -metadata track="${i}"
+done
+
+find "$OUT" data/podcasts -type f | sort

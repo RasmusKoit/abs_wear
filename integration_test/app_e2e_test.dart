@@ -7,6 +7,7 @@ import 'dart:convert';
 
 import 'package:abs_wear/app/app.dart';
 import 'package:abs_wear/l10n/l10n.dart';
+import 'package:abs_wear/library/view/browse_page.dart';
 import 'package:abs_wear/player/player.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -193,6 +194,99 @@ Future<(int, String)> bookAt(int index) async {
     total,
     (media['metadata'] as Map<String, dynamic>)['title'] as String,
   );
+}
+
+/// Logs in the test user for direct API calls.
+Future<Map<String, String>> apiHeaders() async {
+  final login = await http.post(
+    Uri.parse('$absUrl/login'),
+    headers: {'Content-Type': 'application/json'},
+    body: jsonEncode({'username': absUser, 'password': absPassword}),
+  );
+  final user =
+      (jsonDecode(login.body) as Map<String, dynamic>)['user']
+          as Map<String, dynamic>;
+  return {
+    'Authorization': 'Bearer ${user['token']}',
+    'Content-Type': 'application/json',
+  };
+}
+
+/// The seeded podcast's id and its episode ids by title.
+Future<(String, Map<String, String>)> podcastEpisodes() async {
+  final headers = await apiHeaders();
+  final libs = await http.get(
+    Uri.parse('$absUrl/api/libraries'),
+    headers: headers,
+  );
+  final library =
+      ((jsonDecode(libs.body) as Map<String, dynamic>)['libraries'] as List)
+          .cast<Map<String, dynamic>>()
+          .firstWhere((l) => l['name'] == 'Test Podcasts');
+  final items = await http.get(
+    Uri.parse('$absUrl/api/libraries/${library['id']}/items?limit=5'),
+    headers: headers,
+  );
+  final podcastId =
+      (((jsonDecode(items.body) as Map<String, dynamic>)['results'] as List)
+                  .first
+              as Map<String, dynamic>)['id']
+          as String;
+  final item = await http.get(
+    Uri.parse('$absUrl/api/items/$podcastId?expanded=1'),
+    headers: headers,
+  );
+  final media =
+      (jsonDecode(item.body) as Map<String, dynamic>)['media']
+          as Map<String, dynamic>;
+  return (
+    podcastId,
+    {
+      for (final e in (media['episodes'] as List).cast<Map<String, dynamic>>())
+        e['title'] as String: e['id'] as String,
+    },
+  );
+}
+
+/// Only Episode 1 in progress (5 s of 30 s), like the seed script.
+Future<void> resetEpisodeProgress() async {
+  final headers = await apiHeaders();
+  final (podcastId, episodes) = await podcastEpisodes();
+  final me = await http.get(Uri.parse('$absUrl/api/me'), headers: headers);
+  final progress =
+      (jsonDecode(me.body) as Map<String, dynamic>)['mediaProgress'] as List;
+  for (final p in progress.cast<Map<String, dynamic>>()) {
+    if (p['libraryItemId'] == podcastId) {
+      await http.delete(
+        Uri.parse('$absUrl/api/me/progress/${p['id']}'),
+        headers: headers,
+      );
+    }
+  }
+  await http.patch(
+    Uri.parse('$absUrl/api/me/progress/$podcastId/${episodes['Episode 1']}'),
+    headers: headers,
+    body: jsonEncode({
+      'duration': 30,
+      'currentTime': 5,
+      'progress': 5 / 30,
+      'isFinished': false,
+    }),
+  );
+}
+
+/// Server-side position (seconds) of the episode titled [title].
+Future<double> episodeProgress(String title) async {
+  final headers = await apiHeaders();
+  final (podcastId, episodes) = await podcastEpisodes();
+  final response = await http.get(
+    Uri.parse('$absUrl/api/me/progress/$podcastId/${episodes[title]}'),
+    headers: headers,
+  );
+  if (response.statusCode != 200) return -1;
+  return ((jsonDecode(response.body) as Map<String, dynamic>)['currentTime']
+          as num)
+      .toDouble();
 }
 
 /// Scrolls [finder] into view (watch screens are tiny) and taps it.
@@ -445,5 +539,56 @@ void main() {
     await tester.tap(find.byIcon(Icons.check_rounded));
     await pumpUntil(tester, find.byIcon(Icons.download_rounded));
     expect(find.byIcon(Icons.delete_forever_rounded), findsNothing);
+  });
+
+  testWidgets('switches to the podcast library and plays episodes', (
+    tester,
+  ) async {
+    await resetEpisodeProgress();
+    await logInAndOpenLibrary(tester);
+    await scrollAndTap(tester, find.text('Libraries'));
+    await pumpUntil(tester, find.text('Test Podcasts'));
+    await tester.tap(find.text('Test Podcasts'));
+
+    // Continue Listening lists the episode in progress, not the podcast.
+    await pumpUntil(tester, find.text('Episode 1'));
+    await pumpUntil(tester, find.byIcon(Icons.refresh));
+    expect(find.text('All podcasts'), findsOneWidget);
+    await scrollAndTap(tester, find.text('Episode 1'));
+    await pumpUntil(tester, find.byIcon(Icons.play_arrow));
+    // 5 s into a 30 s episode.
+    await pumpUntil(tester, find.text('00:00:25'));
+    await tester.tap(find.byIcon(Icons.play_arrow));
+    await pumpUntil(tester, find.text('00:00:22'));
+    await tester.tap(find.byIcon(Icons.pause));
+    await pumpUntil(tester, find.byIcon(Icons.play_arrow));
+    await pumpFor(tester, const Duration(seconds: 2));
+    expect(await episodeProgress('Episode 1'), greaterThan(7));
+
+    // Another episode from the podcast's episode list.
+    await tester.binding.handlePopRoute();
+    await pumpUntil(tester, find.text('All podcasts'));
+    await pumpFor(tester, const Duration(seconds: 1));
+    await scrollAndTap(tester, find.text('All podcasts'));
+    // The library page below also shows the podcast's name.
+    final inList = find.descendant(
+      of: find.byType(BrowsePage),
+      matching: find.text('Test Podcast'),
+    );
+    await pumpUntil(tester, inList);
+    await tester.tap(inList);
+    await pumpUntil(tester, find.text('Episode 2'));
+    await tester.tap(find.text('Episode 2'));
+    await pumpUntil(tester, find.byIcon(Icons.play_arrow));
+    await pumpUntil(tester, find.text('00:00:30'));
+    expect(find.textContaining('Episode 2'), findsWidgets);
+    await tester.tap(find.byIcon(Icons.play_arrow));
+    await pumpUntil(tester, find.text('00:00:27'));
+    await tester.tap(find.byIcon(Icons.pause));
+    await pumpUntil(tester, find.byIcon(Icons.play_arrow));
+    await pumpFor(tester, const Duration(seconds: 2));
+    expect(await episodeProgress('Episode 2'), greaterThan(2));
+    // Episode 1 kept its own position.
+    expect(await episodeProgress('Episode 1'), greaterThan(7));
   });
 }

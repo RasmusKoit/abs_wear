@@ -12,9 +12,13 @@ class PlayerPage extends StatefulWidget {
     required this.serverUrl,
     required this.token,
     required this.user,
+    this.episodeId,
     super.key,
   });
   final String libraryItemId;
+
+  /// The episode to play when [libraryItemId] is a podcast.
+  final String? episodeId;
   final String serverUrl;
   final String token;
 
@@ -45,6 +49,7 @@ class _PlayerPageState extends State<PlayerPage> {
       widget.serverUrl,
       widget.token,
       userName: widget.user,
+      episodeId: widget.episodeId,
     );
     if (!mounted) return;
     final l10n = context.l10n;

@@ -5,19 +5,25 @@ import 'package:abs_wear/l10n/l10n.dart';
 import 'package:abs_wear/library/data/json_cache.dart';
 import 'package:abs_wear/library/data/library_api.dart';
 import 'package:abs_wear/library/view/book_tile.dart';
+import 'package:abs_wear/library/view/episodes_page.dart';
 import 'package:abs_wear/player/player.dart';
 import 'package:flutter/material.dart';
 
-/// Every book in the library, A to Z, loaded a page at a time as the user
-/// scrolls, so libraries with thousands of books stay fast and light.
+/// Every book (or podcast) in the library, A to Z, loaded a page at a time
+/// as the user scrolls, so libraries with thousands of books stay fast and
+/// light.
 class BrowsePage extends StatefulWidget {
   const BrowsePage({
     required this.serverUrl,
     required this.token,
     required this.libraryId,
     required this.user,
+    this.isPodcast = false,
     super.key,
   });
+
+  /// A podcast library: items open their episode list.
+  final bool isPodcast;
 
   final String serverUrl;
   final String token;
@@ -205,17 +211,36 @@ class _BrowsePageState extends State<BrowsePage> {
     }
   }
 
-  Future<void> _open(ShelfBook book) => Navigator.push(
-    context,
-    MaterialPageRoute<void>(
-      builder: (context) => PlayerPage(
-        token: widget.token,
-        serverUrl: widget.serverUrl,
-        libraryItemId: book.id,
-        user: widget.user,
+  Future<void> _open(ShelfBook book) async {
+    if (!book.isPodcast) {
+      await Navigator.push(
+        context,
+        MaterialPageRoute<void>(
+          builder: (context) => PlayerPage(
+            token: widget.token,
+            serverUrl: widget.serverUrl,
+            libraryItemId: book.id,
+            user: widget.user,
+          ),
+        ),
+      );
+      return;
+    }
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute<LibraryResult>(
+        builder: (context) => EpisodesPage(
+          serverUrl: widget.serverUrl,
+          token: widget.token,
+          user: widget.user,
+          podcast: book,
+        ),
       ),
-    ),
-  );
+    );
+    if (result == null || !mounted) return;
+    final route = ModalRoute.of(context);
+    if (route != null && route.isCurrent) Navigator.of(context).pop(result);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -230,10 +255,12 @@ class _BrowsePageState extends State<BrowsePage> {
           child: AppBar(
             centerTitle: true,
             automaticallyImplyLeading: false,
-            title: Text(
-              _total == null ? l10n.allBooks : l10n.bookCount(_total!),
-              style: theme.textTheme.bodyLarge,
-            ),
+            title: Text(switch ((widget.isPodcast, _total)) {
+              (false, null) => l10n.allBooks,
+              (true, null) => l10n.allPodcasts,
+              (false, final total?) => l10n.bookCount(total),
+              (true, final total?) => l10n.podcastCount(total),
+            }, style: theme.textTheme.bodyLarge),
           ),
         ),
         body: ListView.builder(

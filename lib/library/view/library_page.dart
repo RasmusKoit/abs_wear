@@ -6,8 +6,10 @@ import 'package:abs_wear/library/data/json_cache.dart';
 import 'package:abs_wear/library/data/library_api.dart';
 import 'package:abs_wear/library/view/book_tile.dart';
 import 'package:abs_wear/library/view/browse_page.dart';
+import 'package:abs_wear/library/view/libraries_page.dart';
 import 'package:abs_wear/player/player.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 export 'package:abs_wear/library/data/library_api.dart'
     show LibraryResult, ShelfBook;
@@ -37,9 +39,24 @@ class _LibraryPageState extends State<LibraryPage> {
   bool _loading = false;
   Object? _error;
 
-  String get _cacheKey =>
-      'shelf_${'${widget.serverUrl}|${widget.user}'.hashCode}_'
-      '${widget.libraryId}';
+  /// The server's libraries; null until the cache or the server answered.
+  List<LibraryInfo>? _libraries;
+
+  LibraryInfo? get _library {
+    for (final l in _libraries ?? const <LibraryInfo>[]) {
+      if (l.id == widget.libraryId) return l;
+    }
+    return null;
+  }
+
+  bool get _isPodcast => _library?.isPodcast ?? false;
+
+  String get _userHash =>
+      '${widget.serverUrl}|${widget.user}'.hashCode.toString();
+
+  String get _cacheKey => 'shelf_${_userHash}_${widget.libraryId}';
+
+  String get _librariesKey => 'libraries_$_userHash';
 
   @override
   void initState() {
@@ -56,6 +73,18 @@ class _LibraryPageState extends State<LibraryPage> {
   /// The saved shelf shows instantly (also offline); the server's answer
   /// replaces it when it arrives.
   Future<void> _showCachedThenRefresh() async {
+    final libraries = await JsonCache.read(_librariesKey);
+    if (libraries is List && mounted && _libraries == null) {
+      setState(() {
+        _libraries = libraries
+            .cast<Map<String, dynamic>>()
+            .map(LibraryInfo.fromJson)
+            .toList();
+      });
+    }
+    // Independent of the shelf, so the title and switcher show even when
+    // Continue Listening fails.
+    unawaited(_refreshLibraries());
     final cached = await JsonCache.read(_cacheKey);
     if (!mounted) return;
     if (cached is List && _books == null) {
@@ -114,6 +143,20 @@ class _LibraryPageState extends State<LibraryPage> {
     }
   }
 
+  /// Library names and kinds, for the title and the library switcher.
+  Future<void> _refreshLibraries() async {
+    try {
+      final libraries = await fetchLibraries(widget.serverUrl, widget.token);
+      if (!mounted) return;
+      setState(() => _libraries = libraries);
+      unawaited(
+        JsonCache.write(_librariesKey, [for (final l in libraries) l.toJson()]),
+      );
+    } on Object catch (e) {
+      debugPrint('Could not load libraries: $e');
+    }
+  }
+
   Future<List<ShelfBook>> _fetchContinueListening() async {
     final shelves =
         (await getJson(
@@ -150,6 +193,7 @@ class _LibraryPageState extends State<LibraryPage> {
           token: widget.token,
           serverUrl: widget.serverUrl,
           libraryItemId: book.id,
+          episodeId: book.episodeId,
           user: widget.user,
         ),
       ),
@@ -170,6 +214,7 @@ class _LibraryPageState extends State<LibraryPage> {
           token: widget.token,
           libraryId: widget.libraryId,
           user: widget.user,
+          isPodcast: _isPodcast,
         ),
       ),
     );
@@ -183,6 +228,27 @@ class _LibraryPageState extends State<LibraryPage> {
     if (mounted) unawaited(_refresh());
   }
 
+  Future<void> _switchLibrary() async {
+    final libraries = _libraries;
+    if (libraries == null) return;
+    final id = await Navigator.push(
+      context,
+      MaterialPageRoute<String>(
+        builder: (context) =>
+            LibrariesPage(libraries: libraries, currentId: widget.libraryId),
+      ),
+    );
+    if (id == null || id == widget.libraryId || !mounted) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('defaultLibraryId', id);
+    // Also kept across a session expiry, for the next login.
+    await prefs.setString(
+      'pickedLibrary',
+      '${widget.serverUrl}\n${widget.user}\n$id',
+    );
+    _close(LibraryResult.switchLibrary);
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
@@ -194,7 +260,16 @@ class _LibraryPageState extends State<LibraryPage> {
           preferredSize: const Size.fromHeight(40),
           child: AppBar(
             centerTitle: true,
-            title: Text(l10n.library, style: theme.textTheme.bodyLarge),
+            // Inset so the ellipsis stays inside the round screen.
+            title: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 40),
+              child: Text(
+                _library?.name ?? l10n.library,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodyLarge,
+              ),
+            ),
             automaticallyImplyLeading: false,
           ),
         ),
@@ -207,11 +282,25 @@ class _LibraryPageState extends State<LibraryPage> {
               ..._shelf(l10n, theme),
               Card(
                 child: ListTile(
-                  title: Text(l10n.allBooks, style: theme.textTheme.bodySmall),
+                  title: Text(
+                    _isPodcast ? l10n.allPodcasts : l10n.allBooks,
+                    style: theme.textTheme.bodySmall,
+                  ),
                   trailing: const Icon(Icons.library_books_rounded),
                   onTap: () => unawaited(_browse()),
                 ),
               ),
+              if ((_libraries?.length ?? 0) > 1)
+                Card(
+                  child: ListTile(
+                    title: Text(
+                      l10n.libraries,
+                      style: theme.textTheme.bodySmall,
+                    ),
+                    trailing: const Icon(Icons.swap_horiz_rounded),
+                    onTap: () => unawaited(_switchLibrary()),
+                  ),
+                ),
               Card(
                 child: ListTile(
                   title: Text(l10n.refresh, style: theme.textTheme.bodySmall),

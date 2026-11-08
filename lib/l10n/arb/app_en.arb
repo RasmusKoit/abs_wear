@@ -195,5 +195,27 @@
                 "example": "00:12:34"
             }
         }
+    },
+    "allPodcasts": "All podcasts",
+    "@allPodcasts": {
+        "description": "Opens the full list of a podcast library"
+    },
+    "podcastCount": "{count, plural, =1{1 podcast} other{{count} podcasts}}",
+    "@podcastCount": {
+        "description": "Number of podcasts in the library",
+        "placeholders": {
+            "count": {
+                "type": "int",
+                "example": "12"
+            }
+        }
+    },
+    "libraries": "Libraries",
+    "@libraries": {
+        "description": "Opens the list of libraries to switch to"
+    },
+    "noEpisodes": "No episodes.",
+    "@noEpisodes": {
+        "description": "A podcast without episodes"
     }
 }
