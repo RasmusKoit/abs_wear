@@ -1003,6 +1003,7 @@ class AudioPlayerController extends ChangeNotifier {
         ),
     ];
     _playing = playing;
+    if (!local) await _awaitHlsSegment(initialTime);
     final (index, offset) = _trackAt(initialTime);
     _pendingPosition = initialTime;
     await player.setAudioSources(
@@ -1027,6 +1028,44 @@ class AudioPlayerController extends ChangeNotifier {
     return (0, 0);
   }
 
+  /// The server's HLS segment length (fixed in Audiobookshelf).
+  static const _hlsSegmentSeconds = 6;
+
+  /// [time] (in the single HLS track) is already loaded ahead.
+  bool _isBuffered(double time) {
+    final position = player.position.inMilliseconds / 1000;
+    final buffered = player.bufferedPosition.inMilliseconds / 1000;
+    return time >= position && time <= buffered;
+  }
+
+  /// Waits, at most 10 s, until the server has made the HLS segment at
+  /// [time]. The server answers 404 for a segment it hasn't made yet (and
+  /// starts making it there), which the player takes as a fatal error.
+  Future<void> _awaitHlsSegment(double time) async {
+    final track = _playing.firstOrNull;
+    if (track == null || !track.isHls) return;
+    final dir = track.contentUrl.substring(
+      0,
+      track.contentUrl.lastIndexOf('/'),
+    );
+    final segment = (time / _hlsSegmentSeconds).floor();
+    final uri = Uri.parse('$serverUrl$dir/output-$segment.ts');
+    final waited = Stopwatch()..start();
+    while (!_closed && waited.elapsed < const Duration(seconds: 10)) {
+      try {
+        final response = await _client
+            .head(uri)
+            .timeout(const Duration(seconds: 5));
+        // Anything but "not made yet" is for the player to handle.
+        if (response.statusCode != 404) return;
+      } on Object catch (e) {
+        debugPrint('Could not check the stream: $e');
+        return;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+    }
+  }
+
   Future<void> seekToBookTime(double time) async {
     final clamped = time.clamp(0, duration).toDouble();
     final (index, offset) = _trackAt(clamped);
@@ -1046,6 +1085,10 @@ class AudioPlayerController extends ChangeNotifier {
         _queuedSeeks--;
       }
       // A newer seek supersedes this one.
+      if (_closed || seq != _seekSeq) return;
+    }
+    if (_playing.any((t) => t.isHls) && !_isBuffered(clamped)) {
+      await _awaitHlsSegment(clamped);
       if (_closed || seq != _seekSeq) return;
     }
     await player.seek(
