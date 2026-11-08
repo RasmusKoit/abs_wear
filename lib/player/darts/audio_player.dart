@@ -91,6 +91,14 @@ class AudioPlayerController extends ChangeNotifier {
   static Future<void> get lastClose =>
       _previousClose.timeout(const Duration(seconds: 45), onTimeout: () {});
 
+  /// Local progress keys of books open in a player; [pushLocalProgress]
+  /// leaves those to the player.
+  static final Set<String> _openKeys = {};
+
+  /// The running [pushLocalProgress], so runs don't overlap and a player
+  /// starts only after a push of its book finished.
+  static Future<void> _pushing = Future.value();
+
   final http.Client _client;
   final AudioPlayer player = AudioPlayer();
 
@@ -101,6 +109,9 @@ class AudioPlayerController extends ChangeNotifier {
   String libraryItemId = '';
   String serverUrl = '';
   String token = '';
+
+  /// Logged-in user; local progress is kept per user.
+  String user = '';
 
   /// Total book length in seconds.
   double duration = 0;
@@ -122,6 +133,12 @@ class AudioPlayerController extends ChangeNotifier {
 
   /// Listening time from offline play, added to the next successful sync.
   Duration _carriedListening = Duration.zero;
+
+  /// What the local progress file holds, so unchanged progress isn't
+  /// rewritten with a newer timestamp (it would then beat newer progress
+  /// from another device).
+  double? _savedTime;
+  Duration _savedListened = Duration.zero;
 
   /// 0..1 while downloading, null otherwise.
   final ValueNotifier<double?> downloadProgress = ValueNotifier(null);
@@ -211,11 +228,14 @@ class AudioPlayerController extends ChangeNotifier {
   Future<bool> setupPlayer(
     String libItemId,
     String srvUrl,
-    String authToken,
-  ) async {
+    String authToken, {
+    String userName = '',
+  }) async {
     libraryItemId = libItemId;
     serverUrl = srvUrl;
     token = authToken;
+    user = userName;
+    _openKeys.add(_localKey);
 
     try {
       // Let the previous book finish closing (bounded, it has its own
@@ -225,14 +245,18 @@ class AudioPlayerController extends ChangeNotifier {
         const Duration(seconds: 45),
         onTimeout: () {},
       );
+      // A push of offline progress for this book must land first.
+      await _pushing.timeout(const Duration(seconds: 25), onTimeout: () {});
       if (_closed) return false;
+      // A downloaded book doesn't wait long for a slow network.
+      final canPlayOffline = _metaFile(await localDirPath()).existsSync();
       final response = await _client
           .post(
             Uri.parse('$serverUrl/api/items/$libraryItemId/play'),
             headers: {..._authHeaders, 'Content-Type': 'application/json'},
             body: await _deviceInfoBody(),
           )
-          .timeout(const Duration(seconds: 20));
+          .timeout(Duration(seconds: canPlayOffline ? 5 : 20));
       if (response.statusCode == 401) return false; // Log in again.
       if (response.statusCode != 200) {
         if (!await _startOffline()) return false;
@@ -295,21 +319,28 @@ class AudioPlayerController extends ChangeNotifier {
     _applySession({...json, 'id': ''});
     if (tracks.isEmpty || !await isDownloaded()) return false;
     final local = await _readLocalProgress();
-    if (local != null) _pendingPosition = _lastSyncedTime = local.time;
+    if (local != null) {
+      _pendingPosition = _lastSyncedTime = local.time;
+      _carriedListening = local.listened;
+    }
     isOffline = true;
     await _loadSources(initialTime: _pendingPosition);
     return true;
   }
 
-  /// Progress kept on the watch: written whenever a sync can't reach the
-  /// server, cleared once one does.
+  /// Progress kept on the watch. `pending` progress (from offline play or a
+  /// failed sync) still has to reach the server; otherwise it is the last
+  /// synced position of a downloaded book, where offline play resumes.
+  /// `listenedMs` is listening time the server hasn't counted yet.
   static Future<Directory> _localProgressDir() async {
     final support = await getApplicationSupportDirectory();
     return Directory('${support.path}/offline_progress');
   }
 
+  String get _localKey => '$serverUrl|$user|$libraryItemId';
+
   Future<File> _localProgressFile() async {
-    final key = '$serverUrl|$libraryItemId'.hashCode.toUnsigned(32);
+    final key = _localKey.hashCode.toUnsigned(32);
     return File('${(await _localProgressDir()).path}/$key.json');
   }
 
@@ -323,9 +354,25 @@ class AudioPlayerController extends ChangeNotifier {
     }
   }
 
-  /// Sends progress made offline for books that weren't opened online
+  /// Sends positions saved offline for books that weren't opened online
   /// since, unless the server has something newer. Call when online.
-  static Future<void> pushLocalProgress(String serverUrl, String token) async {
+  /// Listening time stays on the watch until the book is next played
+  /// online (the progress API can't add listening time).
+  static Future<void> pushLocalProgress(
+    String serverUrl,
+    String token,
+    String user,
+  ) {
+    return _pushing = _pushing
+        .then((_) => _push(serverUrl, token, user))
+        .catchError((Object e) {
+          debugPrint('Could not push local progress: $e');
+        });
+  }
+
+  static Future<void> _push(String serverUrl, String token, String user) async {
+    // The last closed book may still be saving its final position.
+    await lastClose;
     final dir = await _localProgressDir();
     if (!dir.existsSync()) return;
     final headers = {
@@ -336,21 +383,22 @@ class AudioPlayerController extends ChangeNotifier {
     try {
       for (final file in dir.listSync().whereType<File>()) {
         try {
-          final json =
-              jsonDecode(await file.readAsString()) as Map<String, dynamic>;
-          if (json['server'] != serverUrl) continue;
+          final raw = file.readAsStringSync();
+          final json = jsonDecode(raw) as Map<String, dynamic>;
+          if (json['server'] != serverUrl || json['user'] != user) continue;
+          if (json['pending'] != true) continue;
           final itemId = json['itemId'] as String;
+          if (_openKeys.contains('$serverUrl|$user|$itemId')) continue;
           final url = Uri.parse('$serverUrl/api/me/progress/$itemId');
           final current = await client
               .get(url, headers: headers)
               .timeout(const Duration(seconds: 10));
-          final serverUpdated = current.statusCode == 200
-              ? ((jsonDecode(current.body)
-                                as Map<String, dynamic>)['lastUpdate']
-                            as num?)
-                        ?.toInt() ??
-                    0
-              : 0;
+          final serverJson = current.statusCode == 200
+              ? jsonDecode(current.body) as Map<String, dynamic>
+              : const <String, dynamic>{};
+          final serverUpdated =
+              (serverJson['lastUpdate'] as num?)?.toInt() ?? 0;
+          final Map<String, dynamic> updated;
           if (serverUpdated <= (json['updatedAt'] as num).toInt()) {
             final time = (json['currentTime'] as num).toDouble();
             final duration = (json['duration'] as num?)?.toDouble() ?? 0;
@@ -367,8 +415,26 @@ class AudioPlayerController extends ChangeNotifier {
                 )
                 .timeout(const Duration(seconds: 10));
             if (response.statusCode != 200) continue;
+            updated = {...json, 'pending': false};
+          } else {
+            // Played elsewhere since: resume offline from there instead.
+            updated = {
+              ...json,
+              'pending': false,
+              'currentTime':
+                  (serverJson['currentTime'] as num?)?.toDouble() ??
+                  json['currentTime'],
+              'updatedAt': serverUpdated,
+            };
           }
-          file.deleteSync();
+          // Synchronous, so nothing else runs between the check and the
+          // write: keep a file a player changed meanwhile.
+          if (_openKeys.contains('$serverUrl|$user|$itemId') ||
+              !file.existsSync() ||
+              file.readAsStringSync() != raw) {
+            continue;
+          }
+          file.writeAsStringSync(jsonEncode(updated), flush: true);
         } on Object catch (e) {
           debugPrint('Could not push local progress ${file.path}: $e');
         }
@@ -378,46 +444,75 @@ class AudioPlayerController extends ChangeNotifier {
     }
   }
 
-  Future<({double time, Duration listened, int updatedAt})?>
+  Future<({double time, Duration listened, int updatedAt, bool pending})?>
   _readLocalProgress() async {
     try {
       final file = await _localProgressFile();
       if (!file.existsSync()) return null;
       final json =
           jsonDecode(await file.readAsString()) as Map<String, dynamic>;
-      if (json['itemId'] != libraryItemId) return null;
-      return (
+      if (json['itemId'] != libraryItemId || json['user'] != user) {
+        return null;
+      }
+      final local = (
         time: (json['currentTime'] as num).toDouble(),
         listened: Duration(milliseconds: (json['listenedMs'] as num).toInt()),
         updatedAt: (json['updatedAt'] as num).toInt(),
+        pending: json['pending'] == true,
       );
+      _savedTime = local.time;
+      _savedListened = local.listened;
+      return local;
     } on Object catch (e) {
       debugPrint('Could not read local progress: $e');
       return null;
     }
   }
 
-  Future<void> _writeLocalProgress(double time, Duration listened) async {
+  /// Saves progress the server doesn't have yet. Skipped when nothing
+  /// changed, so opening a book without playing it doesn't make its old
+  /// position look new.
+  Future<void> _savePendingProgress(double time, Duration listened) async {
+    final saved = _savedTime;
+    if (saved != null &&
+        (time - saved).abs() < 1 &&
+        listened == _savedListened) {
+      return;
+    }
+    await _writeLocalProgress(time, listened, pending: true);
+  }
+
+  Future<void> _writeLocalProgress(
+    double time,
+    Duration listened, {
+    required bool pending,
+  }) async {
     try {
       final file = await _localProgressFile();
       file.parent.createSync(recursive: true);
       await file.writeAsString(
         jsonEncode({
           'server': serverUrl,
+          'user': user,
           'itemId': libraryItemId,
           'duration': duration,
           'currentTime': time,
           'listenedMs': listened.inMilliseconds,
           'updatedAt': DateTime.now().millisecondsSinceEpoch,
+          'pending': pending,
         }),
         flush: true,
       );
+      _savedTime = time;
+      _savedListened = listened;
     } on Object catch (e) {
       debugPrint('Could not save local progress: $e');
     }
   }
 
   Future<void> _clearLocalProgress() async {
+    _savedTime = null;
+    _savedListened = Duration.zero;
     try {
       final file = await _localProgressFile();
       if (file.existsSync()) file.deleteSync();
@@ -431,6 +526,9 @@ class AudioPlayerController extends ChangeNotifier {
   Future<void> _resumeLocalProgress() async {
     final local = await _readLocalProgress();
     if (local == null) return;
+    // Listening time from offline play is reported either way.
+    _carriedListening = local.listened;
+    if (!local.pending) return;
     var serverUpdated = 0;
     try {
       final response = await _client
@@ -446,12 +544,8 @@ class AudioPlayerController extends ChangeNotifier {
     } on Object catch (e) {
       debugPrint('Could not read server progress: $e');
     }
-    if (serverUpdated > local.updatedAt) {
-      await _clearLocalProgress();
-      return;
-    }
+    if (serverUpdated > local.updatedAt) return; // The next sync replaces it.
     _pendingPosition = local.time;
-    _carriedListening = local.listened;
   }
 
   void _onPlayerState(PlayerState state) {
@@ -779,7 +873,7 @@ class AudioPlayerController extends ChangeNotifier {
       _carriedListening += _listenClock.elapsed - _reportedListening;
       _reportedListening = _listenClock.elapsed;
       _lastSyncedTime = current;
-      await _writeLocalProgress(current, _carriedListening);
+      await _savePendingProgress(current, _carriedListening);
       return;
     }
     final listened =
@@ -808,11 +902,16 @@ class AudioPlayerController extends ChangeNotifier {
     } on Object catch (e) {
       debugPrint('Error syncing session: $e');
     }
-    // Keep the position on the watch if the server didn't get it (e.g. the
-    // network dropped while listening to a downloaded book).
-    synced
-        ? await _clearLocalProgress()
-        : await _writeLocalProgress(current, listened);
+    if (!synced) {
+      // Keep the position on the watch until the server gets it (e.g. the
+      // network dropped while listening to a downloaded book).
+      await _savePendingProgress(current, listened);
+    } else if (await isDownloaded()) {
+      // Where offline play resumes next time.
+      await _writeLocalProgress(current, Duration.zero, pending: false);
+    } else {
+      await _clearLocalProgress();
+    }
   }
 
   /// Downloads every audio file of the book, streaming each to disk and
@@ -968,6 +1067,7 @@ class AudioPlayerController extends ChangeNotifier {
     } on Object catch (e) {
       debugPrint('Error closing player: $e');
     } finally {
+      _openKeys.remove(_localKey);
       _client.close();
       downloadProgress.dispose();
       super.dispose();

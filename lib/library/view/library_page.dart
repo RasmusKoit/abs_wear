@@ -88,7 +88,11 @@ class _LibraryPageState extends State<LibraryPage> {
       setState(() => _books = books);
       // Online again: send progress made while offline.
       unawaited(
-        AudioPlayerController.pushLocalProgress(widget.serverUrl, widget.token),
+        AudioPlayerController.pushLocalProgress(
+          widget.serverUrl,
+          widget.token,
+          widget.user,
+        ),
       );
       unawaited(
         JsonCache.write(_cacheKey, [for (final b in books) b.toCache()]),
@@ -146,6 +150,7 @@ class _LibraryPageState extends State<LibraryPage> {
           token: widget.token,
           serverUrl: widget.serverUrl,
           libraryItemId: book.id,
+          user: widget.user,
         ),
       ),
     );
@@ -171,9 +176,11 @@ class _LibraryPageState extends State<LibraryPage> {
     if (!mounted) return;
     if (result != null) {
       _close(result);
-    } else {
-      unawaited(_refresh());
+      return;
     }
+    // A book opened from the list may still be saving its position.
+    await AudioPlayerController.lastClose;
+    if (mounted) unawaited(_refresh());
   }
 
   @override

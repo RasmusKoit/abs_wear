@@ -11,11 +11,15 @@ class PlayerPage extends StatefulWidget {
     required this.libraryItemId,
     required this.serverUrl,
     required this.token,
+    required this.user,
     super.key,
   });
   final String libraryItemId;
   final String serverUrl;
   final String token;
+
+  /// Logged-in user, to keep offline progress per account.
+  final String user;
 
   @override
   State<PlayerPage> createState() => _PlayerPageState();
@@ -40,6 +44,7 @@ class _PlayerPageState extends State<PlayerPage> {
       widget.libraryItemId,
       widget.serverUrl,
       widget.token,
+      userName: widget.user,
     );
     if (!mounted) return;
     final l10n = context.l10n;
