@@ -130,10 +130,6 @@ class AudioPlayerController extends ChangeNotifier {
 
   final http.Client _client;
   final AudioPlayer player = AudioPlayer(
-    // The player sends the auth header itself. just_audio's default proxy
-    // would parse an HLS playlist on the UI isolate and keep a handler per
-    // segment: tens of thousands for a long book.
-    useProxyForRequestHeaders: false,
     // The default 50 s buffer runs dry within a minute when the network
     // drops (e.g. the watch switches from Wi-Fi to Bluetooth with the
     // screen off). Audiobooks are low bitrate: buffer 10 min, at most 16 MB.
@@ -989,7 +985,11 @@ class AudioPlayerController extends ChangeNotifier {
           local
               ? Uri.file(_localFile(dir, t).path)
               : Uri.parse('$serverUrl${t.contentUrl}'),
-          headers: local ? null : _authHeaders,
+          // The server's HLS URLs carry the session id instead of needing
+          // the token. Without headers just_audio skips its proxy, which
+          // would parse the playlist on the UI isolate and keep a handler
+          // per segment (tens of thousands for a long book).
+          headers: local || t.isHls ? null : _authHeaders,
           tag: MediaItem(
             id: '$_mediaPath/${t.index}',
             title: bookTitle,
