@@ -64,5 +64,13 @@
     "sessionExpired": "La sesión ha caducado. Inicia sesión de nuevo.",
     "logoutConfirm": "¿Cerrar sesión? Se eliminarán los libros descargados.",
     "cancel": "Cancelar",
-    "nothingInProgress": "Nada en curso."
+    "nothingInProgress": "Nada en curso.",
+    "download": "Descargar",
+    "downloadDone": "Audiolibro descargado.",
+    "downloadFailed": "La descarga falló. Toca descargar para reanudar.",
+    "downloadNoSpace": "No hay espacio suficiente en el reloj.",
+    "deleteDownload": "Eliminar descarga",
+    "deleteDownloadConfirm": "¿Eliminar el libro descargado del reloj?",
+    "volumeUp": "Subir volumen",
+    "volumeDown": "Bajar volumen"
 }

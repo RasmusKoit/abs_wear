@@ -97,8 +97,9 @@ class _PlayPauseButton extends StatelessWidget {
       stream: controller.player.playerStateStream,
       builder: (context, snapshot) {
         final state = snapshot.data;
+        // Only the player's own state: playback stays controllable while a
+        // download runs in the background.
         final busy =
-            controller.isDownloading ||
             state?.processingState == ProcessingState.loading ||
             state?.processingState == ProcessingState.buffering;
         if (busy) {

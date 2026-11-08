@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:volume_controller/volume_controller.dart';
 
+enum _LocalState { none, partial, complete }
+
 class ControlViewPage extends StatefulWidget {
   const ControlViewPage({required this.playerController, super.key});
   final AudioPlayerController playerController;
@@ -17,7 +19,7 @@ class ControlViewPage extends StatefulWidget {
 class _ControlViewPageState extends State<ControlViewPage> {
   final VolumeController _volume = VolumeController.instance;
   double _currentVolume = 0;
-  bool _downloaded = false;
+  _LocalState _local = _LocalState.none;
   StreamSubscription<double>? _volumeSubscription;
 
   AudioPlayerController get _controller => widget.playerController;
@@ -29,22 +31,24 @@ class _ControlViewPageState extends State<ControlViewPage> {
     _volumeSubscription = _volume.addListener((v) {
       if (mounted) setState(() => _currentVolume = v);
     });
-    _controller.addListener(_refreshDownloaded);
-    unawaited(_refreshDownloaded());
+    _controller.addListener(_refreshLocal);
+    unawaited(_refreshLocal());
   }
 
   @override
   void dispose() {
     unawaited(_volumeSubscription?.cancel());
-    _controller.removeListener(_refreshDownloaded);
+    _controller.removeListener(_refreshLocal);
     super.dispose();
   }
 
-  Future<void> _refreshDownloaded() async {
-    final downloaded = await _controller.isDownloaded();
-    if (mounted && downloaded != _downloaded) {
-      setState(() => _downloaded = downloaded);
-    }
+  Future<void> _refreshLocal() async {
+    final local = await _controller.isDownloaded()
+        ? _LocalState.complete
+        : await _controller.hasLocalFiles()
+        ? _LocalState.partial
+        : _LocalState.none;
+    if (mounted && local != _local) setState(() => _local = local);
   }
 
   Future<void> _changeVolume(double delta) async {
@@ -54,14 +58,56 @@ class _ControlViewPageState extends State<ControlViewPage> {
     if (mounted) setState(() => _currentVolume = next);
   }
 
+  Future<void> _toast(String msg) =>
+      Fluttertoast.showToast(msg: msg, gravity: ToastGravity.CENTER);
+
   Future<void> _download() async {
-    final ok = await _controller.downloadBook();
+    final l10n = context.l10n;
+    final result = await _controller.downloadBook();
     unawaited(
-      Fluttertoast.showToast(
-        msg: ok ? 'Audiobook downloaded!' : 'Failed to download the file!',
-        gravity: ToastGravity.CENTER,
+      _toast(switch (result) {
+        DownloadResult.done => l10n.downloadDone,
+        DownloadResult.noSpace => l10n.downloadNoSpace,
+        DownloadResult.failed => l10n.downloadFailed,
+      }),
+    );
+  }
+
+  Future<void> _confirmDelete() async {
+    final l10n = context.l10n;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        insetPadding: const EdgeInsets.symmetric(horizontal: 12),
+        contentPadding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
+        actionsPadding: const EdgeInsets.only(bottom: 12),
+        content: Text(
+          l10n.deleteDownloadConfirm,
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+        actionsAlignment: MainAxisAlignment.center,
+        actions: [
+          IconButton(
+            tooltip: l10n.cancel,
+            icon: const Icon(Icons.close_rounded),
+            onPressed: () => Navigator.pop(context, false),
+          ),
+          IconButton(
+            tooltip: l10n.deleteDownload,
+            icon: const Icon(Icons.check_rounded),
+            onPressed: () => Navigator.pop(context, true),
+          ),
+        ],
       ),
     );
+    if (confirmed ?? false) await _controller.deleteDownload();
+  }
+
+  IconData get _volumeIcon {
+    if (_currentVolume <= 0) return Icons.volume_off_rounded;
+    if (_currentVolume < 0.5) return Icons.volume_down_rounded;
+    return Icons.volume_up_rounded;
   }
 
   @override
@@ -83,15 +129,22 @@ class _ControlViewPageState extends State<ControlViewPage> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   IconButton(
+                    tooltip: l10n.volumeDown,
                     icon: const Icon(Icons.remove_rounded),
                     onPressed: () => unawaited(_changeVolume(-0.1)),
                   ),
-                  Icon(
-                    _currentVolume > 0.5
-                        ? Icons.volume_up_rounded
-                        : Icons.volume_down_rounded,
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(_volumeIcon, size: 20),
+                      Text(
+                        '${(_currentVolume * 100).round()}%',
+                        style: theme.textTheme.labelSmall,
+                      ),
+                    ],
                   ),
                   IconButton(
+                    tooltip: l10n.volumeUp,
                     icon: const Icon(Icons.add_rounded),
                     onPressed: () => unawaited(_changeVolume(0.1)),
                   ),
@@ -110,6 +163,7 @@ class _ControlViewPageState extends State<ControlViewPage> {
   }
 
   Widget _buildOfflineMediaAction(ThemeData theme) {
+    final l10n = context.l10n;
     if (_controller.isDownloading) {
       return ValueListenableBuilder<double?>(
         valueListenable: _controller.downloadProgress,
@@ -134,7 +188,12 @@ class _ControlViewPageState extends State<ControlViewPage> {
         ),
       );
     }
-    if (_downloaded) {
+    final delete = IconButton(
+      tooltip: l10n.deleteDownload,
+      icon: Icon(Icons.delete_forever_rounded, color: theme.colorScheme.error),
+      onPressed: () => unawaited(_confirmDelete()),
+    );
+    if (_local == _LocalState.complete) {
       return Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
@@ -142,19 +201,26 @@ class _ControlViewPageState extends State<ControlViewPage> {
             padding: const EdgeInsets.all(12),
             child: Icon(
               Icons.download_done_rounded,
+              semanticLabel: l10n.downloadDone,
               color: theme.colorScheme.primary,
             ),
           ),
-          IconButton(
-            icon: const Icon(Icons.delete_forever_rounded, color: Colors.red),
-            onPressed: () => unawaited(_controller.deleteDownload()),
-          ),
+          delete,
         ],
       );
     }
-    return IconButton(
+    final download = IconButton(
+      tooltip: l10n.download,
       icon: Icon(Icons.download_rounded, color: theme.colorScheme.secondary),
       onPressed: _controller.isLoaded ? () => unawaited(_download()) : null,
     );
+    // Leftovers of a failed download: resume, or free the space.
+    if (_local == _LocalState.partial) {
+      return Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [download, delete],
+      );
+    }
+    return download;
   }
 }
