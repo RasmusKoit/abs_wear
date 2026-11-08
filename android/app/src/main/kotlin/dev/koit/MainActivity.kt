@@ -57,6 +57,18 @@ class MainActivity : AudioServiceActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         ambientChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "ambient_mode")
+        val context = applicationContext
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "network_lock")
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "acquire" -> result.success(NetworkLock.acquire(context))
+                    "release" -> {
+                        NetworkLock.release(context)
+                        result.success(true)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
     }
 
     /**

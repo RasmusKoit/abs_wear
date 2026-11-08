@@ -6,6 +6,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:abs_wear/player/darts/network_lock.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -100,7 +101,21 @@ class AudioPlayerController extends ChangeNotifier {
   static Future<void> _pushing = Future.value();
 
   final http.Client _client;
-  final AudioPlayer player = AudioPlayer();
+  final AudioPlayer player = AudioPlayer(
+    // The default 50 s buffer runs dry within a minute when the network
+    // drops (e.g. the watch switches from Wi-Fi to Bluetooth with the
+    // screen off). Audiobooks are low bitrate: buffer 10 min, at most 16 MB.
+    audioLoadConfiguration: const AudioLoadConfiguration(
+      androidLoadControl: AndroidLoadControl(
+        minBufferDuration: Duration(minutes: 10),
+        maxBufferDuration: Duration(minutes: 10),
+        targetBufferBytes: 16 * 1024 * 1024,
+      ),
+    ),
+  );
+
+  /// The loaded audio is streamed from the server (not downloaded).
+  bool _streaming = false;
 
   List<BookTrack> tracks = [];
   List<BookChapter> chapters = [];
@@ -552,6 +567,9 @@ class AudioPlayerController extends ChangeNotifier {
     final audible =
         state.playing && state.processingState == ProcessingState.ready;
     audible ? _listenClock.start() : _listenClock.stop();
+    // Keep the network up while streaming, also while loading with the
+    // screen off.
+    unawaited(NetworkLock.set(hold: state.playing && _streaming));
     if (state.processingState == ProcessingState.completed && state.playing) {
       // End of the book: stop so the UI shows play and the pause syncs.
       unawaited(player.pause());
@@ -730,6 +748,7 @@ class AudioPlayerController extends ChangeNotifier {
   /// positions it at [initialTime] seconds into the book.
   Future<void> _loadSources({required double initialTime}) async {
     final local = await isDownloaded();
+    _streaming = !local;
     final dir = await localDirPath();
     final sources = [
       for (final t in tracks)
@@ -1059,6 +1078,9 @@ class AudioPlayerController extends ChangeNotifier {
       await _stateSub?.cancel();
       await _errorSub?.cancel();
       await player.dispose();
+      // Before the (possibly slow) final sync, so a release can't drop the
+      // lock of the next book, which may start meanwhile.
+      unawaited(NetworkLock.set(hold: false));
       // Before the book loaded, setupPlayer closes the session itself with
       // the server's position; closing here could send position 0.
       if (isLoaded) {
