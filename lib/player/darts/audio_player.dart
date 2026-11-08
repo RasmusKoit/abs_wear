@@ -1243,8 +1243,6 @@ class AudioPlayerController extends ChangeNotifier {
     _notify();
   }
 
-  /// Closes the session on the server (saving the final position) and then
-  /// releases the player. Safe to call without awaiting from dispose().
   /// Starts the download of one file. Retries once when the connection
   /// drops before the response starts, which a reused keep-alive
   /// connection can do.
@@ -1269,6 +1267,8 @@ class AudioPlayerController extends ChangeNotifier {
     }
   }
 
+  /// Closes the session on the server (saving the final position) and then
+  /// releases the player. Safe to call without awaiting from dispose().
   Future<void> close() {
     if (_closed) return _previousClose;
     _closed = true;
