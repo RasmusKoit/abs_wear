@@ -5,23 +5,44 @@ import 'package:abs_wear/l10n/l10n.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
-/// A book as shown in lists (shelves, library browser).
+/// A book, podcast or podcast episode as shown in lists (shelves, library
+/// browser).
 @immutable
 class ShelfBook {
   const ShelfBook({
     required this.id,
     required this.title,
     required this.author,
+    this.isPodcast = false,
+    this.episodeId,
   });
 
-  /// From a library item as the server returns it.
+  /// From a library item as the server returns it. A shelf entry with a
+  /// `recentEpisode` (Continue Listening in a podcast library) is that
+  /// episode.
   factory ShelfBook.fromJson(Map<String, dynamic> json) {
     final media = json['media'] as Map<String, dynamic>? ?? const {};
     final metadata = media['metadata'] as Map<String, dynamic>? ?? const {};
+    final isPodcast = json['mediaType'] == 'podcast';
+    final title = metadata['title'] as String? ?? '';
+    final episode = json['recentEpisode'];
+    if (episode is Map<String, dynamic> && episode['id'] is String) {
+      return ShelfBook(
+        id: json['id'] as String,
+        title: episode['title'] as String? ?? '',
+        author: title,
+        isPodcast: true,
+        episodeId: episode['id'] as String,
+      );
+    }
     return ShelfBook(
       id: json['id'] as String,
-      title: metadata['title'] as String? ?? '',
-      author: metadata['authorName'] as String? ?? '',
+      title: title,
+      author:
+          (isPodcast ? metadata['author'] : metadata['authorName'])
+              as String? ??
+          '',
+      isPodcast: isPodcast,
     );
   }
 
@@ -30,13 +51,62 @@ class ShelfBook {
     id: json['i'] as String,
     title: json['t'] as String? ?? '',
     author: json['a'] as String? ?? '',
+    isPodcast: json['p'] == true,
+    episodeId: json['e'] as String?,
   );
 
   final String id;
   final String title;
   final String author;
+  final bool isPodcast;
 
-  Map<String, String> toCache() => {'i': id, 't': title, 'a': author};
+  /// Set for a podcast episode; [id] is then its podcast.
+  final String? episodeId;
+
+  Map<String, Object> toCache() => {
+    'i': id,
+    't': title,
+    'a': author,
+    if (isPodcast) 'p': true,
+    'e': ?episodeId,
+  };
+}
+
+/// A library on the server.
+@immutable
+class LibraryInfo {
+  const LibraryInfo({
+    required this.id,
+    required this.name,
+    required this.isPodcast,
+  });
+
+  factory LibraryInfo.fromJson(Map<String, dynamic> json) => LibraryInfo(
+    id: json['id'] as String,
+    name: json['name'] as String? ?? '',
+    isPodcast: json['mediaType'] == 'podcast',
+  );
+
+  final String id;
+  final String name;
+  final bool isPodcast;
+
+  Map<String, Object> toJson() => {
+    'id': id,
+    'name': name,
+    'mediaType': isPodcast ? 'podcast' : 'book',
+  };
+}
+
+/// Book and podcast libraries the user can open (other kinds are skipped).
+Future<List<LibraryInfo>> fetchLibraries(String serverUrl, String token) async {
+  final json =
+      await getJson('$serverUrl/api/libraries', token) as Map<String, dynamic>;
+  return (json['libraries'] as List)
+      .cast<Map<String, dynamic>>()
+      .where((l) => l['mediaType'] == 'book' || l['mediaType'] == 'podcast')
+      .map(LibraryInfo.fromJson)
+      .toList();
 }
 
 /// Why a library page closed itself, for the login page to act on.
@@ -46,6 +116,9 @@ enum LibraryResult {
 
   /// The saved library no longer exists (404): pick another one.
   libraryMissing,
+
+  /// The user picked another library (saved as the default): open it.
+  switchLibrary,
 }
 
 /// A non-200 reply from the server.

@@ -179,8 +179,8 @@ class LoginPageState extends State<LoginPage> {
     }
   }
 
-  /// The user's default library if it holds books (the player can't play
-  /// podcasts yet), otherwise the first book library. Null when none.
+  /// The user's saved library if it still exists, otherwise the first book
+  /// library (or podcast library if there are no books). Null when none.
   Future<String?> _pickLibraryId(
     String url,
     String token, {
@@ -194,13 +194,16 @@ class LoginPageState extends State<LoginPage> {
         .timeout(const Duration(seconds: 20));
     if (response.statusCode != 200) return null;
     final body = jsonDecode(response.body) as Map<String, dynamic>;
-    final books = (body['libraries'] as List)
+    final libraries = (body['libraries'] as List)
         .cast<Map<String, dynamic>>()
-        .where((l) => l['mediaType'] == 'book')
-        .map((l) => l['id'] as String)
+        .where((l) => l['mediaType'] == 'book' || l['mediaType'] == 'podcast')
         .toList();
-    if (preferred != null && books.contains(preferred)) return preferred;
-    return books.isEmpty ? null : books.first;
+    if (preferred != null && libraries.any((l) => l['id'] == preferred)) {
+      return preferred;
+    }
+    final books = libraries.where((l) => l['mediaType'] == 'book');
+    final pick = books.isNotEmpty ? books.first : libraries.firstOrNull;
+    return pick?['id'] as String?;
   }
 
   /// Forgets the session. With [deleteDownloads] (an explicit logout) the
@@ -300,6 +303,13 @@ class LoginPageState extends State<LoginPage> {
         unawaited(_toast(l10n.sessionExpired));
       case LibraryResult.libraryMissing:
         await _reresolveLibrary(failedId: defaultLibraryId);
+      case LibraryResult.switchLibrary:
+        // The library page saved the new default.
+        final prefs = await SharedPreferences.getInstance();
+        final id = prefs.getString('defaultLibraryId');
+        if (!mounted || id == null) return;
+        setState(() => defaultLibraryId = id);
+        await _openLibrary();
       case null:
         break;
     }

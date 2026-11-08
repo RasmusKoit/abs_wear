@@ -107,6 +107,15 @@ class AudioPlayerController extends ChangeNotifier {
   String sessionId = '';
   String bookTitle = '';
   String libraryItemId = '';
+
+  /// Set when playing a podcast episode ([libraryItemId] is the podcast).
+  String? episodeId;
+
+  /// The item (and episode) part of play and progress URLs.
+  String get _mediaPath => _pathFor(libraryItemId, episodeId);
+
+  static String _pathFor(String itemId, String? episodeId) =>
+      episodeId == null ? itemId : '$itemId/$episodeId';
   String serverUrl = '';
   String token = '';
 
@@ -230,8 +239,10 @@ class AudioPlayerController extends ChangeNotifier {
     String srvUrl,
     String authToken, {
     String userName = '',
+    String? episodeId,
   }) async {
     libraryItemId = libItemId;
+    this.episodeId = episodeId;
     serverUrl = srvUrl;
     token = authToken;
     user = userName;
@@ -252,7 +263,7 @@ class AudioPlayerController extends ChangeNotifier {
       final canPlayOffline = _metaFile(await localDirPath()).existsSync();
       final response = await _client
           .post(
-            Uri.parse('$serverUrl/api/items/$libraryItemId/play'),
+            Uri.parse('$serverUrl/api/items/$_mediaPath/play'),
             headers: {..._authHeaders, 'Content-Type': 'application/json'},
             body: await _deviceInfoBody(),
           )
@@ -337,7 +348,10 @@ class AudioPlayerController extends ChangeNotifier {
     return Directory('${support.path}/offline_progress');
   }
 
-  String get _localKey => '$serverUrl|$user|$libraryItemId';
+  String get _localKey => _keyFor(serverUrl, user, _mediaPath);
+
+  static String _keyFor(String server, String user, String mediaPath) =>
+      '$server|$user|$mediaPath';
 
   Future<File> _localProgressFile() async {
     final key = _localKey.hashCode.toUnsigned(32);
@@ -387,9 +401,13 @@ class AudioPlayerController extends ChangeNotifier {
           final json = jsonDecode(raw) as Map<String, dynamic>;
           if (json['server'] != serverUrl || json['user'] != user) continue;
           if (json['pending'] != true) continue;
-          final itemId = json['itemId'] as String;
-          if (_openKeys.contains('$serverUrl|$user|$itemId')) continue;
-          final url = Uri.parse('$serverUrl/api/me/progress/$itemId');
+          final mediaPath = _pathFor(
+            json['itemId'] as String,
+            json['episodeId'] as String?,
+          );
+          final key = _keyFor(serverUrl, user, mediaPath);
+          if (_openKeys.contains(key)) continue;
+          final url = Uri.parse('$serverUrl/api/me/progress/$mediaPath');
           final current = await client
               .get(url, headers: headers)
               .timeout(const Duration(seconds: 10));
@@ -429,7 +447,7 @@ class AudioPlayerController extends ChangeNotifier {
           }
           // Synchronous, so nothing else runs between the check and the
           // write: keep a file a player changed meanwhile.
-          if (_openKeys.contains('$serverUrl|$user|$itemId') ||
+          if (_openKeys.contains(key) ||
               !file.existsSync() ||
               file.readAsStringSync() != raw) {
             continue;
@@ -451,7 +469,9 @@ class AudioPlayerController extends ChangeNotifier {
       if (!file.existsSync()) return null;
       final json =
           jsonDecode(await file.readAsString()) as Map<String, dynamic>;
-      if (json['itemId'] != libraryItemId || json['user'] != user) {
+      if (json['itemId'] != libraryItemId ||
+          json['episodeId'] != episodeId ||
+          json['user'] != user) {
         return null;
       }
       final local = (
@@ -495,6 +515,7 @@ class AudioPlayerController extends ChangeNotifier {
           'server': serverUrl,
           'user': user,
           'itemId': libraryItemId,
+          'episodeId': ?episodeId,
           'duration': duration,
           'currentTime': time,
           'listenedMs': listened.inMilliseconds,
@@ -533,7 +554,7 @@ class AudioPlayerController extends ChangeNotifier {
     try {
       final response = await _client
           .get(
-            Uri.parse('$serverUrl/api/me/progress/$libraryItemId'),
+            Uri.parse('$serverUrl/api/me/progress/$_mediaPath'),
             headers: _authHeaders,
           )
           .timeout(const Duration(seconds: 10));
@@ -629,6 +650,7 @@ class AudioPlayerController extends ChangeNotifier {
     _sessionMeta = {
       'duration': json['duration'],
       'currentTime': json['currentTime'],
+      'displayTitle': json['displayTitle'],
       'mediaMetadata': {
         'title': mediaMeta is Map<String, dynamic> ? mediaMeta['title'] : null,
       },
@@ -651,7 +673,9 @@ class AudioPlayerController extends ChangeNotifier {
     _lastSyncedTime = (json['currentTime'] as num).toDouble();
     _pendingPosition = _lastSyncedTime;
     final metadata = json['mediaMetadata'] as Map<String, dynamic>? ?? {};
-    bookTitle = metadata['title'] as String? ?? '';
+    // For an episode this is the episode's title, not the podcast's.
+    bookTitle =
+        json['displayTitle'] as String? ?? metadata['title'] as String? ?? '';
 
     final sizesByIno = <String, int>{};
     final item = json['libraryItem'];
@@ -696,7 +720,9 @@ class AudioPlayerController extends ChangeNotifier {
 
   Future<String> localDirPath() async {
     final docs = await getApplicationDocumentsDirectory();
-    return '${docs.path}/$libraryItemId';
+    // Each episode of a podcast gets its own folder.
+    return '${docs.path}/'
+        '${episodeId == null ? libraryItemId : '${libraryItemId}_$episodeId'}';
   }
 
   /// Local file for a track. Named by index and inode, not the original
@@ -739,7 +765,7 @@ class AudioPlayerController extends ChangeNotifier {
               : Uri.parse('$serverUrl${t.contentUrl}'),
           headers: local ? null : _authHeaders,
           tag: MediaItem(
-            id: '$libraryItemId/${t.index}',
+            id: '$_mediaPath/${t.index}',
             title: bookTitle,
             album: bookTitle,
           ),
