@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:isolate';
 
 import 'package:abs_wear/app/view/crown_scrollbar.dart';
 import 'package:abs_wear/l10n/l10n.dart';
@@ -6,6 +8,7 @@ import 'package:abs_wear/library/data/json_cache.dart';
 import 'package:abs_wear/library/data/library_api.dart';
 import 'package:abs_wear/player/player.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 
 /// A podcast episode as listed on [EpisodesPage].
 @immutable
@@ -97,31 +100,37 @@ class _EpisodesPageState extends State<EpisodesPage> {
     await _load();
   }
 
+  /// Bumped per progress request; older replies are dropped.
+  int _progressRequest = 0;
+
   Future<void> _loadProgress() async {
+    final request = ++_progressRequest;
     try {
-      final me =
-          await getJson('${widget.serverUrl}/api/me', widget.token)
-              as Map<String, dynamic>;
-      final progress = {
-        for (final p
-            in (me['mediaProgress'] as List? ?? const [])
-                .cast<Map<String, dynamic>>())
-          if (p['libraryItemId'] == widget.podcast.id &&
-              p['episodeId'] is String)
-            p['episodeId'] as String: (
-              progress: (p['progress'] as num?)?.toDouble() ?? 0,
-              finished: p['isFinished'] == true,
-            ),
-      };
-      if (mounted) setState(() => _progress = progress);
+      // /api/me holds progress for everything the account ever played, so
+      // it is decoded and filtered off the UI isolate.
+      final response = await http
+          .get(
+            Uri.parse('${widget.serverUrl}/api/me'),
+            headers: {'Authorization': 'Bearer ${widget.token}'},
+          )
+          .timeout(const Duration(seconds: 20));
+      if (response.statusCode != 200) return;
+      final body = response.body;
+      final podcastId = widget.podcast.id;
+      final progress = await Isolate.run(
+        () => _episodeProgress(body, podcastId),
+      );
+      if (mounted && request == _progressRequest) {
+        setState(() => _progress = progress);
+      }
     } on Object catch (e) {
       debugPrint('Could not load episode progress: $e');
     }
   }
 
   Future<void> _load() async {
-    unawaited(_loadProgress());
     if (_loading) return;
+    unawaited(_loadProgress());
     setState(() {
       _loading = true;
       _error = null;
@@ -310,4 +319,22 @@ class _EpisodesPageState extends State<EpisodesPage> {
     }
     return Text(l10n.noEpisodes, style: theme.textTheme.bodySmall);
   }
+}
+
+/// Progress per episode id of [podcastId], from a /api/me reply.
+Map<String, ({double progress, bool finished})> _episodeProgress(
+  String body,
+  String podcastId,
+) {
+  final me = jsonDecode(body) as Map<String, dynamic>;
+  return {
+    for (final p
+        in (me['mediaProgress'] as List? ?? const [])
+            .cast<Map<String, dynamic>>())
+      if (p['libraryItemId'] == podcastId && p['episodeId'] is String)
+        p['episodeId'] as String: (
+          progress: (p['progress'] as num?)?.toDouble() ?? 0,
+          finished: p['isFinished'] == true,
+        ),
+  };
 }
