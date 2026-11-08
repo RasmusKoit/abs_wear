@@ -63,6 +63,10 @@ class _EpisodesPageState extends State<EpisodesPage> {
   bool _loading = false;
   Object? _error;
 
+  /// The user's progress per episode id; empty until loaded (best effort,
+  /// the list works without it).
+  Map<String, ({double progress, bool finished})> _progress = const {};
+
   String get _cacheKey =>
       'episodes_${'${widget.serverUrl}|${widget.user}'.hashCode}_'
       '${widget.podcast.id}';
@@ -93,7 +97,30 @@ class _EpisodesPageState extends State<EpisodesPage> {
     await _load();
   }
 
+  Future<void> _loadProgress() async {
+    try {
+      final me =
+          await getJson('${widget.serverUrl}/api/me', widget.token)
+              as Map<String, dynamic>;
+      final progress = {
+        for (final p
+            in (me['mediaProgress'] as List? ?? const [])
+                .cast<Map<String, dynamic>>())
+          if (p['libraryItemId'] == widget.podcast.id &&
+              p['episodeId'] is String)
+            p['episodeId'] as String: (
+              progress: (p['progress'] as num?)?.toDouble() ?? 0,
+              finished: p['isFinished'] == true,
+            ),
+      };
+      if (mounted) setState(() => _progress = progress);
+    } on Object catch (e) {
+      debugPrint('Could not load episode progress: $e');
+    }
+  }
+
   Future<void> _load() async {
+    unawaited(_loadProgress());
     if (_loading) return;
     setState(() {
       _loading = true;
@@ -137,18 +164,24 @@ class _EpisodesPageState extends State<EpisodesPage> {
     }
   }
 
-  Future<void> _open(Episode episode) => Navigator.push(
-    context,
-    MaterialPageRoute<void>(
-      builder: (context) => PlayerPage(
-        token: widget.token,
-        serverUrl: widget.serverUrl,
-        libraryItemId: widget.podcast.id,
-        episodeId: episode.id,
-        user: widget.user,
+  Future<void> _open(Episode episode) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute<void>(
+        builder: (context) => PlayerPage(
+          token: widget.token,
+          serverUrl: widget.serverUrl,
+          libraryItemId: widget.podcast.id,
+          episodeId: episode.id,
+          user: widget.user,
+        ),
       ),
-    ),
-  );
+    );
+    // Show the progress just made, once the player has saved it.
+    await Future<void>.delayed(const Duration(milliseconds: 500));
+    await AudioPlayerController.lastClose;
+    if (mounted) unawaited(_loadProgress());
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -210,21 +243,47 @@ class _EpisodesPageState extends State<EpisodesPage> {
                           overflow: TextOverflow.ellipsis,
                           style: theme.textTheme.bodySmall,
                         ),
-                        if (episode.publishedAt > 0)
-                          Text(
-                            MaterialLocalizations.of(context).formatShortDate(
-                              DateTime.fromMillisecondsSinceEpoch(
-                                episode.publishedAt,
-                              ),
-                            ),
-                            style: theme.textTheme.labelSmall,
-                          ),
+                        _details(context, l10n, theme, episode),
                       ],
                     ),
                   );
                 },
               ),
       ),
+    );
+  }
+
+  /// Date and progress: "Nov 8 · 30%", or a check when finished.
+  Widget _details(
+    BuildContext context,
+    AppLocalizations l10n,
+    ThemeData theme,
+    Episode episode,
+  ) {
+    final style = theme.textTheme.labelSmall;
+    final progress = _progress[episode.id];
+    final date = episode.publishedAt > 0
+        ? MaterialLocalizations.of(context).formatShortDate(
+            DateTime.fromMillisecondsSinceEpoch(episode.publishedAt),
+          )
+        : null;
+    final percent = progress != null && !progress.finished
+        ? (progress.progress * 100).floor()
+        : 0;
+    return Row(
+      children: [
+        if (date != null) Text(date, style: style),
+        if (progress?.finished ?? false) ...[
+          if (date != null) const SizedBox(width: 4),
+          Icon(
+            Icons.check_circle_rounded,
+            size: 12,
+            color: theme.colorScheme.primary,
+            semanticLabel: l10n.finished,
+          ),
+        ] else if (percent > 0)
+          Text('${date != null ? ' · ' : ''}$percent%', style: style),
+      ],
     );
   }
 
