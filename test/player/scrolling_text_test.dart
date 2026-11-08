@@ -7,22 +7,25 @@ void main() {
   const long = 'A very long book title that never fits on a watch';
 
   // Like the player: a line in a Column, so its height is unbounded.
-  Widget app(String text) => MaterialApp(
-    home: Scaffold(
-      body: Center(
-        child: SizedBox(
-          width: 120,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ScrollingText(text: text, style: const TextStyle()),
-              const Text('below'),
-            ],
+  Widget app(String text, {TextDirection ui = TextDirection.ltr}) =>
+      MaterialApp(
+        builder: (context, child) =>
+            Directionality(textDirection: ui, child: child!),
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 120,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ScrollingText(text: text, style: const TextStyle()),
+                  const Text('below'),
+                ],
+              ),
+            ),
           ),
         ),
-      ),
-    ),
-  );
+      );
 
   setUp(ScrollingText.resetScrolled);
   tearDown(() => AmbientModeListener.instance.value = false);
@@ -82,6 +85,31 @@ void main() {
     await tester.pump(const Duration(milliseconds: 1600));
     await tester.pump(const Duration(milliseconds: 100));
     expect(doubled(long), findsOneWidget);
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('a long text shown again after a short one still scrolls', (
+    tester,
+  ) async {
+    await tester.pumpWidget(app(long));
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pumpWidget(app('Short'));
+    await tester.pump();
+    await tester.pumpWidget(app(long));
+    await tester.pump(const Duration(milliseconds: 1600));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(doubled(long), findsOneWidget);
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('a left-to-right title in a right-to-left UI starts at its '
+      'start', (tester) async {
+    await tester.pumpWidget(app(long, ui: TextDirection.rtl));
+    await tester.pump(const Duration(milliseconds: 1600));
+    await tester.pump();
+    final line = tester.getRect(find.byType(ScrollingText));
+    final text = tester.getRect(doubled(long));
+    expect(text.left, moreOrLessEquals(line.left, epsilon: 2));
     await tester.pumpAndSettle();
   });
 

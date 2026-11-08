@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:abs_wear/ambient_mode/ambient_mode.dart';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart' show Bidi;
 
 /// One line of text. Text that doesn't fit scrolls past once, the first
 /// time it is shown, then stays ellipsized; a tap scrolls it again.
@@ -47,7 +48,10 @@ class _ScrollingTextState extends State<ScrollingText>
   @override
   void didUpdateWidget(ScrollingText oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.text != widget.text) _stop();
+    if (oldWidget.text != widget.text) {
+      _stop();
+      _autoScheduled = null;
+    }
   }
 
   @override
@@ -94,11 +98,18 @@ class _ScrollingTextState extends State<ScrollingText>
     if (ambient) return staticText;
     return LayoutBuilder(
       builder: (context, constraints) {
-        final direction = Directionality.of(context);
+        // The text's own direction (a Latin title in an Arabic UI still
+        // reads left to right), so it scrolls from its start.
+        final direction = Bidi.detectRtlDirectionality(widget.text)
+            ? TextDirection.rtl
+            : TextDirection.ltr;
         final scaler = MediaQuery.textScalerOf(context);
         // Measure with the style the Text widgets will use.
         final inherited = DefaultTextStyle.of(context);
-        final style = inherited.style.merge(widget.style);
+        var style = inherited.style.merge(widget.style);
+        if (MediaQuery.boldTextOf(context)) {
+          style = style.merge(const TextStyle(fontWeight: FontWeight.bold));
+        }
         TextPainter measure(String text) => TextPainter(
           text: TextSpan(text: text, style: style),
           textDirection: direction,
@@ -138,7 +149,9 @@ class _ScrollingTextState extends State<ScrollingText>
               width: constraints.maxWidth,
               height: height,
               child: OverflowBox(
-                alignment: AlignmentDirectional.centerStart,
+                alignment: direction == TextDirection.rtl
+                    ? Alignment.centerRight
+                    : Alignment.centerLeft,
                 minWidth: 0,
                 maxWidth: double.infinity,
                 child: AnimatedBuilder(
@@ -149,6 +162,7 @@ class _ScrollingTextState extends State<ScrollingText>
                   ),
                   child: Text(
                     '${widget.text}$_gap${widget.text}',
+                    textDirection: direction,
                     maxLines: 1,
                     softWrap: false,
                     style: widget.style,
