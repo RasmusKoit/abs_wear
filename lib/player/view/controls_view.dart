@@ -106,6 +106,17 @@ class _ControlViewPageState extends State<ControlViewPage> {
     if (confirmed ?? false) await _controller.deleteDownload();
   }
 
+  /// 1.0 -> "1", 1.25 -> "1.25", 1.5 -> "1.5".
+  static String _formatSpeed(double speed) {
+    final text = speed.toStringAsFixed(2);
+    return text.replaceFirst(RegExp(r'\.?0+$'), '');
+  }
+
+  static String _formatLeft(Duration left) {
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${two(left.inMinutes)}:${two(left.inSeconds % 60)}';
+  }
+
   IconData get _volumeIcon {
     if (_currentVolume <= 0) return Icons.volume_off_rounded;
     if (_currentVolume < 0.5) return Icons.volume_down_rounded;
@@ -156,6 +167,57 @@ class _ControlViewPageState extends State<ControlViewPage> {
                     onPressed: () => unawaited(_changeVolume(0.1)),
                   ),
                 ],
+              ),
+              Text(l10n.speed, style: theme.textTheme.labelMedium),
+              ListenableBuilder(
+                listenable: _controller,
+                builder: (context, _) => Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    IconButton(
+                      tooltip: l10n.slower,
+                      icon: const Icon(Icons.remove_rounded),
+                      onPressed: _controller.isLoaded
+                          ? () => unawaited(_controller.changeSpeed(-1))
+                          : null,
+                    ),
+                    SizedBox(
+                      width: 48,
+                      // Shrinks rather than wrapping at large text sizes.
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          '${_formatSpeed(_controller.speed)}x',
+                          maxLines: 1,
+                          style: theme.textTheme.labelLarge,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: l10n.faster,
+                      icon: const Icon(Icons.add_rounded),
+                      onPressed: _controller.isLoaded
+                          ? () => unawaited(_controller.changeSpeed(1))
+                          : null,
+                    ),
+                  ],
+                ),
+              ),
+              ValueListenableBuilder<Duration?>(
+                valueListenable: _controller.sleepRemaining,
+                builder: (context, left, _) => TextButton.icon(
+                  onPressed: _controller.cycleSleepTimer,
+                  icon: Icon(
+                    left == null
+                        ? Icons.bedtime_off_rounded
+                        : Icons.bedtime_rounded,
+                    semanticLabel: l10n.sleepTimer,
+                  ),
+                  label: Text(
+                    left == null ? l10n.sleepTimerOff : _formatLeft(left),
+                    style: theme.textTheme.labelLarge,
+                  ),
+                ),
               ),
               Text(l10n.localListening, style: theme.textTheme.labelMedium),
               ListenableBuilder(

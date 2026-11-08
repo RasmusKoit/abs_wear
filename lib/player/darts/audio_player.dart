@@ -13,6 +13,7 @@ import 'package:http/http.dart' as http;
 import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// One audio file of a library item. Multi-file books have several, each
 /// starting at [startOffset] seconds into the book.
@@ -173,6 +174,93 @@ class AudioPlayerController extends ChangeNotifier {
   /// 0..1 while downloading, null otherwise.
   final ValueNotifier<double?> downloadProgress = ValueNotifier(null);
 
+  /// Playback speeds offered; the choice is kept for all books.
+  static const speeds = [0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5];
+  static const _speedKey = 'playbackSpeed';
+
+  double get speed => player.speed;
+
+  /// Steps the speed up ([step] 1) or down (-1) through [speeds].
+  Future<void> changeSpeed(int step) async {
+    var i = speeds.indexWhere((s) => s >= speed - 0.01);
+    if (i < 0) i = speeds.length - 1;
+    final next = speeds[(i + step).clamp(0, speeds.length - 1)];
+    await player.setSpeed(next);
+    _notify();
+    try {
+      await (await SharedPreferences.getInstance()).setDouble(_speedKey, next);
+    } on Object catch (e) {
+      debugPrint('Could not save speed: $e');
+    }
+  }
+
+  Future<void> _applySavedSpeed() async {
+    try {
+      final saved = (await SharedPreferences.getInstance()).getDouble(
+        _speedKey,
+      );
+      if (saved != null && saved > 0) await player.setSpeed(saved);
+    } on Object catch (e) {
+      debugPrint('Could not restore speed: $e');
+    }
+  }
+
+  /// Sleep timer choices; tapping cycles through them, then off.
+  static const sleepOptions = [
+    Duration(minutes: 15),
+    Duration(minutes: 30),
+    Duration(minutes: 45),
+    Duration(minutes: 60),
+  ];
+
+  /// Listening time left before playback pauses; null when off. Counts
+  /// down only while audio is actually heard (not paused or buffering).
+  final ValueNotifier<Duration?> sleepRemaining = ValueNotifier(null);
+  Timer? _sleepTimer;
+  final Stopwatch _sleepClock = Stopwatch();
+  Duration _sleepTarget = Duration.zero;
+
+  /// Index in [sleepOptions] of the running timer; -1 when off.
+  int _sleepChoice = -1;
+
+  /// Moves to the option after the chosen one (or off after the last).
+  void cycleSleepTimer() {
+    final next = _sleepChoice + 1;
+    setSleepTimer(next < sleepOptions.length ? next : null);
+  }
+
+  /// Starts the timer with [sleepOptions] at [choice], or turns it off.
+  void setSleepTimer(int? choice) {
+    _sleepTimer?.cancel();
+    _sleepTimer = null;
+    _sleepClock
+      ..stop()
+      ..reset();
+    _sleepChoice = choice ?? -1;
+    if (_closed) return;
+    if (choice == null) {
+      sleepRemaining.value = null;
+      return;
+    }
+    _sleepTarget = sleepOptions[choice];
+    sleepRemaining.value = _sleepTarget;
+    if (_audible) _sleepClock.start();
+    // The clock measures time; the tick only shows it (late ticks don't
+    // slow the timer down).
+    _sleepTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      final left = _sleepTarget - _sleepClock.elapsed;
+      if (left > Duration.zero) {
+        sleepRemaining.value = Duration(seconds: left.inSeconds + 1);
+        return;
+      }
+      setSleepTimer(null);
+      unawaited(player.pause());
+    });
+  }
+
+  bool get _audible =>
+      player.playing && player.processingState == ProcessingState.ready;
+
   bool _closed = false;
 
   /// Where the player should be while its audio is not loaded yet. With
@@ -326,6 +414,7 @@ class AudioPlayerController extends ChangeNotifier {
         return false;
       }
     }
+    await _applySavedSpeed();
     if (_closed) {
       unawaited(_closeOrphanSession());
       return false;
@@ -604,6 +693,9 @@ class AudioPlayerController extends ChangeNotifier {
     final audible =
         state.playing && state.processingState == ProcessingState.ready;
     audible ? _listenClock.start() : _listenClock.stop();
+    if (_sleepTimer != null) {
+      audible ? _sleepClock.start() : _sleepClock.stop();
+    }
     // Keep the network up while streaming, also while loading with the
     // screen off.
     unawaited(NetworkLock.set(hold: state.playing && _streaming));
@@ -913,7 +1005,8 @@ class AudioPlayerController extends ChangeNotifier {
     final pos = bookPosition;
     final i = chapterIndexAt(pos);
     final end = i >= 0 ? chapters[i].end : duration;
-    final seconds = (end - pos).clamp(0, double.infinity);
+    // Real time at the current speed, like the other ABS apps.
+    final seconds = (end - pos).clamp(0, double.infinity) / speed;
     return Duration(seconds: seconds.floor());
   }
 
@@ -1188,6 +1281,8 @@ class AudioPlayerController extends ChangeNotifier {
       _openKeys.remove(_localKey);
       _client.close();
       downloadProgress.dispose();
+      _sleepTimer?.cancel();
+      sleepRemaining.dispose();
       super.dispose();
     }
   }

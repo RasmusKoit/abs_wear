@@ -591,4 +591,33 @@ void main() {
     // Episode 1 kept its own position.
     expect(await episodeProgress('Episode 1'), greaterThan(7));
   });
+
+  testWidgets('sets playback speed and a sleep timer', (tester) async {
+    await logInAndOpenLibrary(tester);
+    await scrollAndTap(tester, find.text('Single File Book'));
+    await pumpUntil(tester, find.byIcon(Icons.play_arrow));
+    await tester.fling(find.byType(PageView), const Offset(0, -300), 1000);
+    await pumpUntil(tester, find.text('1x'));
+
+    await scrollAndTap(tester, find.byTooltip('Faster'));
+    await pumpUntil(tester, find.text('1.25x'));
+    await scrollAndTap(tester, find.byTooltip('Faster'));
+    await pumpUntil(tester, find.text('1.5x'));
+
+    await scrollAndTap(tester, find.text('Off'));
+    await pumpUntil(tester, find.text('15:00'));
+    await tester.tap(find.text('15:00'));
+    await pumpUntil(tester, find.text('30:00'));
+
+    // The speed is kept for the next book.
+    await tester.binding.handlePopRoute();
+    await pumpUntil(tester, find.text('Continue Listening'));
+    await pumpFor(tester, const Duration(seconds: 1));
+    await scrollAndTap(tester, find.text('Multi File Book'));
+    await pumpUntil(tester, find.byIcon(Icons.play_arrow));
+    await tester.fling(find.byType(PageView), const Offset(0, -300), 1000);
+    await pumpUntil(tester, find.text('1.5x'));
+    // A new book starts without a sleep timer.
+    expect(find.text('Off'), findsOneWidget);
+  });
 }
