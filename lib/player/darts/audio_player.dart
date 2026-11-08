@@ -334,6 +334,10 @@ class AudioPlayerController extends ChangeNotifier {
 
   /// Seeks waiting for loading to finish (just_audio drops them otherwise).
   int _queuedSeeks = 0;
+
+  /// [_loadSources] is waiting for the server's stream; seeks only move
+  /// the pending position meanwhile.
+  bool _awaitingStream = false;
   int _seekSeq = 0;
 
   /// True while sources are swapped; the stop/start it causes is not a
@@ -1007,9 +1011,23 @@ class AudioPlayerController extends ChangeNotifier {
         ),
     ];
     _playing = playing;
-    if (!local) await _awaitHlsSegment(initialTime);
-    final (index, offset) = _trackAt(initialTime);
     _pendingPosition = initialTime;
+    if (!local) {
+      // Seeks made while waiting only move the pending position; the audio
+      // loads where the last one went.
+      _awaitingStream = true;
+      try {
+        var waitedFor = initialTime;
+        await _awaitHlsSegment(waitedFor);
+        while (_pendingPosition != waitedFor && !_closed) {
+          waitedFor = _pendingPosition;
+          await _awaitHlsSegment(waitedFor);
+        }
+      } finally {
+        _awaitingStream = false;
+      }
+    }
+    final (index, offset) = _trackAt(_pendingPosition);
     await player.setAudioSources(
       sources,
       initialIndex: index,
@@ -1045,7 +1063,10 @@ class AudioPlayerController extends ChangeNotifier {
   /// Waits, at most 10 s, until the server has made the HLS segment at
   /// [time]. The server answers 404 for a segment it hasn't made yet (and
   /// starts making it there), which the player takes as a fatal error.
-  Future<void> _awaitHlsSegment(double time) async {
+  Future<void> _awaitHlsSegment(
+    double time, {
+    bool Function()? isCurrent,
+  }) async {
     final track = _playing.firstOrNull;
     if (track == null || !track.isHls) return;
     final dir = track.contentUrl.substring(
@@ -1055,13 +1076,23 @@ class AudioPlayerController extends ChangeNotifier {
     final segment = (time / _hlsSegmentSeconds).floor();
     final uri = Uri.parse('$serverUrl$dir/output-$segment.ts');
     final waited = Stopwatch()..start();
-    while (!_closed && waited.elapsed < const Duration(seconds: 10)) {
+    var missing = false;
+    while (!_closed &&
+        (isCurrent?.call() ?? true) &&
+        waited.elapsed < const Duration(seconds: 10)) {
       try {
         final response = await _client
             .head(uri)
             .timeout(const Duration(seconds: 5));
         // Anything but "not made yet" is for the player to handle.
-        if (response.statusCode != 404) return;
+        if (response.statusCode != 404) {
+          // A segment that just appeared may still be being written.
+          if (missing) {
+            await Future<void>.delayed(const Duration(milliseconds: 300));
+          }
+          return;
+        }
+        missing = true;
       } on Object catch (e) {
         debugPrint('Could not check the stream: $e');
         return;
@@ -1072,9 +1103,14 @@ class AudioPlayerController extends ChangeNotifier {
 
   Future<void> seekToBookTime(double time) async {
     final clamped = time.clamp(0, duration).toDouble();
-    final (index, offset) = _trackAt(clamped);
     _pendingPosition = clamped;
     final seq = ++_seekSeq;
+    if (_awaitingStream) {
+      // The audio is about to load; it starts at the pending position.
+      _notify();
+      return;
+    }
+    final (index, offset) = _trackAt(clamped);
     if (player.processingState == ProcessingState.loading) {
       // just_audio ignores seeks while loading; apply it once loaded.
       _queuedSeeks++;
@@ -1092,7 +1128,15 @@ class AudioPlayerController extends ChangeNotifier {
       if (_closed || seq != _seekSeq) return;
     }
     if (_playing.any((t) => t.isHls) && !_isBuffered(clamped)) {
-      await _awaitHlsSegment(clamped);
+      // Counts as queued, so the position shows the target meanwhile and
+      // further skips add up from it.
+      _queuedSeeks++;
+      _notify();
+      try {
+        await _awaitHlsSegment(clamped, isCurrent: () => seq == _seekSeq);
+      } finally {
+        _queuedSeeks--;
+      }
       if (_closed || seq != _seekSeq) return;
     }
     await player.seek(
@@ -1139,23 +1183,44 @@ class AudioPlayerController extends ChangeNotifier {
 
   /// Pausing syncs progress through the player state listener.
   Future<void> togglePlayPause() async {
+    final pending = _playAfterReload;
+    if (pending != null) {
+      // Reloading after an error: a second tap cancels the play.
+      _playAfterReload = !pending;
+      return;
+    }
+    // The audio is being swapped (download added or deleted); it resumes
+    // on its own if it was playing.
+    if (_reloading) return;
     if (player.playing) {
       await player.pause();
       return;
     }
     if (_needsReload) {
       _needsReload = false;
-      final pos = bookPosition;
-      await player.stop();
-      // The server's HLS stream may be gone (e.g. it restarted); a new
-      // session brings a fresh one.
-      if (_streamTracks.any((t) => t.isHls) && !await isDownloaded()) {
-        await _reopenStream(pos);
+      _playAfterReload = true;
+      var play = true;
+      try {
+        final pos = bookPosition;
+        await player.stop();
+        // The server's HLS stream may be gone (e.g. it restarted); a new
+        // session brings a fresh one.
+        if (_streamTracks.any((t) => t.isHls) && !await isDownloaded()) {
+          await _reopenStream(pos);
+        }
+        await _loadSources(initialTime: _pendingPosition);
+      } finally {
+        play = _playAfterReload ?? false;
+        _playAfterReload = null;
       }
-      await _loadSources(initialTime: pos);
+      if (!play || _closed) return;
     }
     unawaited(player.play());
   }
+
+  /// While play reloads the audio after an error: whether to play once it
+  /// is loaded.
+  bool? _playAfterReload;
 
   /// Periodic sync: skipped while paused with nothing new to report.
   Future<void> periodicSync() {
