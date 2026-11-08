@@ -781,6 +781,10 @@ class AudioPlayerController extends ChangeNotifier {
             libMedia['coverPath'] == null);
     final mediaMeta = json['mediaMetadata'];
     _sessionMeta = {
+      // For the downloads list.
+      'server': serverUrl,
+      'itemId': libraryItemId,
+      'episodeId': ?episodeId,
       'duration': json['duration'],
       'currentTime': json['currentTime'],
       'displayTitle': json['displayTitle'],

@@ -8,6 +8,7 @@ import 'dart:convert';
 import 'package:abs_wear/app/app.dart';
 import 'package:abs_wear/l10n/l10n.dart';
 import 'package:abs_wear/library/view/browse_page.dart';
+import 'package:abs_wear/library/view/downloads_page.dart';
 import 'package:abs_wear/player/player.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -481,6 +482,18 @@ void main() {
     await tester.binding.handlePopRoute();
     await pumpUntil(tester, find.text('Continue Listening'));
     await pumpFor(tester, const Duration(seconds: 2));
+
+    // The library lists it under Downloads.
+    await pumpUntil(tester, find.text('Downloads'));
+    await scrollAndTap(tester, find.text('Downloads'));
+    final inDownloads = find.descendant(
+      of: find.byType(DownloadsPage),
+      matching: find.text('No Chapters Book'),
+    );
+    await pumpUntil(tester, inDownloads);
+    await tester.binding.handlePopRoute();
+    await pumpUntil(tester, find.text('Continue Listening'));
+    await pumpFor(tester, const Duration(seconds: 1));
 
     // Same book, but the server can't be reached (connection refused).
     final id = await itemId('No Chapters Book');
