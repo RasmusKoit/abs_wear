@@ -53,5 +53,55 @@
     "localListening": "Local Listening",
     "@localListening": {
         "description": "Text for local listening"
+    },
+    "invalidUrl": "Enter a full URL, e.g. https://abs.example.com",
+    "@invalidUrl": {
+        "description": "Login: URL missing scheme or host"
+    },
+    "wrongCredentials": "Wrong username or password.",
+    "@wrongCredentials": {
+        "description": "Login: 401"
+    },
+    "serverError": "Server error (HTTP {code}). Check the URL.",
+    "@serverError": {
+        "description": "Login: non-200, non-401 response",
+        "placeholders": {
+            "code": {
+                "type": "int",
+                "example": "502"
+            }
+        }
+    },
+    "serverTimeout": "The server did not respond.",
+    "@serverTimeout": {
+        "description": "Request timed out"
+    },
+    "cannotReachServer": "Can't reach the server.",
+    "@cannotReachServer": {
+        "description": "Network error"
+    },
+    "fillAllFields": "Fill in all fields.",
+    "@fillAllFields": {
+        "description": "Login: empty field"
+    },
+    "noLibraries": "No book libraries on this server.",
+    "@noLibraries": {
+        "description": "No book library found"
+    },
+    "sessionExpired": "Session expired. Log in again.",
+    "@sessionExpired": {
+        "description": "Token rejected by server"
+    },
+    "logoutConfirm": "Log out? Downloaded books are removed.",
+    "@logoutConfirm": {
+        "description": "Logout confirmation"
+    },
+    "cancel": "Cancel",
+    "@cancel": {
+        "description": "Cancel action"
+    },
+    "nothingInProgress": "Nothing in progress.",
+    "@nothingInProgress": {
+        "description": "Empty Continue Listening shelf"
     }
 }
