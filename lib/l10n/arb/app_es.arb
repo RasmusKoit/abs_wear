@@ -77,5 +77,12 @@
     "volumeUp": "Subir volumen",
     "volumeDown": "Bajar volumen",
     "couldNotStartPlayback": "No se pudo iniciar la reproducción.",
-    "playingOffline": "Sin conexión: reproduciendo el libro descargado. El progreso se sincronizará después."
+    "playingOffline": "Sin conexión: reproduciendo el libro descargado. El progreso se sincronizará después.",
+    "previousChapter": "Capítulo anterior",
+    "nextChapter": "Capítulo siguiente",
+    "back10": "Retroceder 10 segundos",
+    "forward10": "Avanzar 10 segundos",
+    "play": "Reproducir",
+    "pause": "Pausar",
+    "timeLeftLabel": "Quedan {time} del capítulo"
 }
