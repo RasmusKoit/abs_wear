@@ -61,4 +61,28 @@ curl -fs "$URL/api/libraries/$LIB/items?limit=50" "${uauth[@]}" \
         -d "{\"duration\":$dur,\"currentTime\":$t,\"progress\":0.25,\"isFinished\":false}" >/dev/null
       echo "progress set: $id @ ${t}s / ${dur}s"
     done
-echo "Seed complete. Library id: $LIB"
+# Podcast library (generate_media.sh puts episodes in data/podcasts).
+PLIB=$(curl -fs "$URL/api/libraries" "${auth[@]}" | j 'next((l["id"] for l in d["libraries"] if l["name"]=="Test Podcasts"), "")')
+if [ -z "$PLIB" ]; then
+  echo "Creating podcast library"
+  PLIB=$(curl -fs -X POST "$URL/api/libraries" "${auth[@]}" \
+    -d '{"name":"Test Podcasts","folders":[{"fullPath":"/podcasts"}],"mediaType":"podcast","settings":{"autoScanCronExpression":null}}' | j 'd["id"]')
+fi
+curl -fs -X POST "$URL/api/libraries/$PLIB/scan" "${auth[@]}" >/dev/null || true
+for _ in $(seq 30); do
+  p=$(curl -fs "$URL/api/libraries/$PLIB/items?limit=5" "${uauth[@]}" | j 'd["total"]')
+  [ "$p" -ge 1 ] && break; sleep 2
+done
+[ "$p" -ge 1 ] || { echo "Podcast scan found nothing" >&2; exit 1; }
+# First episode in progress, so it shows under Continue Listening.
+first_episode='(lambda e: e["id"] + " " + str(e["audioFile"]["duration"]))(sorted(d["media"]["episodes"], key=lambda e: e.get("index") or 0)[0])'
+curl -fs "$URL/api/libraries/$PLIB/items?limit=5" "${uauth[@]}" \
+  | j '" ".join(i["id"] for i in d["results"])' | tr ' ' '\n' \
+  | while read -r pid; do
+      [ -n "$pid" ] || continue
+      read -r eid edur < <(curl -fs "$URL/api/items/$pid?expanded=1" "${uauth[@]}" | j "$first_episode")
+      curl -fs -X PATCH "$URL/api/me/progress/$pid/$eid" "${uauth[@]}" \
+        -d "{\"duration\":$edur,\"currentTime\":5,\"progress\":$(python3 -c "print(5/$edur)"),\"isFinished\":false}" >/dev/null
+      echo "episode progress set: $pid/$eid"
+    done
+echo "Seed complete. Library id: $LIB  Podcast library id: $PLIB"
