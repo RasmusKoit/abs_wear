@@ -6,13 +6,14 @@
 # to ABS_E2E_URL in tool/abs_test_server/.env.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-set -a; . tool/abs_test_server/.env; set +a
+. tool/abs_test_server/env.sh
+load_env tool/abs_test_server/.env
 URL=${E2E_ABS_URL:-${ABS_E2E_URL:-}}
 [ -n "$URL" ] || { echo "Set ABS_E2E_URL in tool/abs_test_server/.env"; exit 1; }
 DEVICE=${1:-$(adb devices | awk 'NR>1 && $2=="device" {print $1; exit}')}
 [ -n "$DEVICE" ] || { echo "No device connected (start an emulator or adb connect the watch)"; exit 1; }
 echo "Device: $DEVICE   Server: $URL"
-flutter test integration_test \
+"${FLUTTER:-flutter}" test integration_test \
   -d "$DEVICE" \
   --flavor development \
   --dart-define=ABS_URL="$URL" \

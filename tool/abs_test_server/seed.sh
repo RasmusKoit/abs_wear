@@ -4,14 +4,17 @@
 # Reads credentials from ./.env (copy .env.example and fill in).
 set -euo pipefail
 cd "$(dirname "$0")"
-set -a; . ./.env; set +a
+. ./env.sh
+load_env ./.env
 URL=${ABS_URL:-http://localhost:13378}
 j() { python3 -c "import sys,json;d=json.load(sys.stdin);print(eval(sys.argv[1]))" "$1"; }
 # Build JSON safely (passwords may contain quotes or backslashes).
 creds() { python3 -c 'import sys,json;print(json.dumps({"username":sys.argv[1],"password":sys.argv[2]}))' "$1" "$2"; }
 
 echo "Waiting for $URL ..."
-for _ in $(seq 60); do curl -fs "$URL/status" >/dev/null && break; sleep 2; done
+ready=
+for _ in $(seq 60); do curl -fs "$URL/status" >/dev/null && { ready=1; break; }; sleep 2; done
+[ -n "$ready" ] || { echo "Server at $URL did not come up" >&2; exit 1; }
 
 if [ "$(curl -fs "$URL/status" | j 'd["isInit"]')" = "False" ]; then
   echo "Creating root user"
@@ -33,11 +36,13 @@ fi
 
 echo "Scanning library $LIB"
 curl -fs -X POST "$URL/api/libraries/$LIB/scan" "${auth[@]}" >/dev/null || true
+n=0
 for _ in $(seq 30); do
   n=$(curl -fs "$URL/api/libraries/$LIB/items?limit=50" "${auth[@]}" | j 'd["total"]')
   [ "$n" -ge 3 ] && break; sleep 2
 done
 echo "Library has $n items"
+[ "$n" -ge 3 ] || { echo "Scan found fewer than 3 books; run generate_media.sh first" >&2; exit 1; }
 
 if ! curl -fs "$URL/api/users" "${auth[@]}" | j '[u["username"] for u in d["users"]]' | grep -q "'$ABS_TEST_USER'"; then
   echo "Creating test user"
