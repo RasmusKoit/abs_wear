@@ -22,11 +22,13 @@ jobs:
       # Inputs go through env, never straight into shell lines.
       BUILD_NAME: ${{ inputs.build_name }}
       BUILD_NUMBER: ${{ inputs.build_number }}
-      ANDROID_KEYSTORE_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
-      ANDROID_KEYSTORE_PRIVATE_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
-      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
 
     steps:
+      - name: Validate inputs
+        run: |
+          [[ "$BUILD_NAME" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "build_name must be X.Y.Z"; exit 1; }
+          [[ "$BUILD_NUMBER" =~ ^[0-9]+$ ]] || { echo "build_number must be an integer"; exit 1; }
+
       - uses: actions/checkout@v4
 
       - uses: subosito/flutter-action@v2
@@ -48,12 +50,20 @@ jobs:
           echo "ANDROID_KEYSTORE_PATH=$path" >> "$GITHUB_ENV"
 
       - name: Build APKs
+        env:
+          ANDROID_KEYSTORE_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          ANDROID_KEYSTORE_PRIVATE_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
         run: >
           flutter build apk --split-per-abi --release
           --build-name "$BUILD_NAME" --build-number "$BUILD_NUMBER"
           --target lib/main_production.dart --flavor production
 
       - name: Build app bundle
+        env:
+          ANDROID_KEYSTORE_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          ANDROID_KEYSTORE_PRIVATE_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
         run: >
           flutter build appbundle --release
           --build-name "$BUILD_NAME" --build-number "$BUILD_NUMBER"
