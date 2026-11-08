@@ -75,6 +75,8 @@ class BookChapter {
   final String title;
 }
 
+enum DownloadResult { done, noSpace, failed }
+
 class AudioPlayerController extends ChangeNotifier {
   AudioPlayerController({http.Client? client})
     : _client = client ?? http.Client();
@@ -384,6 +386,14 @@ class AudioPlayerController extends ChangeNotifier {
     return true;
   }
 
+  /// True when any downloaded or partly downloaded file is on the device
+  /// (so the user can remove the leftovers of a failed download).
+  Future<bool> hasLocalFiles() async {
+    if (libraryItemId.isEmpty) return false;
+    final dir = Directory(await localDirPath());
+    return dir.existsSync() && dir.listSync().isNotEmpty;
+  }
+
   /// (Re)loads all tracks into the player, preferring local files, and
   /// positions it at [initialTime] seconds into the book.
   Future<void> _loadSources({required double initialTime}) async {
@@ -551,68 +561,107 @@ class AudioPlayerController extends ChangeNotifier {
   }
 
   /// Downloads every audio file of the book, streaming each to disk and
-  /// reporting progress through [downloadProgress]. Returns true on success.
-  Future<bool> downloadBook() async {
-    if (isDownloading || tracks.isEmpty) return false;
+  /// reporting progress through [downloadProgress]. Finished files are kept
+  /// on failure, so a retry resumes with the next file.
+  Future<DownloadResult> downloadBook() async {
+    if (isDownloading || tracks.isEmpty) return DownloadResult.failed;
     isDownloading = true;
     downloadProgress.value = 0;
     _notify();
 
     final dir = Directory(await localDirPath());
-    final totalBytes = tracks.fold<int>(0, (sum, t) => sum + t.size);
+    // Byte progress only when every size is known; otherwise by file.
+    final sizesKnown = tracks.every((t) => t.size > 0);
+    final totalBytes = sizesKnown
+        ? tracks.fold<int>(0, (sum, t) => sum + t.size)
+        : 0;
     var receivedBytes = 0;
-    var success = false;
+    var result = DownloadResult.failed;
+    File? part;
     try {
       dir.createSync(recursive: true);
       for (final (i, t) in tracks.indexed) {
         final target = _localFile(dir.path, t);
+        // A finished file only exists after a complete download and rename.
         if (target.existsSync() &&
-            target.lengthSync() == t.size &&
-            t.size > 0) {
+            (t.size == 0 || target.lengthSync() == t.size)) {
           receivedBytes += t.size;
           continue;
         }
-        final request = http.Request(
+        // Abortable so a timed-out request releases its connection.
+        final abort = Completer<void>();
+        final request = http.AbortableRequest(
           'GET',
           Uri.parse(
             '$serverUrl/api/items/$libraryItemId/file/${t.ino}/download',
           ),
+          abortTrigger: abort.future,
         )..headers.addAll(_authHeaders);
-        final response = await _client.send(request);
+        final http.StreamedResponse response;
+        try {
+          response = await _client
+              .send(request)
+              .timeout(const Duration(seconds: 30));
+        } on TimeoutException {
+          abort.complete();
+          rethrow;
+        }
         if (response.statusCode != 200) {
+          await response.stream.listen(null).cancel();
           throw HttpException('HTTP ${response.statusCode} for ${t.filename}');
         }
-        final part = File('${target.path}.part');
-        final sink = part.openWrite();
+        part = File('${target.path}.part');
+        // Synchronous writes fail right away when storage is full, instead
+        // of after the whole file was fetched.
+        final file = part.openSync(mode: FileMode.write);
         try {
-          await for (final chunk in response.stream) {
-            sink.add(chunk);
-            receivedBytes += chunk.length;
+          // A stalled connection (Wi-Fi drop) must not hang forever.
+          await for (final chunk in response.stream.timeout(
+            const Duration(seconds: 30),
+          )) {
             if (_closed) throw const HttpException('Player closed');
-            downloadProgress.value = totalBytes > 0
-                ? (receivedBytes / totalBytes).clamp(0, 1)
+            file.writeFromSync(chunk);
+            receivedBytes += chunk.length;
+            final progress = totalBytes > 0
+                ? (receivedBytes / totalBytes).clamp(0.0, 1.0)
                 : (i + 1) / tracks.length;
+            // Redraw per whole percent, not per network chunk.
+            if ((progress * 100).floor() !=
+                ((downloadProgress.value ?? 0) * 100).floor()) {
+              downloadProgress.value = progress;
+            }
           }
         } finally {
-          await sink.close();
+          file.closeSync();
         }
         part.renameSync(target.path);
+        part = null;
       }
-      success = true;
-    } on Exception catch (e) {
+      result = DownloadResult.done;
+    } on FileSystemException catch (e) {
+      debugPrint('Download failed: $e');
+      // ENOSPC is 28 on Linux/Android.
+      if (e.osError?.errorCode == 28) result = DownloadResult.noSpace;
+    } on Object catch (e) {
       debugPrint('Download failed: $e');
     } finally {
+      try {
+        if (part?.existsSync() ?? false) part!.deleteSync();
+      } on FileSystemException catch (e) {
+        debugPrint('Could not remove partial file: $e');
+      }
       isDownloading = false;
       if (!_closed) downloadProgress.value = null;
       _notify();
     }
-    if (success && !_closed) await reloadSources();
-    return success;
+    if (result == DownloadResult.done && !_closed) await reloadSources();
+    return result;
   }
 
   Future<void> deleteDownload() async {
     final dir = Directory(await localDirPath());
     if (dir.existsSync()) dir.deleteSync(recursive: true);
+    _notify(); // Show "not downloaded" before the slower reload.
     await reloadSources();
   }
 
