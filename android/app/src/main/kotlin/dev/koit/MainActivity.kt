@@ -15,6 +15,8 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : AudioServiceActivity() {
 
     private var ambientChannel: MethodChannel? = null
+    private lateinit var ambientObserver: AmbientLifecycleObserver
+    private var burnInProtection = false
 
     /**
      * Reports ambient (always-on, low power) mode to Dart, where
@@ -22,7 +24,8 @@ class MainActivity : AudioServiceActivity() {
      */
     private val ambientCallback = object : AmbientLifecycleObserver.AmbientLifecycleCallback {
         override fun onEnterAmbient(ambientDetails: AmbientLifecycleObserver.AmbientDetails) {
-            ambientChannel?.invokeMethod("onEnterAmbient", null)
+            burnInProtection = ambientDetails.burnInProtectionRequired
+            enterAmbient()
         }
 
         override fun onUpdateAmbient() {
@@ -32,6 +35,23 @@ class MainActivity : AudioServiceActivity() {
         override fun onExitAmbient() {
             ambientChannel?.invokeMethod("onExitAmbient", null)
         }
+    }
+
+    private fun enterAmbient() {
+        ambientChannel?.invokeMethod(
+            "onEnterAmbient",
+            mapOf("burnInProtection" to burnInProtection),
+        )
+    }
+
+    /**
+     * The Flutter engine outlives this activity, so tell it the current state
+     * when coming back (a stale "ambient" would leave the UI dimmed).
+     */
+    override fun onResume() {
+        super.onResume()
+        if (ambientObserver.isAmbient) enterAmbient()
+        else ambientChannel?.invokeMethod("onExitAmbient", null)
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -55,6 +75,7 @@ class MainActivity : AudioServiceActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         intent.putExtra("background_mode", "transparent")
         super.onCreate(savedInstanceState)
-        lifecycle.addObserver(AmbientLifecycleObserver(this, ambientCallback))
+        ambientObserver = AmbientLifecycleObserver(this, ambientCallback)
+        lifecycle.addObserver(ambientObserver)
     }
 }

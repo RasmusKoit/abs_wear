@@ -23,15 +23,18 @@ class App extends StatelessWidget {
             // content, so few pixels are lit (battery and burn-in).
             colorScheme: isAmbientModeActive
                 ? const ColorScheme.dark(
-                    primary: Colors.white70,
-                    secondary: Colors.white60,
-                    error: Colors.white60,
+                    primary: Colors.white60,
+                    secondary: Colors.white54,
+                    error: Colors.white54,
                     surface: Colors.black,
-                    onSurface: Colors.white70,
+                    onSurface: Colors.white60,
                   )
                 : const ColorScheme.dark(primary: Color(0xFF00B5FF)),
           ),
           debugShowCheckedModeBanner: false,
+          // Switch to and from the ambient theme instantly: a theme lerp
+          // would draw frames just as the display goes low-power.
+          themeAnimationStyle: AnimationStyle.noAnimation,
           localizationsDelegates: AppLocalizations.localizationsDelegates,
           supportedLocales: AppLocalizations.supportedLocales,
           home: child,

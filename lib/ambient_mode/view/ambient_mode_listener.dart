@@ -22,6 +22,10 @@ class AmbientModeListener extends ValueNotifier<bool> {
   /// dimmed UI should redraw (e.g. the time left).
   final ValueNotifier<int> updates = ValueNotifier(0);
 
+  /// True when the display needs burn-in protection: ambient UIs must then
+  /// keep lit pixels few and shift content now and then.
+  bool burnInProtection = false;
+
   @override
   @visibleForTesting
   set value(bool newValue) {
@@ -30,6 +34,10 @@ class AmbientModeListener extends ValueNotifier<bool> {
 
   Future<dynamic> _onMethodCallHandler(MethodCall call) async {
     if (call.method == 'onUpdateAmbient') updates.value++;
+    if (call.method == 'onEnterAmbient' && call.arguments is Map) {
+      burnInProtection =
+          (call.arguments as Map)['burnInProtection'] as bool? ?? false;
+    }
     value = switch (call.method) {
       'onEnterAmbient' || 'onUpdateAmbient' => true,
       'onExitAmbient' => false,

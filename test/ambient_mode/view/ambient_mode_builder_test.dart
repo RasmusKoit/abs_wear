@@ -14,6 +14,9 @@ class _TestAmbientModeListener extends ValueNotifier<bool>
 
   @override
   final ValueNotifier<int> updates = ValueNotifier(0);
+
+  @override
+  bool burnInProtection = false;
 }
 
 void main() {
