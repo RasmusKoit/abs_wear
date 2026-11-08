@@ -22,7 +22,6 @@ jobs:
       # Inputs go through env, never straight into shell lines.
       BUILD_NAME: ${{ inputs.build_name }}
       BUILD_NUMBER: ${{ inputs.build_number }}
-      ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/android_keystore.jks
       ANDROID_KEYSTORE_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
       ANDROID_KEYSTORE_PRIVATE_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
       ANDROID_KEYSTORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
@@ -41,7 +40,12 @@ jobs:
       - name: Decode keystore
         env:
           KEYSTORE: ${{ secrets.KEYSTORE }}
-        run: echo "$KEYSTORE" | base64 --decode > "$ANDROID_KEYSTORE_PATH"
+        # The runner context isn't available in job-level env, so the path
+        # is exported here for the build steps (read by build.gradle).
+        run: |
+          path="$RUNNER_TEMP/android_keystore.jks"
+          echo "$KEYSTORE" | base64 --decode > "$path"
+          echo "ANDROID_KEYSTORE_PATH=$path" >> "$GITHUB_ENV"
 
       - name: Build APKs
         run: >
