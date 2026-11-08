@@ -18,6 +18,10 @@ class AmbientModeListener extends ValueNotifier<bool> {
 
   bool get isAmbientModeActive => value;
 
+  /// Bumped on every ambient update (about once a minute), the moments a
+  /// dimmed UI should redraw (e.g. the time left).
+  final ValueNotifier<int> updates = ValueNotifier(0);
+
   @override
   @visibleForTesting
   set value(bool newValue) {
@@ -25,6 +29,7 @@ class AmbientModeListener extends ValueNotifier<bool> {
   }
 
   Future<dynamic> _onMethodCallHandler(MethodCall call) async {
+    if (call.method == 'onUpdateAmbient') updates.value++;
     value = switch (call.method) {
       'onEnterAmbient' || 'onUpdateAmbient' => true,
       'onExitAmbient' => false,

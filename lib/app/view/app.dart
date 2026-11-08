@@ -19,10 +19,15 @@ class App extends StatelessWidget {
             // real state.
             visualDensity: VisualDensity.compact,
             // When in ambient mode, change the apps color scheme
+            // Ambient (always-on) mode: black background and dimmed, colorless
+            // content, so few pixels are lit (battery and burn-in).
             colorScheme: isAmbientModeActive
                 ? const ColorScheme.dark(
-                    primary: Colors.white24,
-                    onSurface: Colors.white10,
+                    primary: Colors.white70,
+                    secondary: Colors.white60,
+                    error: Colors.white60,
+                    surface: Colors.black,
+                    onSurface: Colors.white70,
                   )
                 : const ColorScheme.dark(primary: Color(0xFF00B5FF)),
           ),
@@ -38,7 +43,8 @@ class App extends StatelessWidget {
             );
             return MediaQuery(
               data: MediaQuery.of(context).copyWith(textScaler: textScaler),
-              child: child!,
+              // No animations (spinners, transitions) while ambient.
+              child: TickerMode(enabled: !isAmbientModeActive, child: child!),
             );
           },
         );
