@@ -14,10 +14,9 @@ class App extends StatelessWidget {
         return MaterialApp(
           theme: ThemeData(
             useMaterial3: true,
-            // This makes elements such as buttons have a fewer pixels in
-            // padding and general spacing. good for devices with limited screen
-            // real state.
-            visualDensity: VisualDensity.compact,
+            // Standard density: compact shrank every tap target to 40 dp,
+            // too small to hit reliably on a watch.
+            visualDensity: VisualDensity.standard,
             // When in ambient mode, change the apps color scheme
             // Ambient (always-on) mode: black background and dimmed, colorless
             // content, so few pixels are lit (battery and burn-in).

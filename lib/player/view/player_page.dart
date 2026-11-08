@@ -1,9 +1,9 @@
 import 'dart:async';
 
+import 'package:abs_wear/app/view/crown_scrollbar.dart';
 import 'package:abs_wear/player/player.dart';
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
-import 'package:rotary_scrollbar/rotary_scrollbar.dart';
 
 class PlayerPage extends StatefulWidget {
   const PlayerPage({
@@ -71,11 +71,7 @@ class _PlayerPageState extends State<PlayerPage> {
 
   @override
   Widget build(BuildContext context) {
-    return RotaryScrollbar(
-      width: 2,
-      padding: 1,
-      hasHapticFeedback: false,
-      autoHide: false,
+    return CrownScrollbar(
       controller: _pageController,
       child: Scaffold(
         body: PageView(

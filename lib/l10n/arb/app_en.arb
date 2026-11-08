@@ -153,5 +153,39 @@
     "volumeDown": "Volume down",
     "@volumeDown": {
         "description": "Decrease volume"
+    },
+    "previousChapter": "Previous chapter",
+    "@previousChapter": {
+        "description": "Tooltip"
+    },
+    "nextChapter": "Next chapter",
+    "@nextChapter": {
+        "description": "Tooltip"
+    },
+    "back10": "Back 10 seconds",
+    "@back10": {
+        "description": "Tooltip"
+    },
+    "forward10": "Forward 10 seconds",
+    "@forward10": {
+        "description": "Tooltip"
+    },
+    "play": "Play",
+    "@play": {
+        "description": "Tooltip"
+    },
+    "pause": "Pause",
+    "@pause": {
+        "description": "Tooltip"
+    },
+    "timeLeftLabel": "{time} left in chapter",
+    "@timeLeftLabel": {
+        "description": "Screen reader label for the time left",
+        "placeholders": {
+            "time": {
+                "type": "String",
+                "example": "00:12:34"
+            }
+        }
     }
 }
