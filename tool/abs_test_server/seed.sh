@@ -52,9 +52,10 @@ fi
 
 USER_TOKEN=$(login "$ABS_TEST_USER" "$ABS_TEST_PASSWORD")
 uauth=(-H "Authorization: Bearer $USER_TOKEN" -H 'Content-Type: application/json')
-# Put every book "in progress" at 25% so it lands on the Continue Listening shelf.
-curl -fs "$URL/api/libraries/$LIB/items?limit=50" "${uauth[@]}" \
-  | j '"\n".join(i["id"]+" "+str(i["media"]["duration"]) for i in d["results"])' \
+# Put the test books (not the generated Bulk ones) "in progress" at 25% so
+# they land on the Continue Listening shelf.
+curl -fs "$URL/api/libraries/$LIB/items?limit=5000&minified=1" "${uauth[@]}" \
+  | j '"\n".join(i["id"]+" "+str(i["media"]["duration"]) for i in d["results"] if not i["relPath"].startswith("Bulk"))' \
   | while read -r id dur; do
       t=$(python3 -c "print(round($dur*0.25))")
       curl -fs -X PATCH "$URL/api/me/progress/$id" "${uauth[@]}" \
