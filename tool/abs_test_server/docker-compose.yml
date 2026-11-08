@@ -9,6 +9,8 @@ services:
       - "13378:80"
     environment:
       - TZ=Europe/Tallinn
+      # Every E2E test logs in; the default (40 logins / 10 min) trips 429s.
+      - RATE_LIMIT_AUTH_MAX=10000
     volumes:
       - ./data/config:/config
       - ./data/metadata:/metadata
