@@ -638,10 +638,14 @@ void main() {
       i < 4 && find.byIcon(Icons.play_arrow).hitTestable().evaluate().isEmpty;
       i++
     ) {
-      await tester.drag(find.text('30:00'), const Offset(0, 250));
+      // A fixed label: the timer's text counts down. Gone once the page
+      // has switched back.
+      final handle = find.text('Speed');
+      if (handle.evaluate().isEmpty) break;
+      await tester.drag(handle, const Offset(0, 250));
       await pumpFor(tester, const Duration(milliseconds: 600));
     }
-    expect(find.byIcon(Icons.play_arrow).hitTestable(), findsOneWidget);
+    await pumpUntil(tester, find.byIcon(Icons.play_arrow).hitTestable());
 
     // The speed is kept for the next book.
     await tester.binding.handlePopRoute();
