@@ -69,6 +69,35 @@ class MainActivity : AudioServiceActivity() {
                     else -> result.notImplemented()
                 }
             }
+        val downloads = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "download_keep_alive")
+        DownloadService.onCancel = { downloads.invokeMethod("cancel", null) }
+        downloads.setMethodCallHandler { call, result ->
+            when (call.method) {
+                "start" -> {
+                    DownloadService.start(
+                        context,
+                        call.argument<String>("title") ?: "",
+                        call.argument<String>("cancel") ?: "",
+                        call.argument<String>("channel") ?: "",
+                    )
+                    DownloadNetwork.acquire(context) { onWifi -> result.success(onWifi) }
+                }
+                "progress" -> {
+                    DownloadService.progress(call.argument<Int>("percent") ?: 0)
+                    result.success(null)
+                }
+                "useDefaultNetwork" -> {
+                    DownloadNetwork.useDefaultNetwork(context)
+                    result.success(null)
+                }
+                "stop" -> {
+                    DownloadNetwork.release(context)
+                    DownloadService.stop(context)
+                    result.success(null)
+                }
+                else -> result.notImplemented()
+            }
+        }
     }
 
     /**
