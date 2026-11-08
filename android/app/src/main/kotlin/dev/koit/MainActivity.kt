@@ -111,10 +111,11 @@ class MainActivity : AudioServiceActivity() {
     }
 
     /**
-     * Makes the app assume the rounded canvas appearance on rounded screens.
+     * Flutter draws into an opaque SurfaceView (the default). A transparent
+     * background would force a TextureView, which composites every frame
+     * once more and costs battery.
      */
     override fun onCreate(savedInstanceState: Bundle?) {
-        intent.putExtra("background_mode", "transparent")
         super.onCreate(savedInstanceState)
         ambientObserver = AmbientLifecycleObserver(this, ambientCallback)
         lifecycle.addObserver(ambientObserver)

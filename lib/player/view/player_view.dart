@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:abs_wear/ambient_mode/ambient_mode.dart';
+import 'package:abs_wear/app/app_visibility.dart';
 import 'package:abs_wear/l10n/l10n.dart';
 import 'package:abs_wear/player/components/scrolling_text.dart';
 import 'package:abs_wear/player/components/time_left_widget.dart';
@@ -35,9 +36,12 @@ class PlayerViewPage extends StatelessWidget {
                   builder: (context, tick, _) =>
                       _ambientContent(theme, tick, ambient.burnInProtection),
                 )
-              : StreamBuilder<double>(
-                  stream: controller.bookPositionStream,
-                  builder: (context, _) => _content(context, theme),
+              : PlaybackTicker(
+                  playing: controller.player.playerStateStream.map(
+                    (state) => state.playing,
+                  ),
+                  changes: controller.player.playbackEventStream,
+                  builder: (context) => _content(context, theme),
                 ),
         );
       },
@@ -139,6 +143,79 @@ class PlayerViewPage extends StatelessWidget {
       ],
     );
   }
+}
+
+/// Rebuilds [builder] once a second while [playing] is true and the app is
+/// on screen, and on every [changes] event (play, pause, seek, track
+/// change). Paused or hidden, it draws nothing new. The streams are read
+/// once, when the widget is first built.
+@visibleForTesting
+class PlaybackTicker extends StatefulWidget {
+  const PlaybackTicker({
+    required this.playing,
+    required this.changes,
+    required this.builder,
+    this.period = const Duration(seconds: 1),
+    super.key,
+  });
+
+  final Stream<bool> playing;
+  final Stream<Object?> changes;
+  final WidgetBuilder builder;
+  final Duration period;
+
+  @override
+  State<PlaybackTicker> createState() => _PlaybackTickerState();
+}
+
+class _PlaybackTickerState extends State<PlaybackTicker> {
+  final AppVisibility _visibility = AppVisibility.instance;
+  late final StreamSubscription<bool> _playingSub;
+  late final StreamSubscription<Object?> _changesSub;
+  Timer? _timer;
+  bool _playing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _visibility
+      ..ensureInitialized()
+      ..addListener(_update);
+    _playingSub = widget.playing.listen((playing) {
+      _playing = playing;
+      _update();
+    });
+    _changesSub = widget.changes.listen(
+      (_) => _refresh(),
+      onError: (Object _) {},
+    );
+  }
+
+  void _refresh() {
+    if (mounted) setState(() {});
+  }
+
+  void _update() {
+    if (_playing && _visibility.value) {
+      _timer ??= Timer.periodic(widget.period, (_) => _refresh());
+    } else {
+      _timer?.cancel();
+      _timer = null;
+    }
+    _refresh();
+  }
+
+  @override
+  void dispose() {
+    _visibility.removeListener(_update);
+    _timer?.cancel();
+    unawaited(_playingSub.cancel());
+    unawaited(_changesSub.cancel());
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.builder(context);
 }
 
 class _PlayPauseButton extends StatelessWidget {
