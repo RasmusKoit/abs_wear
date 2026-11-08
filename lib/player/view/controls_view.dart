@@ -118,11 +118,13 @@ class _ControlViewPageState extends State<ControlViewPage> {
     final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(
+        toolbarHeight: 40,
         centerTitle: true,
         automaticallyImplyLeading: false,
         title: Text(l10n.controls, style: theme.textTheme.bodyLarge),
       ),
-      body: Center(
+      // Scrolls rather than overflowing on small screens or large text.
+      body: SingleChildScrollView(
         child: Padding(
           padding: const EdgeInsets.all(8),
           child: Column(

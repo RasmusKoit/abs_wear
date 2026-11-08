@@ -78,6 +78,6 @@
     "back10": "Retroceder 10 segundos",
     "forward10": "Avanzar 10 segundos",
     "play": "Reproducir",
-    "pause": "Pausa",
+    "pause": "Pausar",
     "timeLeftLabel": "Quedan {time} del capítulo"
 }
