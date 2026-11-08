@@ -1,12 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:isolate';
 
 import 'package:abs_wear/app/view/crown_scrollbar.dart';
 import 'package:abs_wear/l10n/l10n.dart';
 import 'package:abs_wear/library/data/json_cache.dart';
 import 'package:abs_wear/library/data/library_api.dart';
 import 'package:abs_wear/player/player.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
@@ -116,10 +116,12 @@ class _EpisodesPageState extends State<EpisodesPage> {
           .timeout(const Duration(seconds: 20));
       if (response.statusCode != 200) return;
       final body = response.body;
-      final podcastId = widget.podcast.id;
-      final progress = await Isolate.run(
-        () => _episodeProgress(body, podcastId),
-      );
+      // A top-level function: a closure here would capture this State,
+      // which can't be sent to another isolate.
+      final progress = await compute(_episodeProgress, (
+        body,
+        widget.podcast.id,
+      ));
       if (mounted && request == _progressRequest) {
         setState(() => _progress = progress);
       }
@@ -321,11 +323,11 @@ class _EpisodesPageState extends State<EpisodesPage> {
   }
 }
 
-/// Progress per episode id of [podcastId], from a /api/me reply.
+/// Progress per episode id of a podcast, from a /api/me reply.
 Map<String, ({double progress, bool finished})> _episodeProgress(
-  String body,
-  String podcastId,
+  (String, String) bodyAndPodcastId,
 ) {
+  final (body, podcastId) = bodyAndPodcastId;
   final me = jsonDecode(body) as Map<String, dynamic>;
   return {
     for (final p
