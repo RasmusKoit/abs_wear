@@ -18,7 +18,7 @@
     "serverTimeout": "Sunucu yanıt vermedi.",
     "cannotReachServer": "Sunucuya ulaşılamıyor.",
     "fillAllFields": "Tüm alanları doldurun.",
-    "noLibraries": "Bu sunucuda kitap kitaplığı yok.",
+    "noLibraries": "Bu sunucuda kitaplık yok.",
     "sessionExpired": "Oturum sona erdi. Tekrar giriş yapın.",
     "logoutConfirm": "Çıkış yapılsın mı? İndirilen kitaplar silinir.",
     "cancel": "İptal",

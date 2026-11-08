@@ -22,7 +22,7 @@
     "sessionExpired": "সেশনের মেয়াদ শেষ। আবার লগ ইন করুন।",
     "logoutConfirm": "লগ আউট করবেন? ডাউনলোড করা বই মুছে যাবে।",
     "cancel": "বাতিল",
-    "nothingInProgress": "শোনা অসম্পূর্ণ কিছু নেই।",
+    "nothingInProgress": "অসম্পূর্ণ কিছু নেই।",
     "allBooks": "সব বই",
     "bookCount": "{count, plural, other{{count}টি বই}}",
     "offlineSavedList": "অফলাইন। সংরক্ষিত তালিকা দেখানো হচ্ছে। আবার চেষ্টা করতে ট্যাপ করুন।",

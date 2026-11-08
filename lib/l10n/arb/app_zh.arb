@@ -18,7 +18,7 @@
     "serverTimeout": "服务器无响应。",
     "cannotReachServer": "无法连接服务器。",
     "fillAllFields": "请填写所有字段。",
-    "noLibraries": "此服务器上没有图书库。",
+    "noLibraries": "此服务器上没有书库。",
     "sessionExpired": "会话已过期，请重新登录。",
     "logoutConfirm": "退出登录？已下载的书将被删除。",
     "cancel": "取消",

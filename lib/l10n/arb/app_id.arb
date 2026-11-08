@@ -45,7 +45,7 @@
     "timeLeftLabel": "Sisa {time} di bab ini",
     "allPodcasts": "Semua podcast",
     "podcastCount": "{count, plural, other{{count} podcast}}",
-    "libraries": "Pustaka",
+    "libraries": "Ganti pustaka",
     "noEpisodes": "Tidak ada episode.",
     "speed": "Kecepatan",
     "slower": "Lebih lambat",

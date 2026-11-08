@@ -35,7 +35,7 @@
     "volumeUp": "Lauter",
     "volumeDown": "Leiser",
     "couldNotStartPlayback": "Wiedergabe konnte nicht gestartet werden.",
-    "playingOffline": "Offline: Heruntergeladenes Buch wird abgespielt. Fortschritt wird später synchronisiert.",
+    "playingOffline": "Offline: Heruntergeladenes Buch läuft. Sync folgt später.",
     "previousChapter": "Vorheriges Kapitel",
     "nextChapter": "Nächstes Kapitel",
     "back10": "10 Sekunden zurück",
@@ -54,5 +54,5 @@
     "sleepTimerOff": "Aus",
     "downloads": "Downloads",
     "noDownloads": "Keine Downloads.",
-    "finished": "Beendet"
+    "finished": "Gehört"
 }

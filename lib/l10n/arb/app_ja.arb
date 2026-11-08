@@ -22,7 +22,7 @@
     "sessionExpired": "セッションが切れました。再ログインしてください。",
     "logoutConfirm": "ログアウトしますか？ダウンロードした本は削除されます。",
     "cancel": "キャンセル",
-    "nothingInProgress": "再生中の本はありません。",
+    "nothingInProgress": "聴きかけの本はありません。",
     "allBooks": "すべての本",
     "bookCount": "{count, plural, other{{count}冊}}",
     "offlineSavedList": "オフライン。保存済みリストを表示中。タップで再試行。",
