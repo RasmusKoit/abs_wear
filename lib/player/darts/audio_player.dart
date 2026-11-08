@@ -1078,6 +1078,9 @@ class AudioPlayerController extends ChangeNotifier {
       await _stateSub?.cancel();
       await _errorSub?.cancel();
       await player.dispose();
+      // Before the (possibly slow) final sync, so a release can't drop the
+      // lock of the next book, which may start meanwhile.
+      unawaited(NetworkLock.set(hold: false));
       // Before the book loaded, setupPlayer closes the session itself with
       // the server's position; closing here could send position 0.
       if (isLoaded) {
@@ -1087,7 +1090,6 @@ class AudioPlayerController extends ChangeNotifier {
       debugPrint('Error closing player: $e');
     } finally {
       _openKeys.remove(_localKey);
-      unawaited(NetworkLock.set(hold: false));
       _client.close();
       downloadProgress.dispose();
       super.dispose();

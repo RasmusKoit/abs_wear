@@ -64,11 +64,13 @@ class MainActivity : AudioServiceActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "network_lock")
             .setMethodCallHandler { call, result ->
                 when (call.method) {
-                    "acquire" -> NetworkLock.acquire(context)
-                    "release" -> NetworkLock.release(context)
-                    else -> return@setMethodCallHandler result.notImplemented()
+                    "acquire" -> result.success(NetworkLock.acquire(context))
+                    "release" -> {
+                        NetworkLock.release(context)
+                        result.success(true)
+                    }
+                    else -> result.notImplemented()
                 }
-                result.success(null)
             }
     }
 
@@ -90,8 +92,8 @@ class MainActivity : AudioServiceActivity() {
         super.onCreate(savedInstanceState)
         ambientObserver = AmbientLifecycleObserver(this, ambientCallback)
         lifecycle.addObserver(ambientObserver)
-        // The media notification (and its controls) only shows with this
-        // permission on Android 13+.
+        // Media notifications are exempt from this permission, but some
+        // watches hide app notifications without it.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
             PackageManager.PERMISSION_GRANTED

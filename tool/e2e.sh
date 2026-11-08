@@ -13,6 +13,13 @@ URL=${E2E_ABS_URL:-${ABS_E2E_URL:-}}
 DEVICE=${1:-$(adb devices | awk 'NR>1 && $2=="device" {print $1; exit}')}
 [ -n "$DEVICE" ] || { echo "No device connected (start an emulator or adb connect the watch)"; exit 1; }
 echo "Device: $DEVICE   Server: $URL"
+# The app asks for the notification permission on start; a dialog on top
+# would send it to the background and stall the tests. Grant it up front
+# (kept across reinstalls), and right after a first install.
+PKG=dev.koit.abs_wear.dev
+grant() { adb -s "$DEVICE" shell pm grant "$PKG" android.permission.POST_NOTIFICATIONS >/dev/null 2>&1; }
+grant || true
+( for _ in $(seq 180); do grant && break; sleep 1; done ) &
 "${FLUTTER:-flutter}" test integration_test \
   -d "$DEVICE" \
   --flavor development \
