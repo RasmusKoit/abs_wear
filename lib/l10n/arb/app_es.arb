@@ -67,5 +67,13 @@
     "nothingInProgress": "Nada en curso.",
     "allBooks": "Todos los libros",
     "bookCount": "{count, plural, =1{1 libro} other{{count} libros}}",
-    "offlineSavedList": "Sin conexión. Mostrando la lista guardada. Toca para reintentar."
+    "offlineSavedList": "Sin conexión. Mostrando la lista guardada. Toca para reintentar.",
+    "download": "Descargar",
+    "downloadDone": "Audiolibro descargado.",
+    "downloadFailed": "La descarga falló. Toca descargar para reanudar.",
+    "downloadNoSpace": "No hay espacio suficiente en el reloj.",
+    "deleteDownload": "Eliminar descarga",
+    "deleteDownloadConfirm": "¿Eliminar el libro descargado del reloj?",
+    "volumeUp": "Subir volumen",
+    "volumeDown": "Bajar volumen"
 }

@@ -121,5 +121,37 @@
     "offlineSavedList": "Offline. Showing the saved list. Tap to retry.",
     "@offlineSavedList": {
         "description": "Shown when cached data is displayed"
+    },
+    "download": "Download",
+    "@download": {
+        "description": "Download the book for offline listening"
+    },
+    "downloadDone": "Audiobook downloaded.",
+    "@downloadDone": {
+        "description": "Download finished"
+    },
+    "downloadFailed": "Download failed. Tap download to resume.",
+    "@downloadFailed": {
+        "description": "Download failed"
+    },
+    "downloadNoSpace": "Not enough storage on the watch.",
+    "@downloadNoSpace": {
+        "description": "Download failed: disk full"
+    },
+    "deleteDownload": "Delete download",
+    "@deleteDownload": {
+        "description": "Delete downloaded files"
+    },
+    "deleteDownloadConfirm": "Delete the downloaded book from the watch?",
+    "@deleteDownloadConfirm": {
+        "description": "Confirm deleting a download"
+    },
+    "volumeUp": "Volume up",
+    "@volumeUp": {
+        "description": "Increase volume"
+    },
+    "volumeDown": "Volume down",
+    "@volumeDown": {
+        "description": "Decrease volume"
     }
 }

@@ -48,7 +48,9 @@ class _PlayerPageState extends State<PlayerPage> {
           gravity: ToastGravity.CENTER,
         ),
       );
-      Navigator.of(context).pop();
+      // Remove this page even if a dialog is open on top of it.
+      final route = ModalRoute.of(context);
+      if (route != null) Navigator.of(context).removeRoute(route);
       return;
     }
     // Keep the server's progress in sync while the player is open.

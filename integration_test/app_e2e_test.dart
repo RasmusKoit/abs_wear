@@ -365,7 +365,11 @@ void main() {
     await pumpFor(tester, const Duration(seconds: 1));
     expect(await serverProgress('Multi File Book'), greaterThan(36));
 
+    // Deleting asks first.
     await scrollAndTap(tester, find.byIcon(Icons.delete_forever_rounded));
+    await pumpUntil(tester, find.byIcon(Icons.check_rounded));
+    await tester.tap(find.byIcon(Icons.check_rounded));
     await pumpUntil(tester, find.byIcon(Icons.download_rounded));
+    expect(find.byIcon(Icons.delete_forever_rounded), findsNothing);
   });
 }
