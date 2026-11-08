@@ -32,6 +32,9 @@ class _PlayerPageState extends State<PlayerPage> {
   }
 
   Future<void> _init() async {
+    _playerController.onPlaybackError = (message) => unawaited(
+      Fluttertoast.showToast(msg: message, gravity: ToastGravity.CENTER),
+    );
     final ok = await _playerController.setupPlayer(
       widget.libraryItemId,
       widget.serverUrl,
@@ -51,7 +54,7 @@ class _PlayerPageState extends State<PlayerPage> {
     // Keep the server's progress in sync while the player is open.
     _syncTimer = Timer.periodic(
       const Duration(minutes: 1),
-      (_) => unawaited(_playerController.syncOpenSession()),
+      (_) => unawaited(_playerController.periodicSync()),
     );
   }
 
