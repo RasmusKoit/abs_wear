@@ -95,5 +95,6 @@
     "sleepTimer": "Temporizador",
     "sleepTimerOff": "Desactivado",
     "downloads": "Descargas",
-    "noDownloads": "No hay descargas."
+    "noDownloads": "No hay descargas.",
+    "finished": "Terminado"
 }

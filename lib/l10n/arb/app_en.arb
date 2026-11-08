@@ -245,5 +245,9 @@
     "noDownloads": "Nothing downloaded.",
     "@noDownloads": {
         "description": "Empty downloads list"
+    },
+    "finished": "Finished",
+    "@finished": {
+        "description": "An episode listened to the end"
     }
 }

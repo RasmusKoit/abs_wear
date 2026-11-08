@@ -597,6 +597,8 @@ void main() {
     await pumpUntil(tester, inList);
     await tester.tap(inList);
     await pumpUntil(tester, find.text('Episode 2'));
+    // Episode 1's progress (about 8 s of 30 s) shows in the list.
+    await pumpUntil(tester, find.textContaining('%'));
     await tester.tap(find.text('Episode 2'));
     await pumpUntil(tester, find.byIcon(Icons.play_arrow));
     await pumpUntil(tester, find.text('00:00:30'));
