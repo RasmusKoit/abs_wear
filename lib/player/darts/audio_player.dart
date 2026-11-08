@@ -122,7 +122,13 @@ class AudioPlayerController extends ChangeNotifier {
   /// loaded this also records the last known position, so a stop, error or
   /// reload (all of which make the player idle) can't rewind progress.
   double get bookPosition {
-    if (!_audioLoaded) return _pendingPosition;
+    // While loading (or with a seek queued until loading ends) the player
+    // reports its initial position, not where the user asked to be.
+    if (!_audioLoaded ||
+        _queuedSeeks > 0 ||
+        player.processingState == ProcessingState.loading) {
+      return _pendingPosition;
+    }
     final index = player.currentIndex ?? 0;
     final offset = index < tracks.length ? tracks[index].startOffset : 0;
     return _pendingPosition = offset + player.position.inMilliseconds / 1000;
@@ -135,6 +141,10 @@ class AudioPlayerController extends ChangeNotifier {
   StreamSubscription<PlayerState>? _stateSub;
   StreamSubscription<PlayerException>? _errorSub;
   bool _wasPlaying = false;
+
+  /// Seeks waiting for loading to finish (just_audio drops them otherwise).
+  int _queuedSeeks = 0;
+  int _seekSeq = 0;
 
   /// True while sources are swapped; the stop/start it causes is not a
   /// user pause and must not sync a transient position.
@@ -191,8 +201,9 @@ class AudioPlayerController extends ChangeNotifier {
     try {
       // Let the previous book finish closing (bounded, it has its own
       // request timeout) so its final position is saved first.
+      // Worst case: a queued sync (20 s) plus the close request (20 s).
       await _previousClose.timeout(
-        const Duration(seconds: 25),
+        const Duration(seconds: 45),
         onTimeout: () {},
       );
       if (_closed) return false;
@@ -240,14 +251,36 @@ class AudioPlayerController extends ChangeNotifier {
     // Any pause (button, notification, headphones unplugged, audio focus
     // loss) saves progress right away; the app may be killed after it.
     if (_wasPlaying && !state.playing && !_reloading) {
-      unawaited(syncOpenSession());
+      unawaited(_syncAfterPause());
     }
     _wasPlaying = state.playing;
+  }
+
+  /// A pause from the media session (watch controls, headset button) flips
+  /// `playing` before the native event with the paused position arrives;
+  /// syncing right away would send the position of the last play/seek.
+  Future<void> _syncAfterPause() async {
+    try {
+      await player.playbackEventStream
+          .skip(1)
+          .first
+          .timeout(const Duration(seconds: 1));
+    } on Object {
+      // No newer event (in-app pauses already carry the position).
+    }
+    if (!_closed) await syncOpenSession();
   }
 
   void _onPlayerError(PlayerException e) {
     debugPrint('Playback error: ${e.code} ${e.message}');
     if (_closed) return;
+    // The player is idle now, so bookPosition would return a stale cached
+    // value; the error event carries the real position.
+    final index = e.index ?? player.currentIndex ?? 0;
+    if (index < tracks.length) {
+      _pendingPosition =
+          tracks[index].startOffset + player.position.inMilliseconds / 1000;
+    }
     _needsReload = true;
     unawaited(player.pause());
     onPlaybackError?.call('Playback error. Tap play to retry.');
@@ -398,13 +431,22 @@ class AudioPlayerController extends ChangeNotifier {
     final clamped = time.clamp(0, duration).toDouble();
     final (index, offset) = _trackAt(clamped);
     _pendingPosition = clamped;
+    final seq = ++_seekSeq;
     if (player.processingState == ProcessingState.loading) {
       // just_audio ignores seeks while loading; apply it once loaded.
+      _queuedSeeks++;
       _notify();
-      await player.processingStateStream
-          .firstWhere((s) => s != ProcessingState.loading)
-          .timeout(const Duration(seconds: 30));
-      if (_closed || _pendingPosition != clamped) return;
+      try {
+        await player.processingStateStream
+            .firstWhere((s) => s != ProcessingState.loading)
+            .timeout(const Duration(seconds: 30));
+      } on Object {
+        return; // Disposed or never loaded; the position stays pending.
+      } finally {
+        _queuedSeeks--;
+      }
+      // A newer seek supersedes this one.
+      if (_closed || seq != _seekSeq) return;
     }
     await player.seek(
       Duration(milliseconds: (offset * 1000).round()),
@@ -611,7 +653,11 @@ class AudioPlayerController extends ChangeNotifier {
       await _stateSub?.cancel();
       await _errorSub?.cancel();
       await player.dispose();
-      await syncOpenSession(close: true, position: position);
+      // Before the book loaded, setupPlayer closes the session itself with
+      // the server's position; closing here could send position 0.
+      if (isLoaded) {
+        await syncOpenSession(close: true, position: position);
+      }
     } on Object catch (e) {
       debugPrint('Error closing player: $e');
     } finally {
