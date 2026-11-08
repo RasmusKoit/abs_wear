@@ -68,7 +68,8 @@ class _ControlViewPageState extends State<ControlViewPage> {
       channelName: l10n.downloads,
     );
     // Leaving the player cancels the download; no toast on another page.
-    if (!mounted) return;
+    // (Not `mounted`: this page may have been rebuilt meanwhile.)
+    if (!_controller.isOpen) return;
     unawaited(
       _toast(switch (result) {
         DownloadResult.done => l10n.downloadDone,

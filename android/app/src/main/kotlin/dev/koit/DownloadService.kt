@@ -76,6 +76,9 @@ class DownloadService : Service() {
 
     private var wakeLock: PowerManager.WakeLock? = null
 
+    /** True once this instance shows the download notification. */
+    private var foreground = false
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
@@ -93,6 +96,9 @@ class DownloadService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_CANCEL) {
             onCancel?.invoke()
+            // A tap that raced the end of the download started a new,
+            // idle instance: don't let it hold the wake lock.
+            if (!foreground) stopSelf(startId)
             return START_NOT_STICKY
         }
         intent?.getStringExtra(EXTRA_TITLE)?.let { title = it }
@@ -110,6 +116,7 @@ class DownloadService : Service() {
                 buildNotification(),
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
             )
+            foreground = true
         } catch (e: RuntimeException) {
             Log.w(TAG, "Could not enter the foreground", e)
             stopSelf()
@@ -197,6 +204,9 @@ object DownloadNetwork {
         release(context)
         useDefault = false
         var answered = false
+        // Wi-Fi that shows up after the wait isn't used: the download was
+        // told it's on the default network, so it would have no fallback.
+        var timedOut = false
         fun answer(onWifi: Boolean) {
             if (answered) return
             answered = true
@@ -206,7 +216,7 @@ object DownloadNetwork {
             override fun onAvailable(network: Network) {
                 main.post {
                     if (callback !== this) return@post
-                    if (!useDefault && manager.bindProcessToNetwork(network)) {
+                    if (!timedOut && !useDefault && manager.bindProcessToNetwork(network)) {
                         bound = network
                     }
                     answer(bound != null)
@@ -228,7 +238,10 @@ object DownloadNetwork {
         try {
             manager.requestNetwork(request, cb)
             callback = cb
-            main.postDelayed({ answer(false) }, WAIT_MS)
+            main.postDelayed({
+                if (!answered) timedOut = true
+                answer(false)
+            }, WAIT_MS)
         } catch (e: RuntimeException) {
             Log.w(TAG, "Could not request Wi-Fi", e)
             answer(false)

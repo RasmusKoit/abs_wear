@@ -7,25 +7,37 @@ import 'package:flutter/services.dart';
 /// with a progress notification (and a cancel action), a wake lock, and the
 /// watch's Wi-Fi instead of the phone's Bluetooth proxy. See
 /// DownloadService.kt.
+///
+/// The native side is global; the latest [start] owns it, so a download
+/// that ends late (its player already closed) can't stop a newer one.
 abstract final class DownloadKeepAlive {
   static const _channel = MethodChannel('download_keep_alive');
-  static VoidCallback? _onCancel;
+  static DownloadKeepAliveHandle? _owner;
   static int _percent = -1;
 
-  /// Starts keeping the download alive. [onCancel] runs when the
-  /// notification's cancel is tapped. Returns true when the download goes
-  /// over Wi-Fi.
-  static Future<bool> start({
+  /// Starts keeping a download alive. [onCancel] runs when the
+  /// notification's cancel is tapped.
+  static DownloadKeepAliveHandle start({
     required String title,
     required String cancelLabel,
     required String channelName,
     required VoidCallback onCancel,
-  }) async {
-    _onCancel = onCancel;
+  }) {
     _percent = -1;
     _channel.setMethodCallHandler((call) async {
-      if (call.method == 'cancel') _onCancel?.call();
+      if (call.method == 'cancel') _owner?._onCancel();
     });
+    final handle = DownloadKeepAliveHandle._(onCancel);
+    _owner = handle;
+    handle.onWifi = _start(title, cancelLabel, channelName);
+    return handle;
+  }
+
+  static Future<bool> _start(
+    String title,
+    String cancelLabel,
+    String channelName,
+  ) async {
     try {
       return await _channel.invokeMethod<bool>('start', {
             'title': title,
@@ -53,11 +65,6 @@ abstract final class DownloadKeepAlive {
   /// the watch's Wi-Fi).
   static Future<void> useDefaultNetwork() => _invoke('useDefaultNetwork');
 
-  static Future<void> stop() {
-    _onCancel = null;
-    return _invoke('stop');
-  }
-
   static Future<void> _invoke(String method, [Object? args]) async {
     try {
       await _channel.invokeMethod<void>(method, args);
@@ -66,5 +73,23 @@ abstract final class DownloadKeepAlive {
     } on PlatformException catch (e) {
       debugPrint('Download keep-alive: $e');
     }
+  }
+}
+
+/// One download's hold on [DownloadKeepAlive].
+class DownloadKeepAliveHandle {
+  DownloadKeepAliveHandle._(this._onCancel);
+
+  final VoidCallback _onCancel;
+
+  /// Completes with true when the download goes over the watch's Wi-Fi.
+  late final Future<bool> onWifi;
+
+  /// Releases the service, wake lock and Wi-Fi, unless a newer download
+  /// owns them by now.
+  Future<void> stop() {
+    if (DownloadKeepAlive._owner != this) return Future.value();
+    DownloadKeepAlive._owner = null;
+    return DownloadKeepAlive._invoke('stop');
   }
 }

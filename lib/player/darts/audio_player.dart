@@ -115,7 +115,14 @@ class _DownloadCanceled implements Exception {
 
 class AudioPlayerController extends ChangeNotifier {
   AudioPlayerController({http.Client? client})
-    : _client = client ?? IOClient(HttpClient()..idleTimeout = _idleTimeout);
+    : _client = client ?? _newClient(),
+      _injectedClient = client;
+
+  static http.Client _newClient() =>
+      IOClient(HttpClient()..idleTimeout = _idleTimeout);
+
+  /// A client passed in (tests): used for downloads too, never replaced.
+  final http.Client? _injectedClient;
 
   /// Shorter than the server's keep-alive (Node's default is 5 s), so a
   /// request never goes out on a connection the server is closing ("Connection
@@ -1308,6 +1315,19 @@ class AudioPlayerController extends ChangeNotifier {
   /// True while the download is bound to the watch's Wi-Fi.
   bool _downloadOnWifi = false;
 
+  /// The running download's own client: opened after the network was
+  /// picked, so no pooled connection from before the switch is reused.
+  http.Client? _downloadClient;
+
+  void _closeDownloadClient() {
+    final client = _downloadClient;
+    _downloadClient = null;
+    if (client != null && client != _injectedClient) client.close();
+  }
+
+  /// False once [close] was called.
+  bool get isOpen => !_closed;
+
   /// Stops the running download. Finished files are kept (the download can
   /// resume, or the leftovers be deleted); the partial file is removed.
   void cancelDownload() {
@@ -1330,14 +1350,6 @@ class AudioPlayerController extends ChangeNotifier {
     downloadProgress.value = 0;
     final cancel = _downloadCancel = Completer<void>();
     _notify();
-    _downloadOnWifi = await DownloadKeepAlive.start(
-      title: bookTitle,
-      cancelLabel: cancelLabel,
-      channelName: channelName,
-      onCancel: cancelDownload,
-    );
-
-    final dir = Directory(await localDirPath());
     // Byte progress only when every size is known; otherwise by file.
     final sizesKnown = tracks.every((t) => t.size > 0);
     final totalBytes = sizesKnown
@@ -1346,8 +1358,21 @@ class AudioPlayerController extends ChangeNotifier {
     var receivedBytes = 0;
     var result = DownloadResult.failed;
     File? part;
+    final keepAlive = DownloadKeepAlive.start(
+      title: bookTitle,
+      cancelLabel: cancelLabel,
+      channelName: channelName,
+      onCancel: cancelDownload,
+    );
     try {
-      dir.createSync(recursive: true);
+      // Waiting for Wi-Fi takes up to a few seconds; a cancel ends it.
+      _downloadOnWifi = await Future.any([
+        keepAlive.onWifi,
+        cancel.future.then((_) => false),
+      ]);
+      if (cancel.isCompleted) throw const _DownloadCanceled();
+      _downloadClient = _injectedClient ?? _newClient();
+      final dir = Directory(await localDirPath())..createSync(recursive: true);
       for (final (i, t) in tracks.indexed) {
         if (cancel.isCompleted) throw const _DownloadCanceled();
         final target = _localFile(dir.path, t);
@@ -1430,13 +1455,14 @@ class AudioPlayerController extends ChangeNotifier {
       isDownloading = false;
       _downloadCancel = null;
       _downloadOnWifi = false;
-      unawaited(DownloadKeepAlive.stop());
+      _closeDownloadClient();
+      unawaited(keepAlive.stop());
       if (!_closed) downloadProgress.value = null;
       _notify();
     }
     if (result == DownloadResult.done && !_closed) {
       await _saveSessionMeta();
-      await _downloadCover(dir.path);
+      await _downloadCover(await localDirPath());
       await reloadSources();
     }
     return result;
@@ -1526,7 +1552,7 @@ class AudioPlayerController extends ChangeNotifier {
       )..headers.addAll(_authHeaders);
       try {
         return await Future.any([
-          _client.send(request).timeout(const Duration(seconds: 30)),
+          _downloadClient!.send(request).timeout(const Duration(seconds: 30)),
           canceled.then<http.StreamedResponse>(
             (_) => throw const _DownloadCanceled(),
           ),
@@ -1547,6 +1573,9 @@ class AudioPlayerController extends ChangeNotifier {
         );
         _downloadOnWifi = false;
         await DownloadKeepAlive.useDefaultNetwork();
+        // New connections, over the default network.
+        _closeDownloadClient();
+        _downloadClient = _injectedClient ?? _newClient();
         attempt = 0;
       }
     }
@@ -1594,6 +1623,8 @@ class AudioPlayerController extends ChangeNotifier {
   Future<void> close() {
     if (_closed) return _previousClose;
     _closed = true;
+    // Ends a running download now, releasing its service and wake lock.
+    cancelDownload();
     return _previousClose = _close();
   }
 

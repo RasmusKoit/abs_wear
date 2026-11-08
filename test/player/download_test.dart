@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:abs_wear/player/darts/audio_player.dart';
+import 'package:abs_wear/player/darts/download_keep_alive.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -26,16 +27,21 @@ void main() {
   late Directory docs;
   late List<String> calls;
   late bool onWifi;
+  // Completes the native 'start' (the Wi-Fi wait); immediate by default.
+  late Future<void> startDone;
 
   setUp(() {
     docs = Directory.systemTemp.createTempSync('abs_download_test');
     PathProviderPlatform.instance = _FakePathProvider(docs.path);
     calls = [];
     onWifi = false;
+    startDone = Future.value();
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(_channel, (call) async {
           calls.add(call.method);
-          return call.method == 'start' ? onWifi : null;
+          if (call.method != 'start') return null;
+          await startDone;
+          return onWifi;
         });
   });
 
@@ -142,5 +148,79 @@ void main() {
     expect(await controller.downloadBook(), DownloadResult.failed);
     expect(requests, 2);
     expect(calls, ['start', 'stop']);
+  });
+
+  test('cancel during the Wi-Fi wait ends the download at once', () async {
+    final wifi = Completer<void>();
+    startDone = wifi.future;
+    var requests = 0;
+    final controller = controllerWith(
+      MockClient.streaming((request, _) async {
+        requests++;
+        return http.StreamedResponse(const Stream.empty(), 404);
+      }),
+    );
+
+    final result = controller.downloadBook();
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    controller.cancelDownload();
+    expect(
+      await result.timeout(const Duration(seconds: 2)),
+      DownloadResult.canceled,
+    );
+    expect(requests, 0);
+    expect(calls, ['start', 'stop']);
+    wifi.complete();
+  });
+
+  test('closing the player cancels its download', () async {
+    final body = StreamController<List<int>>();
+    final controller = controllerWith(
+      MockClient.streaming((request, _) async {
+        return http.StreamedResponse(body.stream, 200, contentLength: 1000);
+      }),
+    );
+
+    final result = controller.downloadBook();
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    unawaited(controller.close());
+    expect(
+      await result.timeout(const Duration(seconds: 2)),
+      DownloadResult.canceled,
+    );
+    expect(calls.last, 'stop');
+    await body.close();
+  });
+
+  test("an old download ending doesn't stop a newer one", () async {
+    final old = DownloadKeepAlive.start(
+      title: 'A',
+      cancelLabel: 'Cancel',
+      channelName: 'Downloads',
+      onCancel: () {},
+    );
+    var canceled = false;
+    final current = DownloadKeepAlive.start(
+      title: 'B',
+      cancelLabel: 'Cancel',
+      channelName: 'Downloads',
+      onCancel: () => canceled = true,
+    );
+    await old.onWifi;
+    await current.onWifi;
+
+    await old.stop();
+    expect(calls, ['start', 'start']);
+    // The notification's cancel still reaches the newer download.
+    await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .handlePlatformMessage(
+          _channel.name,
+          _channel.codec.encodeMethodCall(const MethodCall('cancel')),
+          (_) {},
+        );
+    expect(canceled, isTrue);
+
+    await current.stop();
+    expect(calls, ['start', 'start', 'stop']);
   });
 }
