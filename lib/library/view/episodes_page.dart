@@ -55,7 +55,8 @@ class EpisodesPage extends StatefulWidget {
 }
 
 class _EpisodesPageState extends State<EpisodesPage> {
-  static const double _rowHeight = 56;
+  /// Fits a two-line title and the date at the largest text scale (1.3).
+  static const double _rowHeight = 64;
 
   final _scrollController = ScrollController();
   List<Episode>? _episodes;
@@ -120,9 +121,10 @@ class _EpisodesPageState extends State<EpisodesPage> {
       );
     } on Object catch (e) {
       if (!mounted) return;
+      // Only an expired session concerns the pages below; a 404 here means
+      // this podcast is gone, not the library.
       final result = e is ApiException ? e.result : null;
-      if (result != null) {
-        // 401/404: leave, and let the pages below handle it.
+      if (result == LibraryResult.sessionExpired) {
         final route = ModalRoute.of(context);
         if (route != null && route.isCurrent) {
           Navigator.of(context).pop(result);
@@ -161,11 +163,15 @@ class _EpisodesPageState extends State<EpisodesPage> {
           child: AppBar(
             centerTitle: true,
             automaticallyImplyLeading: false,
-            title: Text(
-              widget.podcast.title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodyLarge,
+            // Inset so the ellipsis stays inside the round screen.
+            title: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 40),
+              child: Text(
+                widget.podcast.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodyLarge,
+              ),
             ),
           ),
         ),

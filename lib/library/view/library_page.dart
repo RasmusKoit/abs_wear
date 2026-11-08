@@ -82,6 +82,9 @@ class _LibraryPageState extends State<LibraryPage> {
             .toList();
       });
     }
+    // Independent of the shelf, so the title and switcher show even when
+    // Continue Listening fails.
+    unawaited(_refreshLibraries());
     final cached = await JsonCache.read(_cacheKey);
     if (!mounted) return;
     if (cached is List && _books == null) {
@@ -123,7 +126,6 @@ class _LibraryPageState extends State<LibraryPage> {
       unawaited(
         JsonCache.write(_cacheKey, [for (final b in books) b.toCache()]),
       );
-      unawaited(_refreshLibraries());
     } on Object catch (e) {
       if (!mounted) return;
       final result = e is ApiException ? e.result : null;
@@ -239,6 +241,11 @@ class _LibraryPageState extends State<LibraryPage> {
     if (id == null || id == widget.libraryId || !mounted) return;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('defaultLibraryId', id);
+    // Also kept across a session expiry, for the next login.
+    await prefs.setString(
+      'pickedLibrary',
+      '${widget.serverUrl}\n${widget.user}\n$id',
+    );
     _close(LibraryResult.switchLibrary);
   }
 
@@ -253,11 +260,15 @@ class _LibraryPageState extends State<LibraryPage> {
           preferredSize: const Size.fromHeight(40),
           child: AppBar(
             centerTitle: true,
-            title: Text(
-              _library?.name ?? l10n.library,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodyLarge,
+            // Inset so the ellipsis stays inside the round screen.
+            title: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 40),
+              child: Text(
+                _library?.name ?? l10n.library,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodyLarge,
+              ),
             ),
             automaticallyImplyLeading: false,
           ),

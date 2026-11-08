@@ -144,10 +144,22 @@ class LoginPageState extends State<LoginPage> {
       final data = jsonDecode(response.body) as Map<String, dynamic>;
       final user = data['user'] as Map<String, dynamic>;
       final token = user['token'] as String;
+      // The library last picked on the watch by this user, else theirs
+      // from the server.
+      final picked = (await SharedPreferences.getInstance())
+          .getString('pickedLibrary')
+          ?.split('\n');
       final libraryId = await _pickLibraryId(
         url,
         token,
-        preferred: data['userDefaultLibraryId'] as String?,
+        preferred: [
+          if (picked != null &&
+              picked.length == 3 &&
+              picked[0] == url &&
+              picked[1] == username)
+            picked[2],
+          data['userDefaultLibraryId'] as String?,
+        ],
       );
       if (libraryId == null) {
         await _toast(l10n.noLibraries);
@@ -184,7 +196,7 @@ class LoginPageState extends State<LoginPage> {
   Future<String?> _pickLibraryId(
     String url,
     String token, {
-    String? preferred,
+    List<String?> preferred = const [],
   }) async {
     final response = await http
         .get(
@@ -198,8 +210,8 @@ class LoginPageState extends State<LoginPage> {
         .cast<Map<String, dynamic>>()
         .where((l) => l['mediaType'] == 'book' || l['mediaType'] == 'podcast')
         .toList();
-    if (preferred != null && libraries.any((l) => l['id'] == preferred)) {
-      return preferred;
+    for (final id in preferred) {
+      if (id != null && libraries.any((l) => l['id'] == id)) return id;
     }
     final books = libraries.where((l) => l['mediaType'] == 'book');
     final pick = books.isNotEmpty ? books.first : libraries.firstOrNull;
@@ -224,6 +236,7 @@ class LoginPageState extends State<LoginPage> {
       });
     }
     if (!deleteDownloads) return;
+    await prefs.remove('pickedLibrary');
     unawaited(_revokeToken(url, token));
     await JsonCache.clear();
     await AudioPlayerController.clearAllLocalProgress();

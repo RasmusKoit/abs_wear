@@ -7,6 +7,7 @@ import 'dart:convert';
 
 import 'package:abs_wear/app/app.dart';
 import 'package:abs_wear/l10n/l10n.dart';
+import 'package:abs_wear/library/view/browse_page.dart';
 import 'package:abs_wear/player/player.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -569,9 +570,13 @@ void main() {
     await pumpUntil(tester, find.text('All podcasts'));
     await pumpFor(tester, const Duration(seconds: 1));
     await scrollAndTap(tester, find.text('All podcasts'));
-    await pumpUntil(tester, find.text('Test Podcast').at(1));
     // The library page below also shows the podcast's name.
-    await tester.tap(find.text('Test Podcast').last);
+    final inList = find.descendant(
+      of: find.byType(BrowsePage),
+      matching: find.text('Test Podcast'),
+    );
+    await pumpUntil(tester, inList);
+    await tester.tap(inList);
     await pumpUntil(tester, find.text('Episode 2'));
     await tester.tap(find.text('Episode 2'));
     await pumpUntil(tester, find.byIcon(Icons.play_arrow));
