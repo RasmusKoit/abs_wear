@@ -11,6 +11,7 @@ import 'package:abs_wear/library/view/browse_page.dart';
 import 'package:abs_wear/library/view/downloads_page.dart';
 import 'package:abs_wear/player/player.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:integration_test/integration_test.dart';
@@ -346,9 +347,11 @@ void main() {
     await scrollAndTap(tester, find.text('Single File Book'));
     await pumpUntil(tester, find.textContaining('Chapter One'));
     await tester.binding.handlePopRoute();
-    // Let the pop transition finish and the async session close land.
     await pumpUntil(tester, find.text('Continue Listening'));
-    await pumpFor(tester, const Duration(seconds: 2));
+    // Wait for the player's final sync itself (not a fixed delay): the
+    // page disposes after the transition, then closes the session.
+    await pumpFor(tester, const Duration(milliseconds: 500));
+    await tester.runAsync(() => AudioPlayerController.lastClose);
     await scrollAndTap(tester, find.text('Single File Book'));
     // Still 45s in (Chapter One), not reset to 0 -> 00:00:15 left.
     await pumpUntil(tester, find.text('00:00:15'));
@@ -633,4 +636,46 @@ void main() {
     // A new book starts without a sleep timer.
     expect(find.text('Off'), findsOneWidget);
   });
+
+  testWidgets('ambient mode shows a dimmed player and keeps playing', (
+    tester,
+  ) async {
+    await logInAndOpenLibrary(tester);
+    await scrollAndTap(tester, find.text('Single File Book'));
+    await pumpUntil(tester, find.byIcon(Icons.play_arrow));
+    await tester.tap(find.byIcon(Icons.play_arrow));
+    await pumpUntil(tester, find.text('00:00:13'));
+
+    // The same message MainActivity sends when the watch dims.
+    await tester.runAsync(
+      () => simulateAmbientCall('onEnterAmbient', {'burnInProtection': true}),
+    );
+    await tester.pump();
+    // No buttons; minutes-only time left; title and chapter stay.
+    expect(find.byIcon(Icons.pause), findsNothing);
+    expect(find.text('00:00'), findsOneWidget);
+    expect(find.textContaining('Chapter One'), findsWidgets);
+    await tester.runAsync(() => simulateAmbientCall('onUpdateAmbient'));
+    await tester.pump();
+
+    // Audio keeps playing while dimmed.
+    await pumpFor(tester, const Duration(seconds: 3));
+    await tester.runAsync(() => simulateAmbientCall('onExitAmbient'));
+    await pumpUntil(tester, find.byIcon(Icons.pause));
+    await pumpUntil(tester, find.text('00:00:09'));
+    await tester.tap(find.byIcon(Icons.pause));
+    await pumpUntil(tester, find.byIcon(Icons.play_arrow));
+  });
+}
+
+/// Delivers an ambient-mode call as if it came from MainActivity.
+Future<void> simulateAmbientCall(String method, [Object? arguments]) async {
+  await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+      .handlePlatformMessage(
+        'ambient_mode',
+        const StandardMethodCodec().encodeMethodCall(
+          MethodCall(method, arguments),
+        ),
+        null,
+      );
 }
