@@ -217,6 +217,15 @@ void main() {
     // TextScroll, which repeats overflowing text, so match on a substring.
     await pumpUntil(tester, find.textContaining('Chapter One'));
     expect(find.textContaining('Single File Book'), findsWidgets);
+    // The pause icon shows optimistically; audio really plays only if the
+    // position moves (15s left at the seeded 45s).
+    await pumpUntil(tester, find.text('00:00:12'));
+
+    // Pausing saves progress right away, without waiting for the timer.
+    await tester.tap(find.byIcon(Icons.pause));
+    await pumpUntil(tester, find.byIcon(Icons.play_arrow));
+    await pumpFor(tester, const Duration(seconds: 2));
+    expect(await serverProgress('Single File Book'), greaterThan(47));
   });
 
   testWidgets('shows title and chapter before playback starts', (tester) async {
@@ -241,6 +250,18 @@ void main() {
 
     await tester.tap(find.byIcon(Icons.play_arrow));
     await pumpUntil(tester, find.byIcon(Icons.pause));
+  });
+
+  testWidgets('multi-file book plays across a file boundary', (tester) async {
+    await logInAndOpenLibrary(tester);
+    await scrollAndTap(tester, find.text('Multi File Book'));
+    await pumpUntil(tester, find.byIcon(Icons.play_arrow));
+    // Seeded at 34s in Part 1 (file 1 ends at 45s). Playing on must reach
+    // Part 2 in the second file by itself.
+    await pumpUntil(tester, find.textContaining('Part 1'));
+    await tester.tap(find.byIcon(Icons.play_arrow));
+    await pumpUntil(tester, find.textContaining('Part 2'));
+    expect(find.byIcon(Icons.pause), findsOneWidget);
   });
 
   testWidgets('downloads a multi-file book with progress', (tester) async {
