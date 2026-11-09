@@ -28,6 +28,15 @@ class MainActivity : AudioServiceActivity() {
     private var burnInProtection = false
 
     /**
+     * True while this activity's permission dialog is up, so a second
+     * download can't stack another request. Per activity, not in the
+     * companion: the result comes back to this activity (or the one that
+     * replaced it, which starts at false), and a stale true can't outlive
+     * it to block the next activity from asking.
+     */
+    private var askingNotifications = false
+
+    /**
      * Reports ambient (always-on, low power) mode to Dart, where
      * AmbientModeListener switches the UI to a dim, static variant.
      */
@@ -177,12 +186,12 @@ class MainActivity : AudioServiceActivity() {
     /**
      * On API 33+ the download notification (progress and Cancel) stays hidden
      * without POST_NOTIFICATIONS; the media notification is exempt, so the
-     * first download is when it starts to matter. Asked once per install and
-     * not awaited: the download goes ahead either way.
+     * first download is when it starts to matter. Asked until answered once
+     * per install, and not awaited: the download goes ahead either way.
      */
     private fun askForNotifications() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
-            isFinishing || isDestroyed ||
+            isFinishing || isDestroyed || askingNotifications ||
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) ==
             PackageManager.PERMISSION_GRANTED
         ) {
@@ -190,8 +199,32 @@ class MainActivity : AudioServiceActivity() {
         }
         val prefs = getSharedPreferences("permissions", MODE_PRIVATE)
         if (prefs.getBoolean(ASKED_NOTIFICATIONS, false)) return
-        prefs.edit().putBoolean(ASKED_NOTIFICATIONS, true).apply()
+        askingNotifications = true
         requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQUEST_NOTIFICATIONS)
+    }
+
+    /**
+     * Only an answer counts as asked, so a dialog closed without one (back,
+     * swipe, screen timeout) is shown again at the next download. Such a
+     * close reports a denial too (or nothing, if interrupted); a real "Don't
+     * allow" is the one denial after which the system offers a rationale.
+     * super passes results on to Flutter's plugins.
+     */
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray,
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != REQUEST_NOTIFICATIONS) return
+        askingNotifications = false
+        if (grantResults.isEmpty()) return
+        if (grantResults[0] == PackageManager.PERMISSION_GRANTED ||
+            shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)
+        ) {
+            getSharedPreferences("permissions", MODE_PRIVATE).edit()
+                .putBoolean(ASKED_NOTIFICATIONS, true).apply()
+        }
     }
 
     /**

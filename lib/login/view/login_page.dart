@@ -67,6 +67,7 @@ class LoginPageState extends State<LoginPage> {
 
   Future<void> _checkToken() async {
     try {
+      await _finishLogout();
       await _restoreSession();
     } on Object catch (e) {
       debugPrint('Could not restore session: $e');
@@ -220,6 +221,11 @@ class LoginPageState extends State<LoginPage> {
     return pick?['id'] as String?;
   }
 
+  /// Server and token of an explicit logout whose token isn't revoked yet.
+  /// Set before the saved token is removed, so a logout cut short (the app
+  /// killed meanwhile) is finished on the next start.
+  static const _pendingLogoutKey = 'pendingLogout';
+
   /// Forgets the session. With [deleteDownloads] (an explicit logout) the
   /// server is told to end the session (best effort; legacy API tokens may
   /// stay valid) and downloaded books are removed from the watch.
@@ -230,6 +236,9 @@ class LoginPageState extends State<LoginPage> {
     final user = usernameController.text;
     final prefs = await SharedPreferences.getInstance();
     passwordController.clear();
+    if (deleteDownloads && token.isNotEmpty) {
+      await prefs.setStringList(_pendingLogoutKey, [url, token]);
+    }
     await prefs.remove('token');
     await prefs.remove('defaultLibraryId');
     if (mounted) {
@@ -242,6 +251,10 @@ class LoginPageState extends State<LoginPage> {
     if (!deleteDownloads) return;
     try {
       await prefs.remove('pickedLibrary');
+      // First, so the push below can't hold it up: the login form already
+      // shows, and the next user mustn't find this account's books. The push
+      // reads only offline_progress (support directory), not the downloads.
+      await _deleteDownloadsAndCache();
       // Progress made offline may not have reached the server yet (e.g. the
       // library wasn't opened since): send it while the token still works.
       // Bounded, so logging out without a connection doesn't hang.
@@ -252,23 +265,60 @@ class LoginPageState extends State<LoginPage> {
           user,
         ).timeout(const Duration(seconds: 15), onTimeout: () {});
       }
-      unawaited(_revokeToken(url, token));
-      await JsonCache.clear();
+      unawaited(_revokeAndForget(prefs, url, token));
       // What still couldn't be sent stays for this user's next login rather
       // than being lost; other accounts never read it.
       await AudioPlayerController.clearAllLocalProgress(keepPending: true);
-      try {
-        final docs = await getApplicationDocumentsDirectory();
-        // The documents directory holds only per-book download folders.
-        for (final entry in docs.listSync()) {
-          if (entry is Directory) entry.deleteSync(recursive: true);
-        }
-      } on Object catch (e) {
-        debugPrint('Could not delete downloads: $e');
-      }
     } finally {
       if (mounted) setState(() => _loggingOut = false);
     }
+  }
+
+  static Future<void> _deleteDownloadsAndCache() async {
+    try {
+      final docs = await getApplicationDocumentsDirectory();
+      // The documents directory holds only per-book download folders.
+      for (final entry in docs.listSync()) {
+        if (entry is Directory) entry.deleteSync(recursive: true);
+      }
+    } on Object catch (e) {
+      debugPrint('Could not delete downloads: $e');
+    }
+    await JsonCache.clear();
+  }
+
+  /// Revokes [token], then drops its pending logout (unless a newer logout
+  /// replaced it meanwhile).
+  Future<void> _revokeAndForget(
+    SharedPreferences prefs,
+    String url,
+    String token,
+  ) async {
+    await _revokeToken(url, token);
+    final pending = prefs.getStringList(_pendingLogoutKey);
+    if (pending != null && pending.last == token) {
+      await prefs.remove(_pendingLogoutKey);
+    }
+  }
+
+  /// Finishes an explicit logout the app was killed during. The local
+  /// cleanup is redone unless someone logged in since (it had finished by
+  /// then: login waits for it). Unsent progress stays for that user's next
+  /// login, as after a finished logout.
+  Future<void> _finishLogout() async {
+    final prefs = await SharedPreferences.getInstance();
+    final pending = prefs.getStringList(_pendingLogoutKey);
+    if (pending == null) return;
+    if (pending.length != 2) {
+      await prefs.remove(_pendingLogoutKey);
+      return;
+    }
+    if ((prefs.getString('token') ?? '').isEmpty) {
+      await prefs.remove('pickedLibrary');
+      await _deleteDownloadsAndCache();
+      await AudioPlayerController.clearAllLocalProgress(keepPending: true);
+    }
+    unawaited(_revokeAndForget(prefs, pending.first, pending.last));
   }
 
   Future<void> _revokeToken(String url, String token) async {

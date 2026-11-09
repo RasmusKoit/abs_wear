@@ -175,6 +175,39 @@ void main() {
       await c.close();
     });
 
+    test('listening during the restart goes to the next sync', () async {
+      final play = Completer<http.Response>();
+      routes['POST /api/items/li_1/play'] = () => play.future;
+      routes['POST /api/session/s2/sync'] = () async => ok();
+      final c = controller()..listenClock.start();
+
+      final sync = c.syncOpenSession(position: 42);
+      // Still listening while the restart waits for the server.
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      final restarted = c.listenClock.elapsed.inMicroseconds / 1e6;
+      play.complete(ok({'id': 's2'}));
+      await sync;
+      c.listenClock.stop();
+      await c.syncOpenSession(position: 43);
+
+      double listened(int i) =>
+          (jsonDecode(bodies[i]) as Map<String, dynamic>)['timeListened']
+              as double;
+      // The resend repeats the first body; the time since is in the next.
+      expect(bodies[2], bodies[0]);
+      expect(restarted - listened(0), greaterThan(0.05));
+      expect(
+        listened(3),
+        greaterThanOrEqualTo(restarted - listened(0) - 0.001),
+      );
+      // Each body counts whole milliseconds: allow 1 ms each.
+      expect(
+        listened(0) + listened(3),
+        closeTo(c.listenClock.elapsed.inMicroseconds / 1e6, 0.002),
+      );
+      await c.close();
+    });
+
     test('an episode session is started for the episode', () async {
       routes['POST /api/items/li_1/play/ep_1'] = () async => ok({'id': 's2'});
       routes['POST /api/session/s2/sync'] = () async => ok();
