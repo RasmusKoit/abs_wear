@@ -3,14 +3,16 @@ name: Build Flutter APK's and App bundle
 on:
   workflow_dispatch:
     inputs:
+      # Empty: the version in pubspec.yaml (e.g. 1.1.0+20). Play needs a
+      # build number above the last upload.
       build_name:
-        description: 'Build Name'
-        required: true
-        default: '1.0.0'
+        description: 'Build name (X.Y.Z); empty = from pubspec.yaml'
+        required: false
+        default: ''
       build_number:
-        description: 'Build Number'
-        required: true
-        default: '1'
+        description: 'Build number; empty = from pubspec.yaml'
+        required: false
+        default: ''
 
 jobs:
   build:
@@ -24,12 +26,18 @@ jobs:
       BUILD_NUMBER: ${{ inputs.build_number }}
 
     steps:
-      - name: Validate inputs
+      - uses: actions/checkout@v7
+
+      - name: Resolve and validate the version
         run: |
+          version=$(sed -n 's/^version:[[:space:]]*//p' pubspec.yaml)
+          [ -n "$BUILD_NAME" ] || BUILD_NAME=${version%%+*}
+          [ -n "$BUILD_NUMBER" ] || BUILD_NUMBER=${version#*+}
           [[ "$BUILD_NAME" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "build_name must be X.Y.Z"; exit 1; }
           [[ "$BUILD_NUMBER" =~ ^[0-9]+$ ]] || { echo "build_number must be an integer"; exit 1; }
-
-      - uses: actions/checkout@v7
+          echo "Building $BUILD_NAME+$BUILD_NUMBER"
+          echo "BUILD_NAME=$BUILD_NAME" >> "$GITHUB_ENV"
+          echo "BUILD_NUMBER=$BUILD_NUMBER" >> "$GITHUB_ENV"
 
       - uses: subosito/flutter-action@v2
         with:
@@ -76,7 +84,7 @@ jobs:
       - name: Upload build artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: abs-wear-${{ inputs.build_name }}+${{ inputs.build_number }}
+          name: abs-wear-${{ env.BUILD_NAME }}+${{ env.BUILD_NUMBER }}
           path: |
             build/app/outputs/flutter-apk/*.apk
             build/app/outputs/bundle/productionRelease/*.aab
@@ -84,6 +92,6 @@ jobs:
       - name: Create release
         uses: ncipollo/release-action@v1
         with:
-          tag: v${{ inputs.build_name }}+${{ inputs.build_number }}
+          tag: v${{ env.BUILD_NAME }}+${{ env.BUILD_NUMBER }}
           commit: ${{ github.sha }}
           artifacts: "build/app/outputs/flutter-apk/*.apk,build/app/outputs/bundle/productionRelease/*.aab"

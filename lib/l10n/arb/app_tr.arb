@@ -56,7 +56,7 @@
     "sleepTimerOff": "Kapalı",
     "downloads": "İndirilenler",
     "noDownloads": "İndirilen bir şey yok.",
-    "finished": "Dinlendi",
+    "finished": "Tamamlandı",
     "playbackError": "Oynatma hatası. Yeniden denemek için Oynat'a dokunun.",
     "audioPlaybackChannel": "Ses oynatma",
     "hoursCount": "{count, plural, other{{count} saat}}",
