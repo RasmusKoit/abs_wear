@@ -100,6 +100,8 @@ class _BrowsePageState extends State<BrowsePage> {
   /// matches, paging continues after the saved books; if the library
   /// changed, the list starts over from the server.
   Future<void> _checkFirstPage() async {
+    // Runs after the cache read, which may finish after the user left.
+    if (!mounted) return;
     final generation = ++_generation;
     setState(() {
       _loading = true;

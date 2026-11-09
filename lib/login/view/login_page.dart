@@ -30,6 +30,10 @@ class LoginPageState extends State<LoginPage> {
   String defaultLibraryId = '';
   bool _loggingIn = false;
 
+  /// True while an explicit logout is still sending progress and deleting
+  /// data, so a new login can't start under it.
+  bool _loggingOut = false;
+
   /// Bumped by every login and logout, so a slow session restore that
   /// started earlier can tell it is out of date.
   int _sessionEpoch = 0;
@@ -173,6 +177,9 @@ class LoginPageState extends State<LoginPage> {
         _token = token;
         defaultLibraryId = libraryId;
         serverUrlController.text = url;
+        // The field may still hold "alice "; the identity (local progress,
+        // caches) must be the trimmed name that was sent and saved.
+        usernameController.text = username;
       });
     } on TimeoutException {
       await _toast(l10n.serverTimeout);
@@ -220,6 +227,7 @@ class LoginPageState extends State<LoginPage> {
     _sessionEpoch++;
     final token = _token;
     final url = serverUrlController.text;
+    final user = usernameController.text;
     final prefs = await SharedPreferences.getInstance();
     passwordController.clear();
     await prefs.remove('token');
@@ -228,21 +236,38 @@ class LoginPageState extends State<LoginPage> {
       setState(() {
         _token = '';
         defaultLibraryId = '';
+        _loggingOut = deleteDownloads;
       });
     }
     if (!deleteDownloads) return;
-    await prefs.remove('pickedLibrary');
-    unawaited(_revokeToken(url, token));
-    await JsonCache.clear();
-    await AudioPlayerController.clearAllLocalProgress();
     try {
-      final docs = await getApplicationDocumentsDirectory();
-      // The documents directory holds only per-book download folders.
-      for (final entry in docs.listSync()) {
-        if (entry is Directory) entry.deleteSync(recursive: true);
+      await prefs.remove('pickedLibrary');
+      // Progress made offline may not have reached the server yet (e.g. the
+      // library wasn't opened since): send it while the token still works.
+      // Bounded, so logging out without a connection doesn't hang.
+      if (token.isNotEmpty) {
+        await AudioPlayerController.pushLocalProgress(
+          url,
+          token,
+          user,
+        ).timeout(const Duration(seconds: 15), onTimeout: () {});
       }
-    } on Object catch (e) {
-      debugPrint('Could not delete downloads: $e');
+      unawaited(_revokeToken(url, token));
+      await JsonCache.clear();
+      // What still couldn't be sent stays for this user's next login rather
+      // than being lost; other accounts never read it.
+      await AudioPlayerController.clearAllLocalProgress(keepPending: true);
+      try {
+        final docs = await getApplicationDocumentsDirectory();
+        // The documents directory holds only per-book download folders.
+        for (final entry in docs.listSync()) {
+          if (entry is Directory) entry.deleteSync(recursive: true);
+        }
+      } on Object catch (e) {
+        debugPrint('Could not delete downloads: $e');
+      }
+    } finally {
+      if (mounted) setState(() => _loggingOut = false);
     }
   }
 
@@ -431,7 +456,7 @@ class LoginPageState extends State<LoginPage> {
         ),
         const SizedBox(height: 8),
         ElevatedButton(
-          onPressed: _loggingIn
+          onPressed: _loggingIn || _loggingOut
               ? null
               : () {
                   final serverUrl = serverUrlController.text;
@@ -445,7 +470,7 @@ class LoginPageState extends State<LoginPage> {
                   }
                   unawaited(login(serverUrl, username, password));
                 },
-          child: _loggingIn
+          child: _loggingIn || _loggingOut
               ? const SizedBox.square(
                   dimension: 16,
                   child: CircularProgressIndicator(strokeWidth: 2),
