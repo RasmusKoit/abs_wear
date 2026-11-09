@@ -234,12 +234,6 @@ class AudioPlayerController extends ChangeNotifier {
   /// Listening time from offline play, added to the next successful sync.
   Duration _carriedListening = Duration.zero;
 
-  /// Set to the server's position from /play when pending offline
-  /// progress couldn't be checked against the server as the book opened.
-  /// Until the player moves from there, successful syncs leave the file
-  /// pending, so pushLocalProgress can settle it by timestamp later.
-  double? _uncheckedAt;
-
   /// What the local progress file holds, so unchanged progress isn't
   /// rewritten with a newer timestamp (it would then beat newer progress
   /// from another device).
@@ -486,7 +480,10 @@ class AudioPlayerController extends ChangeNotifier {
             !_streamTracks.any((t) => t.isHls) &&
             tracks.any((t) => !t.directPlayable) &&
             !await isDownloaded()) {
-          await _reopenStream(_pendingPosition);
+          // The old session closes at the server's own position: leaving
+          // meanwhile must not move it (that would make it look newer than
+          // pending offline progress). Loading still uses _pendingPosition.
+          await _reopenStream(_lastSyncedTime);
         }
         await _loadSources(initialTime: _pendingPosition);
         if (await isDownloaded()) {
@@ -752,25 +749,6 @@ class AudioPlayerController extends ChangeNotifier {
     }
   }
 
-  /// Zeroes the listening time kept in the local progress file, keeping
-  /// its position and timestamp, so it isn't reported twice.
-  Future<void> _clearPendingListening() async {
-    if (_savedListened == Duration.zero) return;
-    try {
-      final file = await _localProgressFile();
-      if (!file.existsSync()) return;
-      final json =
-          jsonDecode(await file.readAsString()) as Map<String, dynamic>;
-      await file.writeAsString(
-        jsonEncode({...json, 'listenedMs': 0}),
-        flush: true,
-      );
-      _savedListened = Duration.zero;
-    } on Object catch (e) {
-      debugPrint('Could not save local progress: $e');
-    }
-  }
-
   Future<void> _clearLocalProgress() async {
     _savedTime = null;
     _savedListened = Duration.zero;
@@ -791,30 +769,31 @@ class AudioPlayerController extends ChangeNotifier {
     _carriedListening = local.listened;
     if (!local.pending) return;
     var serverUpdated = 0;
-    var known = false;
-    try {
-      final response = await _client
-          .get(
-            Uri.parse('$serverUrl/api/me/progress/$_mediaPath'),
-            headers: _authHeaders,
-          )
-          .timeout(const Duration(seconds: 10));
-      if (response.statusCode == 200) {
-        final json = jsonDecode(response.body) as Map<String, dynamic>;
-        serverUpdated = (json['lastUpdate'] as num?)?.toInt() ?? 0;
+    // A slow Bluetooth proxy is the usual cause of a failed check: try
+    // once more with longer to wait.
+    for (final timeout in const [
+      Duration(seconds: 10),
+      Duration(seconds: 20),
+    ]) {
+      try {
+        final response = await _client
+            .get(
+              Uri.parse('$serverUrl/api/me/progress/$_mediaPath'),
+              headers: _authHeaders,
+            )
+            .timeout(timeout);
+        if (response.statusCode == 200) {
+          final json = jsonDecode(response.body) as Map<String, dynamic>;
+          serverUpdated = (json['lastUpdate'] as num?)?.toInt() ?? 0;
+          break;
+        }
+        if (response.statusCode == 404) break; // No server progress.
+      } on Object catch (e) {
+        debugPrint('Could not read server progress: $e');
       }
-      // 404: the server has no progress for the book.
-      known = response.statusCode == 200 || response.statusCode == 404;
-    } on Object catch (e) {
-      debugPrint('Could not read server progress: $e');
     }
-    if (!known) {
-      // A timeout or server error says nothing about newer progress from
-      // another device: keep the server's position from /play, and the
-      // local one pending for pushLocalProgress to compare later.
-      _uncheckedAt = _pendingPosition;
-      return;
-    }
+    // When the check can't be done at all, the offline position is used.
+    // Deliberately unchanged: which side wins then is a product decision.
     if (serverUpdated > local.updatedAt) return; // The next sync replaces it.
     _pendingPosition = local.time;
   }
@@ -1485,13 +1464,6 @@ class AudioPlayerController extends ChangeNotifier {
       // Keep the position on the watch until the server gets it (e.g. the
       // network dropped while listening to a downloaded book).
       await _savePendingProgress(current, listened);
-      // The file now holds this player's own, newer position.
-      _uncheckedAt = null;
-    } else if (current == _uncheckedAt) {
-      // Not replaced: this sync only repeats the server's position, and
-      // the offline one would be lost before pushLocalProgress compared
-      // the two. Only its listening time was reported now.
-      await _clearPendingListening();
     } else if (await isDownloaded()) {
       // Where offline play resumes next time.
       await _writeLocalProgress(current, Duration.zero, pending: false);
