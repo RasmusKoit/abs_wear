@@ -167,14 +167,15 @@ class LoginPageState extends State<LoginPage> {
       }
 
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('serverUrl', url);
-      await prefs.setString('username', username);
-      await prefs.setString('token', token);
-      // Some servers hand out the same token on every login: a leftover
-      // logout of it must not wipe this new session on the next start.
+      // Some servers hand out the same token on every login: drop a leftover
+      // logout of it before saving it, so a kill in between can't make the
+      // next start take this new session for that unfinished logout.
       if (prefs.getStringList(_pendingLogoutKey)?.last == token) {
         await prefs.remove(_pendingLogoutKey);
       }
+      await prefs.setString('serverUrl', url);
+      await prefs.setString('username', username);
+      await prefs.setString('token', token);
       await prefs.setString('defaultLibraryId', libraryId);
       // Don't keep the password in memory once it has done its job.
       passwordController.clear();
