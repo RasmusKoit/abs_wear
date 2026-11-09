@@ -16,3 +16,5 @@ services:
       - ./data/metadata:/metadata
       - ./data/audiobooks:/audiobooks:ro
       - ./data/podcasts:/podcasts:ro
+      # Screenshot library from generate_demo.sh (not used by E2E).
+      - ./data/demo:/demo:ro
