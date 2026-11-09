@@ -368,6 +368,11 @@ class AudioPlayerController extends ChangeNotifier {
   /// buffering or finished), for session stats.
   final Stopwatch _listenClock = Stopwatch();
   Duration _reportedListening = Duration.zero;
+
+  /// Tests run it in place of playing audio, which they can't do.
+  @visibleForTesting
+  Stopwatch get listenClock => _listenClock;
+
   StreamSubscription<PlayerState>? _stateSub;
   StreamSubscription<PlayerException>? _errorSub;
   bool _wasPlaying = false;
@@ -1429,14 +1434,17 @@ class AudioPlayerController extends ChangeNotifier {
     if (sessionId.isEmpty) {
       if (!isOffline) return;
       // No server session: keep progress on the watch until online.
-      _carriedListening += _listenClock.elapsed - _reportedListening;
-      _reportedListening = _listenClock.elapsed;
+      final now = _listenClock.elapsed;
+      _carriedListening += now - _reportedListening;
+      _reportedListening = now;
       _lastSyncedTime = current;
       await _savePendingProgress(current, _carriedListening);
       return;
     }
-    final listened =
-        _listenClock.elapsed - _reportedListening + _carriedListening;
+    // Read once: listening while the request is in flight (a 404 restart
+    // can take a minute) isn't in this body, so it goes to the next sync.
+    final sentAt = _listenClock.elapsed;
+    final listened = sentAt - _reportedListening + _carriedListening;
     var synced = false;
     final body = jsonEncode({
       'currentTime': current,
@@ -1472,7 +1480,7 @@ class AudioPlayerController extends ChangeNotifier {
       if (response.statusCode == 200) {
         synced = true;
         _lastSyncedTime = current;
-        _reportedListening = _listenClock.elapsed;
+        _reportedListening = sentAt;
         _carriedListening = Duration.zero;
       }
     } on Object catch (e) {
