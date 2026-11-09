@@ -76,9 +76,6 @@ class DownloadService : Service() {
 
     private var wakeLock: PowerManager.WakeLock? = null
 
-    /** True once this instance shows the download notification. */
-    private var foreground = false
-
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
@@ -96,9 +93,11 @@ class DownloadService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_CANCEL) {
             onCancel?.invoke()
-            // A tap that raced the end of the download started a new,
-            // idle instance: don't let it hold the wake lock.
-            if (!foreground) stopSelf(startId)
+            // Torn down here too, so Cancel works when no Dart download is
+            // left to do it. Dart's own stop afterwards is a no-op.
+            DownloadNetwork.release(this)
+            // Not stopSelf(): a newer download's start may be queued.
+            stopSelf(startId)
             return START_NOT_STICKY
         }
         intent?.getStringExtra(EXTRA_TITLE)?.let { title = it }
@@ -116,7 +115,6 @@ class DownloadService : Service() {
                 buildNotification(),
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
             )
-            foreground = true
         } catch (e: RuntimeException) {
             Log.w(TAG, "Could not enter the foreground", e)
             stopSelf()
@@ -239,7 +237,11 @@ object DownloadNetwork {
             manager.requestNetwork(request, cb)
             callback = cb
             main.postDelayed({
-                if (!answered) timedOut = true
+                if (!answered) {
+                    timedOut = true
+                    // Unused from now on: stop keeping Wi-Fi up and scanning.
+                    dropRequest(manager, cb)
+                }
                 answer(false)
             }, WAIT_MS)
         } catch (e: RuntimeException) {
@@ -250,14 +252,28 @@ object DownloadNetwork {
 
     /**
      * Routes over the default network again, for a server that the watch's
-     * Wi-Fi can't reach. Wi-Fi stays requested until [release].
+     * Wi-Fi can't reach, and drops the Wi-Fi request.
      */
     fun useDefaultNetwork(context: Context) {
         useDefault = true
-        if (bound == null) return
-        context.applicationContext.getSystemService(ConnectivityManager::class.java)
-            ?.bindProcessToNetwork(null)
-        bound = null
+        val manager = context.applicationContext
+            .getSystemService(ConnectivityManager::class.java) ?: return
+        if (bound != null) {
+            manager.bindProcessToNetwork(null)
+            bound = null
+        }
+        callback?.let { dropRequest(manager, it) }
+    }
+
+    /** Unregisters [cb] if it is still the current request (not a newer one). */
+    private fun dropRequest(manager: ConnectivityManager, cb: ConnectivityManager.NetworkCallback) {
+        if (callback !== cb) return
+        callback = null
+        try {
+            manager.unregisterNetworkCallback(cb)
+        } catch (e: IllegalArgumentException) {
+            Log.w(TAG, "Network callback was not registered", e)
+        }
     }
 
     fun release(context: Context) {
