@@ -1389,6 +1389,11 @@ class AudioPlayerController extends ChangeNotifier {
   int _failedSyncs = 0;
   DateTime? _retryAt;
 
+  /// When a paused player may sync again; null when not backing off. Read
+  /// by tests: the backoff runs on the wall clock, which they can't advance.
+  @visibleForTesting
+  DateTime? get retryAt => _retryAt;
+
   /// Periodic sync: skipped while paused with nothing new to report, or
   /// while paused and backing off after failed syncs.
   Future<void> periodicSync() {
