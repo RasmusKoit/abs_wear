@@ -567,6 +567,107 @@ void main() {
       await http.runWithClient(c.close, () => client);
     });
 
+    group('when the check fails at open', () {
+      late List<http.Response> answers;
+
+      /// Opens the book with every progress check failing until [answers]
+      /// has some.
+      Future<AudioPlayerController> open() async {
+        writePending();
+        routes['POST /api/items/li_1/play'] = () async => ok(mp3Session);
+        answers = [];
+        routes['GET /api/me/progress/li_1'] = () async =>
+            answers.isEmpty ? http.Response('', 504) : answers.removeAt(0);
+        routes['POST /api/session/s1/sync'] = () async => ok();
+        routes['POST /api/session/s1/close'] = () async => ok();
+        final c = AudioPlayerController(client: client);
+        expect(
+          await c.setupPlayer('li_1', _server, 't', userName: 'u'),
+          isTrue,
+        );
+        return c;
+      }
+
+      Map<String, dynamic> lastBody(String request) =>
+          jsonDecode(bodies[requests.lastIndexOf(request)])
+              as Map<String, dynamic>;
+
+      test('resumes offline but sends nothing, closing at the server '
+          'position', () async {
+        final c = await open();
+        expect(c.bookPosition, 50, reason: 'where the watch was');
+        expect(requests, isNot(contains('POST /api/session/s1/sync')));
+
+        await http.runWithClient(c.close, () => client);
+        expect(lastBody('POST /api/session/s1/close'), {
+          'currentTime': 100,
+          'timeListened': 0,
+          'duration': 600,
+        });
+        // Still pending, unchanged: a later push compares the times.
+        expect(progress(), containsPair('pending', true));
+        expect(progress(), containsPair('updatedAt', updatedAt));
+        expect(progress(), containsPair('currentTime', 50));
+      });
+
+      test('a later answer with newer server progress moves there', () async {
+        final c = await open();
+        // Played elsewhere after the offline listening, further back.
+        answers.add(ok({'currentTime': 20, 'lastUpdate': updatedAt + 1000}));
+        await c.periodicSync();
+        expect(c.bookPosition, 20);
+        // Offline listening time is still reported.
+        expect(lastBody('POST /api/session/s1/sync'), {
+          'currentTime': 20,
+          'timeListened': 30,
+          'duration': 600,
+        });
+        await http.runWithClient(c.close, () => client);
+      });
+
+      test('a later answer with older server progress sends the offline '
+          'position', () async {
+        final c = await open();
+        answers.add(ok({'currentTime': 100, 'lastUpdate': updatedAt - 1000}));
+        await c.periodicSync();
+        expect(c.bookPosition, 50);
+        expect(
+          lastBody('POST /api/session/s1/sync'),
+          containsPair('currentTime', 50),
+        );
+        await http.runWithClient(c.close, () => client);
+      });
+
+      test('a seek on the watch makes its progress the latest', () async {
+        final c = await open();
+        await c.seekToBookTime(60);
+        final checks = requests
+            .where((r) => r == 'GET /api/me/progress/li_1')
+            .length;
+        // Newer server progress no longer matters: the seek is newer.
+        answers.add(ok({'currentTime': 20, 'lastUpdate': updatedAt + 1000}));
+        await c.periodicSync();
+        expect(
+          requests.where((r) => r == 'GET /api/me/progress/li_1').length,
+          checks,
+        );
+        expect(
+          lastBody('POST /api/session/s1/sync'),
+          containsPair('currentTime', 60),
+        );
+        expect(c.bookPosition, 60);
+        await http.runWithClient(c.close, () => client);
+      });
+
+      test('still no answer: keeps waiting', () async {
+        final c = await open();
+        await c.periodicSync();
+        expect(requests, isNot(contains('POST /api/session/s1/sync')));
+        expect(c.bookPosition, 50);
+        await http.runWithClient(c.close, () => client);
+      });
+    });
+
     test("a push doesn't send it when the check fails", () async {
       writePending();
       routes['PATCH /api/me/progress/li_1'] = () async => ok();
