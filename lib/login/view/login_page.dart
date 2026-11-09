@@ -167,6 +167,12 @@ class LoginPageState extends State<LoginPage> {
       }
 
       final prefs = await SharedPreferences.getInstance();
+      // Some servers hand out the same token on every login: drop a leftover
+      // logout of it before saving it, so a kill in between can't make the
+      // next start take this new session for that unfinished logout.
+      if (prefs.getStringList(_pendingLogoutKey)?.last == token) {
+        await prefs.remove(_pendingLogoutKey);
+      }
       await prefs.setString('serverUrl', url);
       await prefs.setString('username', username);
       await prefs.setString('token', token);
@@ -303,8 +309,9 @@ class LoginPageState extends State<LoginPage> {
 
   /// Finishes an explicit logout the app was killed during. The local
   /// cleanup is redone unless someone logged in since (it had finished by
-  /// then: login waits for it). Unsent progress stays for that user's next
-  /// login, as after a finished logout.
+  /// then: login waits for it). The token being logged out still saved
+  /// means the app died before removing it, not a newer login. Unsent
+  /// progress stays for that user's next login, as after a finished logout.
   Future<void> _finishLogout() async {
     final prefs = await SharedPreferences.getInstance();
     final pending = prefs.getStringList(_pendingLogoutKey);
@@ -313,7 +320,10 @@ class LoginPageState extends State<LoginPage> {
       await prefs.remove(_pendingLogoutKey);
       return;
     }
-    if ((prefs.getString('token') ?? '').isEmpty) {
+    final saved = prefs.getString('token') ?? '';
+    if (saved.isEmpty || saved == pending.last) {
+      await prefs.remove('token');
+      await prefs.remove('defaultLibraryId');
       await prefs.remove('pickedLibrary');
       await _deleteDownloadsAndCache();
       await AudioPlayerController.clearAllLocalProgress(keepPending: true);
