@@ -240,6 +240,33 @@ class AudioPlayerController extends ChangeNotifier {
   double? _savedTime;
   Duration _savedListened = Duration.zero;
 
+  /// Offline progress the book opened at although the server couldn't be
+  /// asked whether it has newer progress. The latest progress wins, so
+  /// until the server answers ([periodicSync] asks again) or the user plays
+  /// or seeks on the watch (which makes the watch's progress the latest),
+  /// nothing is sent: it could overwrite newer progress from another
+  /// device. The local file keeps it pending meanwhile.
+  ({double time, int updatedAt})? _unverified;
+  bool _verifying = false;
+
+  /// While [_verifyLocalProgress] moves the player to newer server progress.
+  bool _verifySeeking = false;
+
+  /// [_unverified], settled (null) once the player moved away from it
+  /// without the controller: a seek or skip from the media session
+  /// (notification, headset) is the user's too. Not during
+  /// [_verifySeeking], which moves it itself.
+  ({double time, int updatedAt})? get _unsettled => _unsettledAt(bookPosition);
+
+  /// [_unsettled] with the player at [position].
+  ({double time, int updatedAt})? _unsettledAt(double position) {
+    final local = _unverified;
+    if (local != null && !_verifySeeking && (position - local.time).abs() > 1) {
+      _unverified = null;
+    }
+    return _unverified;
+  }
+
   /// 0..1 while downloading, null otherwise.
   final ValueNotifier<double?> downloadProgress = ValueNotifier(null);
 
@@ -486,10 +513,11 @@ class AudioPlayerController extends ChangeNotifier {
             !_streamTracks.any((t) => t.isHls) &&
             tracks.any((t) => !t.directPlayable) &&
             !await isDownloaded()) {
-          // The old session closes at the server's own position: leaving
-          // meanwhile must not move it (that would make it look newer than
-          // pending offline progress). Loading still uses _pendingPosition.
-          await _reopenStream(_lastSyncedTime);
+          // The old session closes leaving the server's progress as it is:
+          // leaving meanwhile must not move it (that would make it look
+          // newer than pending offline progress). Loading still uses
+          // _pendingPosition.
+          await _reopenStream(null);
         }
         await _loadSources(initialTime: _pendingPosition);
         if (await isDownloaded()) {
@@ -501,7 +529,9 @@ class AudioPlayerController extends ChangeNotifier {
           }
         }
         // Send progress made offline right away.
-        if (_carriedListening > Duration.zero) unawaited(syncOpenSession());
+        if (_carriedListening > Duration.zero && _unsettled == null) {
+          unawaited(syncOpenSession());
+        }
       }
     } on Object catch (e) {
       // No network or timeout: a downloaded book still plays.
@@ -787,48 +817,111 @@ class AudioPlayerController extends ChangeNotifier {
     }
   }
 
-  /// Uses progress made offline unless the server has a newer position
-  /// (e.g. the book was played on the phone meanwhile).
+  /// Uses progress made offline unless the server has newer progress (e.g.
+  /// the book was played on the phone meanwhile): the latest wins, even
+  /// when it is further back in the book.
   Future<void> _resumeLocalProgress() async {
     final local = await _readLocalProgress();
     if (local == null) return;
     // Listening time from offline play is reported either way.
     _carriedListening = local.listened;
     if (!local.pending) return;
-    var serverUpdated = 0;
     // A slow Bluetooth proxy is the usual cause of a failed check: try
     // once more with longer to wait.
+    ({int lastUpdate, double? time})? server;
     for (final timeout in const [
       Duration(seconds: 10),
       Duration(seconds: 20),
     ]) {
-      try {
-        final response = await _client
-            .get(
-              Uri.parse('$serverUrl/api/me/progress/$_mediaPath'),
-              headers: _authHeaders,
-            )
-            .timeout(timeout);
-        if (response.statusCode == 200) {
-          final json = jsonDecode(response.body) as Map<String, dynamic>;
-          serverUpdated = (json['lastUpdate'] as num?)?.toInt() ?? 0;
-          break;
-        }
-        if (response.statusCode == 404) break; // No server progress.
-      } on Object catch (e) {
-        debugPrint('Could not read server progress: $e');
-      }
+      server = await _serverProgress(timeout);
+      if (server != null) break;
     }
-    // When the check can't be done at all, the offline position is used.
-    // Deliberately unchanged: which side wins then is a product decision.
-    if (serverUpdated > local.updatedAt) return; // The next sync replaces it.
+    if (server != null && server.lastUpdate > local.updatedAt) {
+      return; // Played elsewhere since: the session's position is newer.
+    }
+    if (server == null) {
+      // Unknown which is newer. The watch resumes where it was, but
+      // sends nothing until that is settled.
+      _unverified = (time: local.time, updatedAt: local.updatedAt);
+    }
     _pendingPosition = local.time;
+  }
+
+  /// The server's progress for this book: when it was last updated (0 when
+  /// there is none) and where. Null when the server didn't answer.
+  Future<({int lastUpdate, double? time})?> _serverProgress(
+    Duration timeout,
+  ) async {
+    try {
+      final response = await _client
+          .get(
+            Uri.parse('$serverUrl/api/me/progress/$_mediaPath'),
+            headers: _authHeaders,
+          )
+          .timeout(timeout);
+      if (response.statusCode == 404) return (lastUpdate: 0, time: null);
+      if (response.statusCode != 200) return null;
+      final json = jsonDecode(response.body) as Map<String, dynamic>;
+      return (
+        lastUpdate: (json['lastUpdate'] as num?)?.toInt() ?? 0,
+        time: (json['currentTime'] as num?)?.toDouble(),
+      );
+    } on Object catch (e) {
+      debugPrint('Could not read server progress: $e');
+      return null;
+    }
+  }
+
+  /// Asks the server again about [_unverified] offline progress. When the
+  /// server's progress is newer (and the user hasn't played or seeked on
+  /// the watch meanwhile), the player moves there.
+  Future<void> _verifyLocalProgress() async {
+    final local = _unsettled;
+    if (local == null || _verifying) return;
+    _verifying = true;
+    try {
+      final server = await _serverProgress(const Duration(seconds: 20));
+      if (server == null) {
+        // Asked again with the paused-sync backoff, not every minute.
+        _failedSyncs++;
+        _retryAt = DateTime.now().add(
+          Duration(minutes: min(30, 1 << min(_failedSyncs, 5))),
+        );
+        return;
+      }
+      _failedSyncs = 0;
+      _retryAt = null;
+      // Played or seeked on the watch meanwhile: its progress is the
+      // latest now and syncs as usual.
+      if (_unsettled != local || _closed) return;
+      final serverTime = server.time;
+      if (server.lastUpdate > local.updatedAt && serverTime != null) {
+        _lastSyncedTime = serverTime;
+        _verifySeeking = true;
+        try {
+          await _seek(serverTime);
+        } finally {
+          _verifySeeking = false;
+        }
+        if (_closed || _unverified != local) return;
+      }
+      _unverified = null;
+      // Report offline listening, and offline progress that won.
+      if (_carriedListening > Duration.zero ||
+          bookPosition != _lastSyncedTime) {
+        await syncOpenSession();
+      }
+    } finally {
+      _verifying = false;
+    }
   }
 
   void _onPlayerState(PlayerState state) {
     final audible =
         state.playing && state.processingState == ProcessingState.ready;
     audible ? _listenClock.start() : _listenClock.stop();
+    // Listening on the watch now: its progress is the latest.
+    if (state.playing) _unverified = null;
     if (_sleepChoice >= 0) {
       if (audible) {
         _sleepClock.start();
@@ -885,13 +978,16 @@ class AudioPlayerController extends ChangeNotifier {
     _notify();
   }
 
-  /// Closes a session that was started after the player was closed.
-  Future<void> _closeOrphanSession() =>
-      _closeSessionAt(sessionId, _lastSyncedTime);
+  /// Closes a session that was started after the player was closed,
+  /// leaving the server's progress as it is.
+  Future<void> _closeOrphanSession() => _closeSessionAt(sessionId, null);
 
   /// Closes session [id] at [position] without reporting listening time.
-  /// Uses its own client because the controller's may already be closed.
-  Future<void> _closeSessionAt(String id, double position) async {
+  /// Without a [position] the server's progress is left untouched (closing
+  /// at its own position could still change it: a finished book's session
+  /// starts at 0). Uses its own client because the controller's may
+  /// already be closed.
+  Future<void> _closeSessionAt(String id, double? position) async {
     if (id.isEmpty) return;
     final client = http.Client();
     try {
@@ -899,11 +995,15 @@ class AudioPlayerController extends ChangeNotifier {
           .post(
             Uri.parse('$serverUrl/api/session/$id/close'),
             headers: {..._authHeaders, 'Content-Type': 'application/json'},
-            body: jsonEncode({
-              'currentTime': position,
-              'timeListened': 0,
-              'duration': duration,
-            }),
+            body: jsonEncode(
+              position == null
+                  ? const <String, Object?>{}
+                  : {
+                      'currentTime': position,
+                      'timeListened': 0,
+                      'duration': duration,
+                    },
+            ),
           )
           .timeout(const Duration(seconds: 20));
     } on Object catch (e) {
@@ -1263,7 +1363,14 @@ class AudioPlayerController extends ChangeNotifier {
     }
   }
 
-  Future<void> seekToBookTime(double time) async {
+  /// A seek by the user: like playing, it makes the watch's progress the
+  /// latest.
+  Future<void> seekToBookTime(double time) {
+    _unverified = null;
+    return _seek(time);
+  }
+
+  Future<void> _seek(double time) async {
     final clamped = time.clamp(0, duration).toDouble();
     _pendingPosition = clamped;
     final seq = ++_seekSeq;
@@ -1345,6 +1452,9 @@ class AudioPlayerController extends ChangeNotifier {
 
   /// Pausing syncs progress through the player state listener.
   Future<void> togglePlayPause() async {
+    // A tap on the watch makes its progress the latest (a reload below
+    // may close the old session at the watch's position).
+    _unverified = null;
     // The audio is being swapped (download added or deleted) and the
     // stopped player shows Play: a tap means play once it is loaded.
     if (_reloading) {
@@ -1412,6 +1522,7 @@ class AudioPlayerController extends ChangeNotifier {
         return Future.value();
       }
     }
+    if (_unsettled != null) return _verifyLocalProgress();
     final idle =
         !player.playing &&
         bookPosition == _lastSyncedTime &&
@@ -1430,6 +1541,14 @@ class AudioPlayerController extends ChangeNotifier {
   }
 
   Future<void> _sync({required bool close, double? position}) async {
+    if (_unsettledAt(position ?? bookPosition) != null &&
+        sessionId.isNotEmpty) {
+      // Unknown whether the offline position is the latest: the server
+      // keeps its own, and the pending file keeps the watch's for
+      // pushLocalProgress (which compares them once it can).
+      if (close) await _closeSessionAt(sessionId, null);
+      return;
+    }
     final current = position ?? bookPosition;
     if (sessionId.isEmpty) {
       if (!isOffline) return;
@@ -1724,7 +1843,8 @@ class AudioPlayerController extends ChangeNotifier {
           !_streamTracks.any((t) => t.isHls) &&
           tracks.any((t) => !t.directPlayable) &&
           !await isDownloaded()) {
-        await _reopenStream(_pendingPosition);
+        // Unsettled offline progress: the old session keeps the server's.
+        await _reopenStream(_unsettled == null ? _pendingPosition : null);
       }
       // Seeks made meanwhile moved the pending position (the stopped
       // player reports it as its position): load there, not at pos.
@@ -1796,12 +1916,12 @@ class AudioPlayerController extends ChangeNotifier {
   /// HLS where needed. The old session is closed at [position] only once
   /// the new one started, so when that fails the old one, still open, is
   /// kept.
-  Future<void> _reopenStream(double position) {
+  Future<void> _reopenStream(double? position) {
     if (isOffline || _closed) return Future.value();
     return _replacingSession(() => _reopenStreamNow(position));
   }
 
-  Future<void> _reopenStreamNow(double position) async {
+  Future<void> _reopenStreamNow(double? position) async {
     if (_closed) return;
     try {
       final response = await _postPlay(directPlay: false);
