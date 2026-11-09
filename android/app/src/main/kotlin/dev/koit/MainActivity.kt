@@ -1,5 +1,6 @@
 package dev.koit.abs_wear
 
+import android.content.Context
 import android.os.Bundle
 import android.view.InputDevice
 import android.view.MotionEvent
@@ -78,6 +79,16 @@ class MainActivity : AudioServiceActivity() {
                         crownSink = null
                     }
                 })
+            // A download dies with its Dart isolate, and nothing else would
+            // stop the service, wake lock and Wi-Fi it holds.
+            flutterEngine.addEngineLifecycleListener(object : FlutterEngine.EngineLifecycleListener {
+                override fun onPreEngineRestart() = releaseDownload(context)
+
+                override fun onEngineWillDestroy() {
+                    releaseDownload(context)
+                    DownloadService.onCancel = null
+                }
+            })
         }
         // Plain system toasts; a new one replaces the one still showing.
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "toast")
@@ -129,8 +140,7 @@ class MainActivity : AudioServiceActivity() {
                     result.success(null)
                 }
                 "stop" -> {
-                    DownloadNetwork.release(context)
-                    DownloadService.stop(context)
+                    releaseDownload(context)
                     result.success(null)
                 }
                 else -> result.notImplemented()
@@ -162,6 +172,11 @@ class MainActivity : AudioServiceActivity() {
         private var crownEngine: WeakReference<FlutterEngine>? = null
         private var crownSink: EventChannel.EventSink? = null
         private var toast: Toast? = null
+
+        private fun releaseDownload(context: Context) {
+            DownloadNetwork.release(context)
+            DownloadService.stop(context)
+        }
     }
 
     /**
