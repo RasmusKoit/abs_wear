@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:abs_wear/library/data/json_cache.dart';
 import 'package:abs_wear/library/data/library_api.dart';
 import 'package:abs_wear/library/view/episodes_page.dart';
 import 'package:flutter/material.dart';
@@ -35,7 +36,10 @@ void main() {
     });
   });
 
-  tearDown(() => root.deleteSync(recursive: true));
+  tearDown(() async {
+    await JsonCache.idle;
+    root.deleteSync(recursive: true);
+  });
 
   http.Response ok(Object body) => http.Response(jsonEncode(body), 200);
 
@@ -210,6 +214,8 @@ void main() {
       await tester.settleRealZone(done: loaded);
       expect(titles(), ['Ep two', 'Ep one']);
       await tester.pumpWidget(const SizedBox());
+      // What it saved is on disk before the next visit reads it.
+      await tester.runAsync(() => JsonCache.idle);
 
       routes['GET $_itemPath'] = offline;
       requests.clear();
