@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:abs_wear/library/data/json_cache.dart';
 import 'package:abs_wear/library/view/library_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -34,7 +35,10 @@ void main() {
     });
   });
 
-  tearDown(() => root.deleteSync(recursive: true));
+  tearDown(() async {
+    await JsonCache.idle;
+    root.deleteSync(recursive: true);
+  });
 
   http.Response ok(Object body) => http.Response(jsonEncode(body), 200);
 
@@ -177,6 +181,8 @@ void main() {
       await tester.settleRealZone(done: shelfLoaded);
       expect(find.text('Dune'), findsOneWidget);
       await tester.pumpWidget(const SizedBox());
+      // What it saved is on disk before the next visit reads it.
+      await tester.runAsync(() => JsonCache.idle);
     }
 
     testWidgets('shows the saved list with the offline banner', (tester) async {

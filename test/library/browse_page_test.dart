@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:abs_wear/library/data/json_cache.dart';
 import 'package:abs_wear/library/view/browse_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -97,7 +98,10 @@ void main() {
       });
     });
 
-    tearDown(() => root.deleteSync(recursive: true));
+    tearDown(() async {
+      await JsonCache.idle;
+      root.deleteSync(recursive: true);
+    });
 
     const page = BrowsePage(
       serverUrl: 'http://abs.test',
@@ -149,6 +153,8 @@ void main() {
         await tester.settleRealZone(done: () => requests.isNotEmpty);
         await scrollToEnd(tester);
         await tester.pumpWidget(const SizedBox());
+        // What it saved is on disk before the revisit reads it.
+        await tester.runAsync(() => JsonCache.idle);
 
         // The first page is unchanged: the saved 45 books are kept and
         // nothing more is fetched.
@@ -168,6 +174,8 @@ void main() {
         await tester.settleRealZone(done: () => requests.isNotEmpty);
         await scrollToEnd(tester);
         await tester.pumpWidget(const SizedBox());
+        // What it saved is on disk before the revisit reads it.
+        await tester.runAsync(() => JsonCache.idle);
 
         // Books were removed since: the saved list is replaced.
         total = 3;
