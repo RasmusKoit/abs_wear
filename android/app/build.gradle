@@ -10,38 +10,38 @@ if (keystorePropertiesFile.exists()) {
 }
 
 android {
-    namespace "dev.koit.abs_wear"
-    compileSdk flutter.compileSdkVersion
-    ndkVersion flutter.ndkVersion
+    namespace = "dev.koit.abs_wear"
+    compileSdk = flutter.compileSdkVersion
+    ndkVersion = flutter.ndkVersion
 
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_17
-        targetCompatibility JavaVersion.VERSION_17
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
 
     defaultConfig {
-        applicationId "dev.koit.abs_wear"
+        applicationId = "dev.koit.abs_wear"
         // Wear OS 3+ (API 30). OnePlus Watch 2 on Wear OS 5 is API 34.
-        minSdk 30
-        targetSdk 35
-        versionCode flutter.versionCode
-        versionName flutter.versionName
+        minSdk = 30
+        targetSdk = 35
+        versionCode = flutter.versionCode
+        versionName = flutter.versionName
     }
 
     signingConfigs {
         if (System.getenv("ANDROID_KEYSTORE_PATH")) {
             release {
-                storeFile file(System.getenv("ANDROID_KEYSTORE_PATH"))
-                keyAlias System.getenv("ANDROID_KEYSTORE_ALIAS")
-                keyPassword System.getenv("ANDROID_KEYSTORE_PRIVATE_KEY_PASSWORD")
-                storePassword System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                storeFile = file(System.getenv("ANDROID_KEYSTORE_PATH"))
+                keyAlias = System.getenv("ANDROID_KEYSTORE_ALIAS")
+                keyPassword = System.getenv("ANDROID_KEYSTORE_PRIVATE_KEY_PASSWORD")
+                storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
             }
         } else {
             release {
-                keyAlias keystoreProperties['keyAlias']
-                keyPassword keystoreProperties['keyPassword']
-                storeFile keystoreProperties['storeFile'] ? file(keystoreProperties['storeFile']) : null
-                storePassword keystoreProperties['storePassword']
+                keyAlias = keystoreProperties['keyAlias']
+                keyPassword = keystoreProperties['keyPassword']
+                storeFile = keystoreProperties['storeFile'] ? file(keystoreProperties['storeFile']) : null
+                storePassword = keystoreProperties['storePassword']
             }
         }
     }
@@ -49,18 +49,18 @@ android {
     flavorDimensions "default"
     productFlavors { 
         production {
-            dimension "default"
-            applicationIdSuffix ""
+            dimension = "default"
+            applicationIdSuffix = ""
             manifestPlaceholders = [appName: "ABS Wear"]
         }
         staging {
-            dimension "default"
-            applicationIdSuffix ".stg"
+            dimension = "default"
+            applicationIdSuffix = ".stg"
             manifestPlaceholders = [appName: "[STG] ABS Wear"]
         }
         development {
-            dimension "default"
-            applicationIdSuffix ".dev"
+            dimension = "default"
+            applicationIdSuffix = ".dev"
             manifestPlaceholders = [appName: "[DEV] ABS Wear"]
         }
     }
@@ -71,12 +71,12 @@ android {
             // key.properties); otherwise fall back to debug signing so a fresh
             // clone can still build a release APK.
             def hasReleaseKey = System.getenv("ANDROID_KEYSTORE_PATH") || keystorePropertiesFile.exists()
-            signingConfig hasReleaseKey ? signingConfigs.release : signingConfigs.debug
-            minifyEnabled true
+            signingConfig = hasReleaseKey ? signingConfigs.release : signingConfigs.debug
+            minifyEnabled = true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt')
         }
         debug {
-            signingConfig signingConfigs.debug
+            signingConfig = signingConfigs.debug
         }
     }
 }
@@ -88,7 +88,7 @@ kotlin {
 }
 
 flutter {
-    source '../..'
+    source = '../..'
 }
 
 dependencies {
