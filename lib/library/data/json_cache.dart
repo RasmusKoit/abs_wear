@@ -35,6 +35,12 @@ class JsonCache {
   /// Writes to the same key run one after another.
   static final Map<String, Future<void>> _writes = {};
 
+  /// Completes once every write started so far has finished. Tests use it
+  /// before reading back what a page saved (a write can take a while on a
+  /// slow disk) and before deleting the directory under it.
+  @visibleForTesting
+  static Future<void> get idle => Future.wait(_writes.values.toList());
+
   static Future<void> write(String key, Object? value) async {
     final previous = _writes[key] ?? Future<void>.value();
     final done = Completer<void>();

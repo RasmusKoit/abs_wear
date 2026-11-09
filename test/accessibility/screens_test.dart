@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:abs_wear/ambient_mode/ambient_mode.dart';
 import 'package:abs_wear/app/view/app.dart';
+import 'package:abs_wear/library/data/json_cache.dart';
 import 'package:abs_wear/library/data/library_api.dart';
 import 'package:abs_wear/library/view/browse_page.dart';
 import 'package:abs_wear/library/view/downloads_page.dart';
@@ -51,7 +52,11 @@ void main() {
     });
   });
 
-  tearDown(() => root.deleteSync(recursive: true));
+  tearDown(() async {
+    // A page's cache write may still be running in that directory.
+    await JsonCache.idle;
+    root.deleteSync(recursive: true);
+  });
 
   http.Response ok(Object body) => http.Response(jsonEncode(body), 200);
 
