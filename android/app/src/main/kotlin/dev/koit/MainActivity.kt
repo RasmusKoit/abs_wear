@@ -1,6 +1,9 @@
 package dev.koit.abs_wear
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.view.InputDevice
 import android.view.MotionEvent
@@ -118,6 +121,7 @@ class MainActivity : AudioServiceActivity() {
                     else -> result.notImplemented()
                 }
             }
+        currentActivity = WeakReference(this)
         val downloads = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "download_keep_alive")
         DownloadService.onCancel = { downloads.invokeMethod("cancel", null) }
         downloads.setMethodCallHandler { call, result ->
@@ -129,6 +133,7 @@ class MainActivity : AudioServiceActivity() {
                         call.argument<String>("cancel") ?: "",
                         call.argument<String>("channel") ?: "",
                     )
+                    currentActivity?.get()?.askForNotifications()
                     DownloadNetwork.acquire(context) { onWifi -> result.success(onWifi) }
                 }
                 "progress" -> {
@@ -146,6 +151,26 @@ class MainActivity : AudioServiceActivity() {
                 else -> result.notImplemented()
             }
         }
+    }
+
+    /**
+     * On API 33+ the download notification (progress and Cancel) stays hidden
+     * without POST_NOTIFICATIONS; the media notification is exempt, so the
+     * first download is when it starts to matter. Asked once per install and
+     * not awaited: the download goes ahead either way.
+     */
+    private fun askForNotifications() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            isFinishing || isDestroyed ||
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            return
+        }
+        val prefs = getSharedPreferences("permissions", MODE_PRIVATE)
+        if (prefs.getBoolean(ASKED_NOTIFICATIONS, false)) return
+        prefs.edit().putBoolean(ASKED_NOTIFICATIONS, true).apply()
+        requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQUEST_NOTIFICATIONS)
     }
 
     /**
@@ -169,6 +194,9 @@ class MainActivity : AudioServiceActivity() {
      * the activity so they never hold a destroyed one.
      */
     companion object {
+        private const val REQUEST_NOTIFICATIONS = 1
+        private const val ASKED_NOTIFICATIONS = "asked_notifications"
+        private var currentActivity: WeakReference<MainActivity>? = null
         private var crownEngine: WeakReference<FlutterEngine>? = null
         private var crownSink: EventChannel.EventSink? = null
         private var toast: Toast? = null

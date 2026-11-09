@@ -13,6 +13,15 @@ URL=${E2E_ABS_URL:-${ABS_E2E_URL:-}}
 DEVICE=${1:-$(adb devices | awk 'NR>1 && $2=="device" {print $1; exit}')}
 [ -n "$DEVICE" ] || { echo "No device connected (start an emulator or adb connect the watch)"; exit 1; }
 echo "Device: $DEVICE   Server: $URL"
+# The first download asks for POST_NOTIFICATIONS (API 33+), and the dialog
+# would stall the download tests. flutter test installs the app fresh, so
+# grant it as soon as the package shows up.
+PERM=android.permission.POST_NOTIFICATIONS
+(until adb -s "$DEVICE" shell pm grant dev.koit.abs_wear.dev $PERM >/dev/null 2>&1; do
+  sleep 1
+done) &
+GRANT=$!
+trap 'kill $GRANT 2>/dev/null || true' EXIT
 "${FLUTTER:-flutter}" test integration_test \
   -d "$DEVICE" \
   --flavor development \
