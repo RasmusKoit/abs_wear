@@ -355,9 +355,12 @@ class _LibraryPageState extends State<LibraryPage> {
                 child: ListTile(
                   title: Text(l10n.refresh, style: theme.textTheme.bodySmall),
                   trailing: _loading
-                      ? const SizedBox.square(
+                      ? SizedBox.square(
                           dimension: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            semanticsLabel: l10n.loading,
+                          ),
                         )
                       : const Icon(Icons.refresh),
                   onTap: () => unawaited(_refresh()),
@@ -386,9 +389,9 @@ class _LibraryPageState extends State<LibraryPage> {
         if (_error != null)
           message(errorMessage(l10n, _error))
         else
-          const Padding(
-            padding: EdgeInsets.all(16),
-            child: CircularProgressIndicator(),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: CircularProgressIndicator(semanticsLabel: l10n.loading),
           ),
       ];
     }
@@ -428,9 +431,13 @@ class _BookCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return InkWell(
-      onTap: onTap,
-      child: Card(
+    // The ink inside the card: the card is its own semantics node, so an
+    // InkWell around it was a tap target without a label, and the title
+    // and author were read as separate, untappable items.
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
         child: Padding(
           padding: const EdgeInsets.all(8),
           child: Column(

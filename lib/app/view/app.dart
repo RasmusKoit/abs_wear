@@ -3,6 +3,41 @@ import 'package:abs_wear/l10n/l10n.dart';
 import 'package:abs_wear/login/login.dart';
 import 'package:flutter/material.dart';
 
+/// The app's theme; [ambient] is the dimmed always-on variant.
+ThemeData appTheme({bool ambient = false}) => ThemeData(
+  useMaterial3: true,
+  // Standard density: compact shrank every tap target to 40 dp,
+  // too small to hit reliably on a watch.
+  visualDensity: VisualDensity.standard,
+  // Ambient (always-on) mode: black background and dimmed, colorless
+  // content, so few pixels are lit (battery and burn-in).
+  colorScheme: ambient
+      ? const ColorScheme.dark(
+          primary: Colors.white60,
+          secondary: Colors.white54,
+          error: Colors.white54,
+          surface: Colors.black,
+          onSurface: Colors.white60,
+        )
+      : const ColorScheme.dark(primary: Color(0xFF00B5FF)),
+);
+
+/// The largest text scale the layouts are made for; larger system font
+/// sizes are clamped to it.
+const double maxTextScale = 1.3;
+
+/// [context]'s media query with the text scale clamped to what the round
+/// layouts fit.
+MediaQueryData clampedMediaQuery(BuildContext context) {
+  final data = MediaQuery.of(context);
+  return data.copyWith(
+    textScaler: data.textScaler.clamp(
+      minScaleFactor: 0.8,
+      maxScaleFactor: maxTextScale,
+    ),
+  );
+}
+
 class App extends StatelessWidget {
   const App({super.key});
 
@@ -12,24 +47,7 @@ class App extends StatelessWidget {
       child: const LoginPage(),
       builder: (context, isAmbientModeActive, child) {
         return MaterialApp(
-          theme: ThemeData(
-            useMaterial3: true,
-            // Standard density: compact shrank every tap target to 40 dp,
-            // too small to hit reliably on a watch.
-            visualDensity: VisualDensity.standard,
-            // When in ambient mode, change the apps color scheme
-            // Ambient (always-on) mode: black background and dimmed, colorless
-            // content, so few pixels are lit (battery and burn-in).
-            colorScheme: isAmbientModeActive
-                ? const ColorScheme.dark(
-                    primary: Colors.white60,
-                    secondary: Colors.white54,
-                    error: Colors.white54,
-                    surface: Colors.black,
-                    onSurface: Colors.white60,
-                  )
-                : const ColorScheme.dark(primary: Color(0xFF00B5FF)),
-          ),
+          theme: appTheme(ambient: isAmbientModeActive),
           debugShowCheckedModeBanner: false,
           // Switch to and from the ambient theme instantly: a theme lerp
           // would draw frames just as the display goes low-power.
@@ -37,18 +55,11 @@ class App extends StatelessWidget {
           localizationsDelegates: AppLocalizations.localizationsDelegates,
           supportedLocales: AppLocalizations.supportedLocales,
           home: child,
-          builder: (context, child) {
-            final mediaQueryData = MediaQuery.of(context);
-            final textScaler = mediaQueryData.textScaler.clamp(
-              minScaleFactor: 0.8,
-              maxScaleFactor: 1.3,
-            );
-            return MediaQuery(
-              data: MediaQuery.of(context).copyWith(textScaler: textScaler),
-              // No animations (spinners, transitions) while ambient.
-              child: TickerMode(enabled: !isAmbientModeActive, child: child!),
-            );
-          },
+          builder: (context, child) => MediaQuery(
+            data: clampedMediaQuery(context),
+            // No animations (spinners, transitions) while ambient.
+            child: TickerMode(enabled: !isAmbientModeActive, child: child!),
+          ),
         );
       },
     );

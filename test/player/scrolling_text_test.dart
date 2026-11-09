@@ -130,4 +130,25 @@ void main() {
     expect(find.text(long), findsOneWidget);
     expect(doubled(long), findsNothing);
   });
+
+  testWidgets('screen readers read the text once, with no tap action', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    await tester.pumpWidget(app(long));
+    await tester.pump();
+    // The tap only replays the scroll: no action, and no 16 dp tap target.
+    expect(
+      tester.getSemantics(find.text(long)),
+      isSemantics(label: long, textDirection: TextDirection.ltr),
+    );
+    await tester.pump(const Duration(milliseconds: 1600));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(doubled(long), findsOneWidget);
+    // While scrolling the text is drawn twice, but read once.
+    expect(find.bySemanticsLabel(long), findsOneWidget);
+    expect(find.bySemanticsLabel(RegExp(' ')), findsNothing);
+    await tester.pumpAndSettle();
+    semantics.dispose();
+  });
 }

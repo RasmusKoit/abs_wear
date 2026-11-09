@@ -58,5 +58,10 @@
     "noDownloads": "Midagi pole alla laaditud.",
     "finished": "Kuulatud",
     "playbackError": "Taasesituse viga. Puuduta esitusnuppu, et uuesti proovida.",
-    "audioPlaybackChannel": "Heli taasesitus"
+    "audioPlaybackChannel": "Heli taasesitus",
+    "hoursCount": "{count, plural, =1{1 tund} other{{count} tundi}}",
+    "minutesCount": "{count, plural, =1{1 minut} other{{count} minutit}}",
+    "secondsCount": "{count, plural, =1{1 sekund} other{{count} sekundit}}",
+    "loading": "Laadimine",
+    "volumeLevel": "Helitugevus {percent}%"
 }

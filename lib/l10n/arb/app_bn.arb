@@ -58,5 +58,10 @@
     "noDownloads": "কিছু ডাউনলোড করা নেই।",
     "finished": "শোনা শেষ",
     "playbackError": "প্লেব্যাকে সমস্যা। আবার চেষ্টা করতে চালান ট্যাপ করুন।",
-    "audioPlaybackChannel": "অডিও প্লেব্যাক"
+    "audioPlaybackChannel": "অডিও প্লেব্যাক",
+    "hoursCount": "{count, plural, other{{count} ঘণ্টা}}",
+    "minutesCount": "{count, plural, other{{count} মিনিট}}",
+    "secondsCount": "{count, plural, other{{count} সেকেন্ড}}",
+    "loading": "লোড হচ্ছে",
+    "volumeLevel": "ভলিউম {percent}%"
 }
