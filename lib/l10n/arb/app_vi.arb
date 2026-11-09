@@ -56,5 +56,7 @@
     "sleepTimerOff": "Tắt",
     "downloads": "Đã tải xuống",
     "noDownloads": "Chưa tải xuống gì.",
-    "finished": "Đã nghe xong"
+    "finished": "Đã nghe xong",
+    "playbackError": "Lỗi phát. Chạm Phát để thử lại.",
+    "audioPlaybackChannel": "Phát âm thanh"
 }

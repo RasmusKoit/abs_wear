@@ -56,5 +56,7 @@
     "sleepTimerOff": "بند",
     "downloads": "ڈاؤن لوڈز",
     "noDownloads": "کچھ ڈاؤن لوڈ نہیں ہوا۔",
-    "finished": "مکمل سنا"
+    "finished": "مکمل سنا",
+    "playbackError": "پلے بیک میں خرابی۔ دوبارہ کوشش کے لیے چلائیں ٹیپ کریں۔",
+    "audioPlaybackChannel": "آڈیو پلے بیک"
 }

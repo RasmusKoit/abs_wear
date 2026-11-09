@@ -56,5 +56,7 @@
     "sleepTimerOff": "बंद",
     "downloads": "डाउनलोड",
     "noDownloads": "कुछ भी डाउनलोड नहीं है।",
-    "finished": "पूरा सुना"
+    "finished": "पूरा सुना",
+    "playbackError": "प्लेबैक में त्रुटि। फिर से कोशिश के लिए चलाएं टैप करें।",
+    "audioPlaybackChannel": "ऑडियो प्लेबैक"
 }

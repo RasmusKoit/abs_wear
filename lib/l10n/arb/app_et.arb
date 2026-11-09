@@ -56,5 +56,7 @@
     "sleepTimerOff": "Väljas",
     "downloads": "Allalaadimised",
     "noDownloads": "Midagi pole alla laaditud.",
-    "finished": "Kuulatud"
+    "finished": "Kuulatud",
+    "playbackError": "Taasesituse viga. Puuduta esitusnuppu, et uuesti proovida.",
+    "audioPlaybackChannel": "Heli taasesitus"
 }

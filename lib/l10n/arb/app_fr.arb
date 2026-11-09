@@ -56,5 +56,7 @@
     "sleepTimerOff": "Désactivé",
     "downloads": "Téléchargements",
     "noDownloads": "Aucun téléchargement.",
-    "finished": "Terminé"
+    "finished": "Terminé",
+    "playbackError": "Erreur de lecture. Touchez Lecture pour réessayer.",
+    "audioPlaybackChannel": "Lecture audio"
 }

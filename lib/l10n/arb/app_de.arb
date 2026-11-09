@@ -56,5 +56,7 @@
     "sleepTimerOff": "Aus",
     "downloads": "Downloads",
     "noDownloads": "Keine Downloads.",
-    "finished": "Gehört"
+    "finished": "Gehört",
+    "playbackError": "Wiedergabefehler. Zum Wiederholen auf Abspielen tippen.",
+    "audioPlaybackChannel": "Audiowiedergabe"
 }

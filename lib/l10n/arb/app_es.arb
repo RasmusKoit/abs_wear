@@ -1,59 +1,17 @@
 {
     "@@locale": "es",
-    "serverUrlLabel": "Server URL",
-    "@serverUrlLabel": {
-        "description": "Label for the server URL input field"
-    },
-    "usernameLabel": "Username",
-    "@usernameLabel": {
-        "description": "Username for the input field"
-    },
-    "passwordLabel": "Password",
-    "@passwordLabel": {
-        "description": "Password for the input field"
-    },
-    "hello": "Hello {username}",
-    "@hello": {
-        "description": "Hello text with parameter: username",
-        "placeholders": {
-            "username": {
-                "type": "String",
-                "example": "Bob"
-            }
-        }
-    },
-    "library": "Library",
-    "@library": {
-        "description": "Text for Library"
-    },
-    "logout": "Logout",
-    "@logout": {
-        "description": "Text for logout"
-    },
-    "login": "Login",
-    "@login": {
-        "description": "Text for login"
-    },
-    "continueListening": "Continue Listening",
-    "@continueListening": {
-        "description": "Text for Continue Listening"
-    },
-    "refresh": "Refresh",
-    "@refresh": {
-        "description": "Text for refresh"
-    },
-    "errorLoadingData": "Error loading data",
-    "@errorLoadingData": {
-        "description": "Error loading data"
-    },
-    "controls": "Controls",
-    "@controls": {
-        "description": "Text for controls"
-    },
-    "localListening": "Local Listening",
-    "@localListening": {
-        "description": "Text for local listening"
-    },
+    "serverUrlLabel": "URL del servidor",
+    "usernameLabel": "Usuario",
+    "passwordLabel": "Contraseña",
+    "hello": "Hola, {username}",
+    "library": "Biblioteca",
+    "logout": "Cerrar sesión",
+    "login": "Iniciar sesión",
+    "continueListening": "Seguir escuchando",
+    "refresh": "Actualizar",
+    "errorLoadingData": "Error al cargar los datos",
+    "controls": "Controles",
+    "localListening": "Escucha sin conexión",
     "invalidUrl": "Introduce una URL completa, p. ej. https://abs.example.com",
     "wrongCredentials": "Usuario o contraseña incorrectos.",
     "serverError": "Error del servidor (HTTP {code}). Revisa la URL.",
@@ -98,5 +56,7 @@
     "sleepTimerOff": "Desactivado",
     "downloads": "Descargas",
     "noDownloads": "No hay descargas.",
-    "finished": "Terminado"
+    "finished": "Terminado",
+    "playbackError": "Error de reproducción. Toca reproducir para reintentar.",
+    "audioPlaybackChannel": "Reproducción de audio"
 }

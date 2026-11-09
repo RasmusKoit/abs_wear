@@ -6,11 +6,11 @@
     },
     "usernameLabel": "Username",
     "@usernameLabel": {
-        "description": "Username for the input field"
+        "description": "Label for the username input field"
     },
     "passwordLabel": "Password",
     "@passwordLabel": {
-        "description": "Password for the input field"
+        "description": "Label for the password input field"
     },
     "hello": "Hello {username}",
     "@hello": {
@@ -24,35 +24,35 @@
     },
     "library": "Library",
     "@library": {
-        "description": "Text for Library"
+        "description": "Button that opens the library; library page title until its name loads"
     },
     "login": "Login",
     "@login": {
-        "description": "Text for login"
+        "description": "Login button"
     },
     "logout": "Logout",
     "@logout": {
-        "description": "Text for logout"
+        "description": "Logout button and its confirm action"
     },
     "continueListening": "Continue Listening",
     "@continueListening": {
-        "description": "Text for Continue Listening"
+        "description": "Heading of the shelf of books in progress"
     },
     "refresh": "Refresh",
     "@refresh": {
-        "description": "Text for refresh"
+        "description": "Reloads the library page"
     },
     "errorLoadingData": "Error loading data",
     "@errorLoadingData": {
-        "description": "Error loading data"
+        "description": "A list or the library could not be loaded"
     },
     "controls": "Controls",
     "@controls": {
-        "description": "Text for controls"
+        "description": "Title of the player controls page"
     },
     "localListening": "Local Listening",
     "@localListening": {
-        "description": "Text for local listening"
+        "description": "Heading of the download section on the controls page"
     },
     "invalidUrl": "Enter a full URL, e.g. https://abs.example.com",
     "@invalidUrl": {
@@ -172,27 +172,27 @@
     },
     "previousChapter": "Previous chapter",
     "@previousChapter": {
-        "description": "Tooltip"
+        "description": "Player button tooltip"
     },
     "nextChapter": "Next chapter",
     "@nextChapter": {
-        "description": "Tooltip"
+        "description": "Player button tooltip"
     },
     "back10": "Back 10 seconds",
     "@back10": {
-        "description": "Tooltip"
+        "description": "Player button tooltip"
     },
     "forward10": "Forward 10 seconds",
     "@forward10": {
-        "description": "Tooltip"
+        "description": "Player button tooltip"
     },
     "play": "Play",
     "@play": {
-        "description": "Tooltip"
+        "description": "Player button tooltip"
     },
     "pause": "Pause",
     "@pause": {
-        "description": "Tooltip"
+        "description": "Player button tooltip"
     },
     "timeLeftLabel": "{time} left in chapter",
     "@timeLeftLabel": {
@@ -257,5 +257,13 @@
     "finished": "Finished",
     "@finished": {
         "description": "An episode listened to the end"
+    },
+    "playbackError": "Playback error. Tap play to retry.",
+    "@playbackError": {
+        "description": "Toast when playback stops with an error (e.g. network loss)"
+    },
+    "audioPlaybackChannel": "Audio playback",
+    "@audioPlaybackChannel": {
+        "description": "Name of the media notification channel, shown in the Android notification settings"
     }
 }

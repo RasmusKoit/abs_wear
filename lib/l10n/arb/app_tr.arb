@@ -56,5 +56,7 @@
     "sleepTimerOff": "Kapalı",
     "downloads": "İndirilenler",
     "noDownloads": "İndirilen bir şey yok.",
-    "finished": "Bitti"
+    "finished": "Dinlendi",
+    "playbackError": "Oynatma hatası. Yeniden denemek için Oynat'a dokunun.",
+    "audioPlaybackChannel": "Ses oynatma"
 }
