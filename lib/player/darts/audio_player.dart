@@ -571,11 +571,29 @@ class AudioPlayerController extends ChangeNotifier {
     return File('${(await _localProgressDir()).path}/$key.json');
   }
 
-  /// Removes all progress kept on the watch (e.g. on logout).
-  static Future<void> clearAllLocalProgress() async {
+  /// Removes all progress kept on the watch (e.g. on logout). With
+  /// [keepPending], progress that never reached the server stays, so a
+  /// later [pushLocalProgress] by the same user can still send it. Files
+  /// record their server and user, and only matching ones are ever read,
+  /// so another account never sees them.
+  static Future<void> clearAllLocalProgress({bool keepPending = false}) async {
     try {
       final dir = await _localProgressDir();
-      if (dir.existsSync()) dir.deleteSync(recursive: true);
+      if (!dir.existsSync()) return;
+      if (!keepPending) {
+        dir.deleteSync(recursive: true);
+        return;
+      }
+      for (final file in dir.listSync().whereType<File>()) {
+        try {
+          final json =
+              jsonDecode(file.readAsStringSync()) as Map<String, dynamic>;
+          if (json['pending'] == true) continue;
+        } on Object {
+          // Unreadable: nothing can be pushed from it either.
+        }
+        file.deleteSync();
+      }
     } on Object catch (e) {
       debugPrint('Could not clear local progress: $e');
     }
