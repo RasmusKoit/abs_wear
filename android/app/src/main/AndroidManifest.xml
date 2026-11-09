@@ -10,7 +10,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
     <!-- Android 14+: the download service (keeps downloads going with the screen off) -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
-    <!-- Media notification on Android 13+ -->
+    <!-- Download notification on Android 13+ (the media one is exempt);
+         asked for at the first download, in MainActivity -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <application
         android:label="${appName}"
