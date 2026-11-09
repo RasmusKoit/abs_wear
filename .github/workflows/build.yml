@@ -22,8 +22,10 @@ jobs:
 
     env:
       # Inputs go through env, never straight into shell lines.
-      BUILD_NAME: ${{ inputs.build_name }}
-      BUILD_NUMBER: ${{ inputs.build_number }}
+      # Named apart from the resolved BUILD_NAME/BUILD_NUMBER (written to
+      # GITHUB_ENV below), so neither can shadow the other.
+      INPUT_BUILD_NAME: ${{ inputs.build_name }}
+      INPUT_BUILD_NUMBER: ${{ inputs.build_number }}
 
     steps:
       - uses: actions/checkout@v7
@@ -31,8 +33,8 @@ jobs:
       - name: Resolve and validate the version
         run: |
           version=$(sed -n 's/^version:[[:space:]]*//p' pubspec.yaml)
-          [ -n "$BUILD_NAME" ] || BUILD_NAME=${version%%+*}
-          [ -n "$BUILD_NUMBER" ] || BUILD_NUMBER=${version#*+}
+          BUILD_NAME=${INPUT_BUILD_NAME:-${version%%+*}}
+          BUILD_NUMBER=${INPUT_BUILD_NUMBER:-${version#*+}}
           [[ "$BUILD_NAME" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "build_name must be X.Y.Z"; exit 1; }
           [[ "$BUILD_NUMBER" =~ ^[0-9]+$ ]] || { echo "build_number must be an integer"; exit 1; }
           echo "Building $BUILD_NAME+$BUILD_NUMBER"
