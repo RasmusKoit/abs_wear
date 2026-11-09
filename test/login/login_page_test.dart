@@ -109,6 +109,8 @@ void main() {
     }
 
     setUp(() {
+      // Present on a device; logout lists it to delete downloads.
+      Directory('${root.path}/docs').createSync();
       progressDir = Directory('${root.path}/support/offline_progress');
       SharedPreferences.setMockInitialValues({
         'serverUrl': _server,
@@ -118,15 +120,23 @@ void main() {
       });
     });
 
-    Future<void> logOut(WidgetTester tester) => http.runWithClient(() async {
+    /// What the confirm button runs, but in the real zone: the push queue
+    /// (AudioPlayerController._pushing) is static, and a push started in an
+    /// earlier test's fake-async zone leaves a future there whose callbacks
+    /// never run in this test's zone, so the push would hang until its
+    /// timeout. Real zones are shared, so order between tests can't matter.
+    Future<void> logOut(WidgetTester tester) async {
       await tester.pumpApp(const LoginPage());
       await tester.pumpAndSettle();
       expect(find.text('Hello alice'), findsOneWidget);
-      await tester.tap(find.text('Logout'));
+      await tester.runAsync(
+        () => http.runWithClient(
+          () => state(tester).logout(deleteDownloads: true),
+          () => client,
+        ),
+      );
       await tester.pumpAndSettle();
-      await tester.tap(find.byIcon(Icons.check_rounded));
-      await tester.pumpAndSettle();
-    }, () => client);
+    }
 
     testWidgets('sends offline progress before deleting it', (tester) async {
       final pending = progressFile('li_1', pending: true);
