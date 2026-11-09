@@ -393,8 +393,13 @@ class _LibraryPageState extends State<LibraryPage> {
       ];
     }
     return [
-      // Showing the saved shelf because the server can't be reached.
-      if (_error != null) message(l10n.offlineSavedList),
+      // Showing the saved shelf because the server can't be reached. The
+      // banner says "Tap to retry", as on the other lists.
+      if (_error != null)
+        InkWell(
+          onTap: () => unawaited(_refresh()),
+          child: message(l10n.offlineSavedList),
+        ),
       if (books.isEmpty) message(l10n.nothingInProgress),
       for (final book in books)
         _BookCard(
