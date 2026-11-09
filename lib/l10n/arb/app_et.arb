@@ -57,7 +57,7 @@
     "downloads": "Allalaadimised",
     "noDownloads": "Midagi pole alla laaditud.",
     "finished": "Kuulatud",
-    "playbackError": "Esitusviga. Puuduta esitust, et uuesti proovida.",
+    "playbackError": "Esitusviga. Puuduta esitusnuppu, et uuesti proovida.",
     "audioPlaybackChannel": "Heli taasesitus",
     "hoursCount": "{count, plural, =1{1 tund} other{{count} tundi}}",
     "minutesCount": "{count, plural, =1{1 minut} other{{count} minutit}}",

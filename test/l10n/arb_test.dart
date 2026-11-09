@@ -29,7 +29,7 @@ void main() {
     'fr': {'pause'},
     'id': {'volumeLevel'},
     'it': {'passwordLabel', 'sleepTimerOff'},
-    'pt': {'downloads', 'podcastCount'},
+    'pt': {'downloads'},
   };
 
   test('every ARB locale is supported, and every supported locale has one', () {
