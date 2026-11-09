@@ -12,7 +12,6 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
     <!-- Media notification on Android 13+ -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
-    <uses-permission android:name="android.permission.VIBRATE" />
     <application
         android:label="${appName}"
         android:name="${applicationName}"
@@ -23,8 +22,14 @@
         android:fullBackupContent="false"
         android:dataExtractionRules="@xml/data_extraction_rules">
 
+        <!-- enableOnBackInvokedCallback="false": keep back on onBackPressed even
+             when targeting Android 16. Predictive back relies on Flutter's
+             OnBackInvokedCallback, which a new activity attached to
+             audio_service's long-lived engine never registers, so back would
+             leave the app instead of popping the route. -->
         <activity
             android:name=".MainActivity"
+            android:enableOnBackInvokedCallback="false"
             android:exported="true"
             android:launchMode="singleTop"
             android:theme="@style/LaunchTheme"

@@ -21,9 +21,10 @@ android {
 
     defaultConfig {
         applicationId = "dev.koit.abs_wear"
-        // Wear OS 3+ (API 30). OnePlus Watch 2 on Wear OS 5 is API 34.
+        // Wear OS 3+ (API 30). OnePlus Watch 2 on Wear OS 5 is API 34;
+        // targets Android 16 / Wear OS 6.
         minSdk = 30
-        targetSdk = 35
+        targetSdk = 36
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
@@ -92,5 +93,5 @@ flutter {
 }
 
 dependencies {
-    implementation 'androidx.wear:wear:1.3.0'
+    implementation 'androidx.wear:wear:1.4.0'
 }
