@@ -86,4 +86,38 @@ curl -fs "$URL/api/libraries/$PLIB/items?limit=5" "${uauth[@]}" \
         -d "{\"duration\":$edur,\"currentTime\":5,\"progress\":$(python3 -c "print(5/$edur)"),\"isFinished\":false}" >/dev/null
       echo "episode progress set: $pid/$eid"
     done
+# Demo libraries for screenshots (generate_demo.sh), added after the test
+# ones so the app's default library stays "Test Books" for E2E.
+if [ -d data/demo/books ]; then
+  # demo_library <name> <path> <mediaType>: prints the library id.
+  demo_library() {
+    local id
+    id=$(curl -fs "$URL/api/libraries" "${auth[@]}" | j "next((l['id'] for l in d['libraries'] if l['name']=='$1'), '')")
+    if [ -z "$id" ]; then
+      id=$(curl -fs -X POST "$URL/api/libraries" "${auth[@]}" \
+        -d "{\"name\":\"$1\",\"folders\":[{\"fullPath\":\"$2\"}],\"mediaType\":\"$3\",\"settings\":{\"autoScanCronExpression\":null}}" | j 'd["id"]')
+    fi
+    curl -fs -X POST "$URL/api/libraries/$id/scan" "${auth[@]}" >/dev/null || true
+    echo "$id"
+  }
+  DLIB=$(demo_library "Audiobooks" /demo/books book)
+  DPLIB=$(demo_library "Podcasts" /demo/podcasts podcast)
+  for _ in $(seq 30); do
+    n=$(curl -fs "$URL/api/libraries/$DLIB/items?limit=50" "${uauth[@]}" | j 'd["total"]')
+    [ "$n" -ge 5 ] && break; sleep 2
+  done
+  # Three books in progress (different amounts) for Continue Listening.
+  curl -fs "$URL/api/libraries/$DLIB/items?limit=50&minified=1" "${uauth[@]}" \
+    | j '"\n".join(i["id"]+" "+str(i["media"]["duration"])+" "+i["media"]["metadata"]["title"].replace(" ","_") for i in d["results"])' \
+    | while read -r id dur title; do
+        case "$title" in
+          Frankenstein) p=0.42 ;; Pride_and_Prejudice) p=0.18 ;; The_Time_Machine) p=0.67 ;; *) continue ;;
+        esac
+        t=$(python3 -c "print(round($dur*$p))")
+        curl -fs -X PATCH "$URL/api/me/progress/$id" "${uauth[@]}" \
+          -d "{\"duration\":$dur,\"currentTime\":$t,\"progress\":$p,\"isFinished\":false}" >/dev/null
+        echo "demo progress: $title @ $p"
+      done
+  echo "Demo libraries: $DLIB (books), $DPLIB (podcasts)"
+fi
 echo "Seed complete. Library id: $LIB  Podcast library id: $PLIB"
