@@ -199,6 +199,32 @@ void main() {
       );
       expect(find.text("Can't reach the server."), findsNothing);
     });
+
+    testWidgets('tapping the banner retries', (tester) async {
+      await withServer(() async {
+        await visitOnline(tester);
+        routes['GET $_shelfPath'] = offline;
+        await tester.pumpAppInRealZone(page);
+        await tester.settleRealZone(done: shelfLoaded);
+        final banner = find.text(
+          'Offline. Showing the saved list. Tap to retry.',
+        );
+        expect(banner, findsOneWidget);
+
+        // Back online.
+        continueListening([
+          book('li_1', 'Dune', 'Frank Herbert'),
+          book('li_2', 'Emma', 'Jane Austen'),
+        ]);
+        requests.clear();
+        await tester.tapInRealZone(banner);
+        await tester.settleRealZone(done: shelfLoaded);
+      });
+
+      expect(requests, contains('GET $_shelfPath'));
+      expect(find.textContaining('Offline'), findsNothing);
+      expect(find.text('Emma'), findsOneWidget);
+    });
   });
 
   testWidgets('shows Downloads when this server has some', (tester) async {
