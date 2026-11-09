@@ -58,5 +58,10 @@
     "noDownloads": "Chưa tải xuống gì.",
     "finished": "Đã nghe xong",
     "playbackError": "Lỗi phát. Chạm Phát để thử lại.",
-    "audioPlaybackChannel": "Phát âm thanh"
+    "audioPlaybackChannel": "Phát âm thanh",
+    "hoursCount": "{count, plural, other{{count} giờ}}",
+    "minutesCount": "{count, plural, other{{count} phút}}",
+    "secondsCount": "{count, plural, other{{count} giây}}",
+    "loading": "Đang tải",
+    "volumeLevel": "Âm lượng {percent}%"
 }

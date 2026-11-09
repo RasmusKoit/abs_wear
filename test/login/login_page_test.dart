@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -31,7 +32,7 @@ void main() {
   late Directory root;
   late List<String> requests;
   late List<String> bodies;
-  late Map<String, http.Response Function()> routes;
+  late Map<String, FutureOr<http.Response> Function()> routes;
   late http.Client client;
 
   setUp(() {
@@ -44,7 +45,7 @@ void main() {
       final key = '${request.method} ${request.url.path}';
       requests.add(key);
       bodies.add(request.body);
-      return routes[key]?.call() ?? http.Response('', 404);
+      return await routes[key]?.call() ?? http.Response('', 404);
     });
   });
 
@@ -90,7 +91,11 @@ void main() {
     final updatedAt = DateTime.now().millisecondsSinceEpoch - 60000;
     late Directory progressDir;
 
-    File progressFile(String itemId, {required bool pending}) {
+    File progressFile(
+      String itemId, {
+      required bool pending,
+      int listenedMs = 0,
+    }) {
       final file = File('${progressDir.path}/$itemId.json')
         ..parent.createSync(recursive: true)
         ..writeAsStringSync(
@@ -100,7 +105,7 @@ void main() {
             'itemId': itemId,
             'duration': 600,
             'currentTime': 50,
-            'listenedMs': 0,
+            'listenedMs': listenedMs,
             'updatedAt': updatedAt,
             'pending': pending,
           }),
@@ -109,6 +114,8 @@ void main() {
     }
 
     setUp(() {
+      // The login form scrolls with the crown once the logout shows it.
+      fakeCrown();
       // Present on a device; logout lists it to delete downloads.
       Directory('${root.path}/docs').createSync();
       progressDir = Directory('${root.path}/support/offline_progress');
@@ -138,6 +145,18 @@ void main() {
       await tester.pumpAndSettle();
     }
 
+    ElevatedButton loginButton(WidgetTester tester) =>
+        tester.widget<ElevatedButton>(find.byType(ElevatedButton));
+
+    /// Waits (in real time) for the revoke, which logout doesn't await, to
+    /// drop the pending logout.
+    Future<void> revoked(WidgetTester tester) => tester.runAsync(() async {
+      final prefs = await SharedPreferences.getInstance();
+      while (prefs.getStringList('pendingLogout') != null) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+    });
+
     testWidgets('sends offline progress before deleting it', (tester) async {
       final pending = progressFile('li_1', pending: true);
       final synced = progressFile('li_2', pending: false);
@@ -161,10 +180,162 @@ void main() {
       final prefs = await SharedPreferences.getInstance();
       expect(prefs.getString('token'), isNull);
       // The login form is usable again once the logout finished.
-      final login = tester.widget<ElevatedButton>(
-        find.widgetWithText(ElevatedButton, 'Login'),
-      );
-      expect(login.onPressed, isNotNull);
+      expect(find.text('Login'), findsOneWidget);
+      expect(loginButton(tester).onPressed, isNotNull);
+      await revoked(tester);
+    });
+
+    testWidgets('deletes downloads while the push still waits', (tester) async {
+      final pending = progressFile('li_1', pending: true);
+      final download = Directory('${root.path}/docs/li_2')
+        ..createSync(recursive: true);
+      final cache = Directory('${root.path}/support/json_cache')
+        ..createSync(recursive: true);
+      final answer = Completer<http.Response>();
+      routes['GET /api/me/progress/li_1'] = () => answer.future;
+      routes['POST /logout'] = () => ok({});
+      await tester.pumpApp(const LoginPage());
+      await tester.pumpAndSettle();
+
+      late Future<void> loggedOut;
+      await tester.runAsync(() async {
+        loggedOut = http.runWithClient(
+          () => state(tester).logout(deleteDownloads: true),
+          () => client,
+        );
+        // Until the push waits for a server that doesn't answer.
+        while (!requests.contains('GET /api/me/progress/li_1')) {
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+        }
+      });
+      await tester.pump();
+
+      expect(download.existsSync(), isFalse);
+      expect(cache.existsSync(), isFalse);
+      expect(pending.existsSync(), isTrue);
+      expect(requests, isNot(contains('POST /logout')));
+      // A new login waits for the rest of the cleanup.
+      expect(loginButton(tester).onPressed, isNull);
+
+      // Answered only now, so the test doesn't wait out the push's timeout.
+      await tester.runAsync(() async {
+        answer.complete(http.Response('', 503));
+        await loggedOut;
+      });
+      await tester.pumpAndSettle();
+      expect(requests, contains('POST /logout'));
+      expect(loginButton(tester).onPressed, isNotNull);
+      await revoked(tester);
+    });
+
+    testWidgets('a logout cut short is finished on the next start', (
+      tester,
+    ) async {
+      // Killed after the token was dropped, before the cleanup ended.
+      SharedPreferences.setMockInitialValues({
+        'serverUrl': _server,
+        'username': 'alice',
+        'pickedLibrary': 'lib1',
+        'pendingLogout': <String>[_server, 'tok'],
+      });
+      final pending = progressFile('li_1', pending: true);
+      final synced = progressFile('li_2', pending: false);
+      final download = Directory('${root.path}/docs/li_2')
+        ..createSync(recursive: true);
+      routes['POST /logout'] = () => ok({});
+
+      await http.runWithClient(() async {
+        await tester.pumpApp(const LoginPage());
+        await tester.pumpAndSettle();
+      }, () => client);
+
+      expect(download.existsSync(), isFalse);
+      expect(synced.existsSync(), isFalse);
+      // Kept for alice's next login to send, as after a finished logout.
+      expect(pending.existsSync(), isTrue);
+      expect(requests, ['POST /logout']);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getStringList('pendingLogout'), isNull);
+      expect(prefs.getString('pickedLibrary'), isNull);
+      expect(find.text('Login'), findsOneWidget);
+    });
+
+    testWidgets('a logout cut short before dropping its token is finished', (
+      tester,
+    ) async {
+      // Killed after the marker was written, before the token was removed:
+      // the saved token is the one being logged out, not a newer login.
+      SharedPreferences.setMockInitialValues({
+        'serverUrl': _server,
+        'username': 'alice',
+        'token': 'tok',
+        'defaultLibraryId': 'lib1',
+        'pendingLogout': <String>[_server, 'tok'],
+      });
+      final download = Directory('${root.path}/docs/li_2')
+        ..createSync(recursive: true);
+      routes['POST /logout'] = () => ok({});
+
+      await http.runWithClient(() async {
+        await tester.pumpApp(const LoginPage());
+        await tester.pumpAndSettle();
+      }, () => client);
+
+      expect(download.existsSync(), isFalse);
+      expect(requests, ['POST /logout']);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString('token'), isNull);
+      expect(prefs.getStringList('pendingLogout'), isNull);
+      expect(find.text('Login'), findsOneWidget);
+    });
+
+    testWidgets("a cut short logout keeps a newer login's downloads", (
+      tester,
+    ) async {
+      // Killed while revoking, after bob had logged in.
+      SharedPreferences.setMockInitialValues({
+        'serverUrl': _server,
+        'username': 'bob',
+        'token': 'tok2',
+        'defaultLibraryId': 'lib1',
+        'pendingLogout': <String>[_server, 'tok'],
+      });
+      final download = Directory('${root.path}/docs/li_2')
+        ..createSync(recursive: true);
+      routes['POST /logout'] = () => ok({});
+
+      await http.runWithClient(() async {
+        await tester.pumpApp(const LoginPage());
+        await tester.pumpAndSettle();
+      }, () => client);
+
+      expect(download.existsSync(), isTrue);
+      expect(requests, ['POST /logout']);
+      expect(bodies, ['']);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getStringList('pendingLogout'), isNull);
+      expect(find.text('Hello bob'), findsOneWidget);
+    });
+
+    testWidgets('keeps listening time the push could not report', (
+      tester,
+    ) async {
+      // Played offline for 2 min: the push sends the position, but the
+      // listening time only reaches the server through a playback session.
+      final listened = progressFile('li_1', pending: true, listenedMs: 120000);
+      routes['GET /api/me/progress/li_1'] = () => http.Response('', 404);
+      routes['PATCH /api/me/progress/li_1'] = () => ok({});
+      routes['POST /logout'] = () => ok({});
+
+      await logOut(tester);
+
+      expect(requests, contains('PATCH /api/me/progress/li_1'));
+      // Kept for alice's next online play of the book to report.
+      expect(listened.existsSync(), isTrue);
+      final json =
+          jsonDecode(listened.readAsStringSync()) as Map<String, dynamic>;
+      expect(json['pending'], isFalse);
+      expect(json['listenedMs'], 120000);
     });
 
     testWidgets('keeps offline progress the server could not take', (

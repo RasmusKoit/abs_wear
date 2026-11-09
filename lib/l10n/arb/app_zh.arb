@@ -58,5 +58,10 @@
     "noDownloads": "没有下载内容。",
     "finished": "已听完",
     "playbackError": "播放出错。点按播放以重试。",
-    "audioPlaybackChannel": "音频播放"
+    "audioPlaybackChannel": "音频播放",
+    "hoursCount": "{count, plural, other{{count} 小时}}",
+    "minutesCount": "{count, plural, other{{count} 分钟}}",
+    "secondsCount": "{count, plural, other{{count} 秒}}",
+    "loading": "正在加载",
+    "volumeLevel": "音量 {percent}%"
 }

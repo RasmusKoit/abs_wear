@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:abs_wear/app/view/crown_scrollbar.dart';
 import 'package:abs_wear/l10n/l10n.dart';
@@ -58,8 +59,12 @@ class EpisodesPage extends StatefulWidget {
 }
 
 class _EpisodesPageState extends State<EpisodesPage> {
-  /// Fits a two-line title and the date at the largest text scale (1.3).
+  /// Fits a two-line title and the date at the app's largest text scale
+  /// (1.3); larger scales get taller rows.
   static const double _rowHeight = 64;
+
+  /// A two-line title and the date at a text scale of 1.
+  static const double _rowTextHeight = 48;
 
   final _scrollController = ScrollController();
   List<Episode>? _episodes;
@@ -224,7 +229,10 @@ class _EpisodesPageState extends State<EpisodesPage> {
             : ListView.builder(
                 controller: _scrollController,
                 padding: const EdgeInsets.fromLTRB(28, 4, 24, 48),
-                itemExtent: _rowHeight,
+                itemExtent: math.max(
+                  _rowHeight,
+                  MediaQuery.textScalerOf(context).scale(_rowTextHeight) + 4,
+                ),
                 itemCount: episodes.length + (_error != null ? 1 : 0),
                 itemBuilder: (context, index) {
                   if (index >= episodes.length) {
@@ -281,20 +289,38 @@ class _EpisodesPageState extends State<EpisodesPage> {
     final percent = progress != null && !progress.finished
         ? (progress.progress * 100).floor()
         : 0;
-    return Row(
-      children: [
-        if (date != null) Text(date, style: style),
-        if (progress?.finished ?? false) ...[
-          if (date != null) const SizedBox(width: 4),
-          Icon(
-            Icons.check_circle_rounded,
-            size: 12,
-            color: theme.colorScheme.primary,
-            semanticLabel: l10n.finished,
-          ),
-        ] else if (percent > 0)
-          Text('${date != null ? ' · ' : ''}$percent%', style: style),
-      ],
+    final finished = progress?.finished ?? false;
+    // One line that ellipsizes: a Row of texts overflowed with long dates
+    // or large text.
+    return Text.rich(
+      TextSpan(
+        children: [
+          if (date != null) TextSpan(text: date),
+          if (finished) ...[
+            if (date != null) const TextSpan(text: ' '),
+            WidgetSpan(
+              alignment: PlaceholderAlignment.middle,
+              child: Icon(
+                Icons.check_circle_rounded,
+                size: 12,
+                color: theme.colorScheme.primary,
+                semanticLabel: l10n.finished,
+              ),
+            ),
+          ] else if (percent > 0)
+            TextSpan(
+              children: [
+                // A pause, not "middle dot", for screen readers.
+                if (date != null)
+                  const TextSpan(text: ' · ', semanticsLabel: ', '),
+                TextSpan(text: '$percent%'),
+              ],
+            ),
+        ],
+      ),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: style,
     );
   }
 
@@ -317,7 +343,7 @@ class _EpisodesPageState extends State<EpisodesPage> {
       );
     }
     if (episodes == null || _loading) {
-      return const CircularProgressIndicator();
+      return CircularProgressIndicator(semanticsLabel: l10n.loading);
     }
     return Text(l10n.noEpisodes, style: theme.textTheme.bodySmall);
   }

@@ -24,7 +24,11 @@ class PlayerViewPage extends StatelessWidget {
       listenable: controller,
       builder: (context, _) {
         if (!controller.isLoaded) {
-          return const Center(child: CircularProgressIndicator());
+          return Center(
+            child: CircularProgressIndicator(
+              semanticsLabel: context.l10n.loading,
+            ),
+          );
         }
         final ambient = AmbientModeListener.instance;
         return ValueListenableBuilder<bool>(
@@ -53,7 +57,6 @@ class PlayerViewPage extends StatelessWidget {
   /// the display needs burn-in protection.
   Widget _ambientContent(ThemeData theme, int tick, bool burnIn) {
     final controller = playerController;
-    final left = controller.timeLeft;
     final shift = burnIn ? Offset((tick % 3 - 1) * 4, (tick % 2) * 4) : null;
     final content = Column(
       mainAxisAlignment: MainAxisAlignment.center,
@@ -73,10 +76,10 @@ class PlayerViewPage extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 12),
-        Text(
-          '${left.inHours.toString().padLeft(2, '0')}:'
-          '${(left.inMinutes % 60).toString().padLeft(2, '0')}',
-          style: theme.textTheme.labelSmall,
+        TimeLeftWidget(
+          timeLeft: controller.timeLeft,
+          seconds: false,
+          style: theme.textTheme.labelSmall!,
         ),
       ],
     );
@@ -137,7 +140,7 @@ class PlayerViewPage extends StatelessWidget {
           ],
         ),
         TimeLeftWidget(
-          timeLeft: formatDuration(controller.timeLeft),
+          timeLeft: controller.timeLeft,
           style: theme.textTheme.labelSmall!,
         ),
       ],
@@ -235,11 +238,16 @@ class _PlayPauseButton extends StatelessWidget {
             state?.processingState == ProcessingState.loading ||
             state?.processingState == ProcessingState.buffering;
         if (busy) {
-          return const SizedBox.square(
+          // Labeled, so a screen reader focused on the button doesn't
+          // land on nothing while the audio loads.
+          return SizedBox.square(
             dimension: 48,
             child: Padding(
-              padding: EdgeInsets.all(12),
-              child: CircularProgressIndicator(strokeWidth: 2.5),
+              padding: const EdgeInsets.all(12),
+              child: CircularProgressIndicator(
+                strokeWidth: 2.5,
+                semanticsLabel: context.l10n.loading,
+              ),
             ),
           );
         }

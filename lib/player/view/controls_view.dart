@@ -162,6 +162,10 @@ class _ControlViewPageState extends State<ControlViewPage> {
                       Text(
                         '${(_currentVolume * 100).round()}%',
                         style: theme.textTheme.labelSmall,
+                        // Not a lone "50%": the page has no volume heading.
+                        semanticsLabel: l10n.volumeLevel(
+                          (_currentVolume * 100).round(),
+                        ),
                       ),
                     ],
                   ),
@@ -220,6 +224,10 @@ class _ControlViewPageState extends State<ControlViewPage> {
                   label: Text(
                     left == null ? l10n.sleepTimerOff : _formatLeft(left),
                     style: theme.textTheme.labelLarge,
+                    // "14 minutes 59 seconds", not a time of day.
+                    semanticsLabel: left == null
+                        ? null
+                        : l10n.spokenDuration(left),
                   ),
                 ),
               ),

@@ -27,6 +27,7 @@ void main() {
     'de': {'pause', 'downloads'},
     'es': {'podcastCount'},
     'fr': {'pause'},
+    'id': {'volumeLevel'},
     'it': {'passwordLabel', 'sleepTimerOff'},
     'pt': {'downloads'},
   };

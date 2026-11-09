@@ -30,6 +30,8 @@ class BookCover extends StatelessWidget {
         height: size,
         cacheWidth: pixels,
         fit: BoxFit.cover,
+        // Decorative: the title is read out next to every cover.
+        excludeFromSemantics: true,
         // Books without cover art return 404; show a placeholder
         // instead of Flutter's oversized error widget.
         errorBuilder: (_, _, _) => SizedBox.square(
