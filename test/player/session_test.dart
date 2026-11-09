@@ -592,23 +592,23 @@ void main() {
           jsonDecode(bodies[requests.lastIndexOf(request)])
               as Map<String, dynamic>;
 
-      test('resumes offline but sends nothing, closing at the server '
-          'position', () async {
-        final c = await open();
-        expect(c.bookPosition, 50, reason: 'where the watch was');
-        expect(requests, isNot(contains('POST /api/session/s1/sync')));
+      test(
+        'resumes offline but sends nothing, closing without progress',
+        () async {
+          final c = await open();
+          expect(c.bookPosition, 50, reason: 'where the watch was');
+          expect(requests, isNot(contains('POST /api/session/s1/sync')));
 
-        await http.runWithClient(c.close, () => client);
-        expect(lastBody('POST /api/session/s1/close'), {
-          'currentTime': 100,
-          'timeListened': 0,
-          'duration': 600,
-        });
-        // Still pending, unchanged: a later push compares the times.
-        expect(progress(), containsPair('pending', true));
-        expect(progress(), containsPair('updatedAt', updatedAt));
-        expect(progress(), containsPair('currentTime', 50));
-      });
+          await http.runWithClient(c.close, () => client);
+          // An empty close leaves the server's progress untouched (even a
+          // finished book's, whose session starts at 0).
+          expect(lastBody('POST /api/session/s1/close'), isEmpty);
+          // Still pending, unchanged: a later push compares the times.
+          expect(progress(), containsPair('pending', true));
+          expect(progress(), containsPair('updatedAt', updatedAt));
+          expect(progress(), containsPair('currentTime', 50));
+        },
+      );
 
       test('a later answer with newer server progress moves there', () async {
         final c = await open();
@@ -659,9 +659,17 @@ void main() {
         await http.runWithClient(c.close, () => client);
       });
 
-      test('still no answer: keeps waiting', () async {
+      test('still no answer: keeps waiting, asking with backoff', () async {
         final c = await open();
+        int checks() =>
+            requests.where((r) => r == 'GET /api/me/progress/li_1').length;
+        final before = checks();
         await c.periodicSync();
+        expect(checks(), before + 1);
+        expect(c.retryAt, isNotNull);
+        // Within the backoff: not asked again.
+        await c.periodicSync();
+        expect(checks(), before + 1);
         expect(requests, isNot(contains('POST /api/session/s1/sync')));
         expect(c.bookPosition, 50);
         await http.runWithClient(c.close, () => client);
@@ -740,10 +748,10 @@ void main() {
       expect(plays[0], containsPair('forceDirectPlay', true));
       expect(plays[1], isNot(contains('forceDirectPlay')));
       expect(c.sessionId, 's2');
-      // The old session closes at the server's position; the stream loads
-      // at the newer offline one (50 s is in segment 8).
+      // The old session closes leaving the server's progress as it is; the
+      // stream loads at the newer offline one (50 s is in segment 8).
       final close = bodies[requests.indexOf('POST /api/session/s1/close')];
-      expect(jsonDecode(close), containsPair('currentTime', 100));
+      expect(jsonDecode(close), isEmpty);
       expect(requests, contains('HEAD /hls/s2/output-8.ts'));
       expect(c.bookPosition, 50);
       await http.runWithClient(c.close, () => client);
