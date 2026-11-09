@@ -471,6 +471,20 @@ class AudioPlayerController extends ChangeNotifier {
           return false;
         }
         await _resumeLocalProgress();
+        // session.json only says the book was downloaded once: when its
+        // files changed on the server since (e.g. converted to m4b), the
+        // forced direct play would stream an MP4 file; as in reloadSources,
+        // reopen as a stream.
+        if (canPlayOffline &&
+            episodeId == null &&
+            !_streamTracks.any((t) => t.isHls) &&
+            tracks.any((t) => !t.directPlayable) &&
+            !await isDownloaded()) {
+          // The old session closes at the server's own position: leaving
+          // meanwhile must not move it (that would make it look newer than
+          // pending offline progress). Loading still uses _pendingPosition.
+          await _reopenStream(_lastSyncedTime);
+        }
         await _loadSources(initialTime: _pendingPosition);
         if (await isDownloaded()) {
           unawaited(_saveSessionMeta());
@@ -610,6 +624,11 @@ class AudioPlayerController extends ChangeNotifier {
           final current = await client
               .get(url, headers: headers)
               .timeout(const Duration(seconds: 10));
+          // Without an answer the server may have newer progress: keep the
+          // file pending and try again on the next push.
+          if (current.statusCode != 200 && current.statusCode != 404) {
+            continue;
+          }
           final serverJson = current.statusCode == 200
               ? jsonDecode(current.body) as Map<String, dynamic>
               : const <String, dynamic>{};
@@ -750,20 +769,31 @@ class AudioPlayerController extends ChangeNotifier {
     _carriedListening = local.listened;
     if (!local.pending) return;
     var serverUpdated = 0;
-    try {
-      final response = await _client
-          .get(
-            Uri.parse('$serverUrl/api/me/progress/$_mediaPath'),
-            headers: _authHeaders,
-          )
-          .timeout(const Duration(seconds: 10));
-      if (response.statusCode == 200) {
-        final json = jsonDecode(response.body) as Map<String, dynamic>;
-        serverUpdated = (json['lastUpdate'] as num?)?.toInt() ?? 0;
+    // A slow Bluetooth proxy is the usual cause of a failed check: try
+    // once more with longer to wait.
+    for (final timeout in const [
+      Duration(seconds: 10),
+      Duration(seconds: 20),
+    ]) {
+      try {
+        final response = await _client
+            .get(
+              Uri.parse('$serverUrl/api/me/progress/$_mediaPath'),
+              headers: _authHeaders,
+            )
+            .timeout(timeout);
+        if (response.statusCode == 200) {
+          final json = jsonDecode(response.body) as Map<String, dynamic>;
+          serverUpdated = (json['lastUpdate'] as num?)?.toInt() ?? 0;
+          break;
+        }
+        if (response.statusCode == 404) break; // No server progress.
+      } on Object catch (e) {
+        debugPrint('Could not read server progress: $e');
       }
-    } on Object catch (e) {
-      debugPrint('Could not read server progress: $e');
     }
+    // When the check can't be done at all, the offline position is used.
+    // Deliberately unchanged: which side wins then is a product decision.
     if (serverUpdated > local.updatedAt) return; // The next sync replaces it.
     _pendingPosition = local.time;
   }

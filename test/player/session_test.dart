@@ -464,4 +464,155 @@ void main() {
       },
     );
   });
+
+  group('checking offline progress against the server', () {
+    final updatedAt = DateTime.now().millisecondsSinceEpoch - 60000;
+
+    File progressFile() {
+      final key = '$_server|u|li_1'.hashCode.toUnsigned(32);
+      return File('${docs.path}/support/offline_progress/$key.json');
+    }
+
+    /// Progress from offline play: position 50, 30 s listened.
+    void writePending() {
+      progressFile()
+        ..parent.createSync(recursive: true)
+        ..writeAsStringSync(
+          jsonEncode({
+            'server': _server,
+            'user': 'u',
+            'itemId': 'li_1',
+            'duration': 600,
+            'currentTime': 50,
+            'listenedMs': 30000,
+            'updatedAt': updatedAt,
+            'pending': true,
+          }),
+        );
+    }
+
+    Map<String, dynamic> progress() =>
+        jsonDecode(progressFile().readAsStringSync()) as Map<String, dynamic>;
+
+    Future<void> push() => http.runWithClient(
+      () => AudioPlayerController.pushLocalProgress(_server, 't', 'u'),
+      () => client,
+    );
+
+    final mp3Session = {
+      'id': 's1',
+      'currentTime': 100,
+      'duration': 600,
+      'audioTracks': [
+        {
+          'index': 1,
+          'startOffset': 0,
+          'duration': 600,
+          'contentUrl': '/api/items/li_1/file/111',
+          'mimeType': 'audio/mpeg',
+        },
+      ],
+    };
+
+    test('a check that fails once is retried before resuming', () async {
+      writePending();
+      routes['POST /api/items/li_1/play'] = () async => ok(mp3Session);
+      final answers = [
+        http.Response('', 504),
+        // Played elsewhere since the offline progress was saved.
+        ok({'currentTime': 100, 'lastUpdate': updatedAt + 1000}),
+      ];
+      routes['GET /api/me/progress/li_1'] = () async => answers.removeAt(0);
+      routes['POST /api/session/s1/sync'] = () async => ok();
+      routes['POST /api/session/s1/close'] = () async => ok();
+      final c = AudioPlayerController(client: client);
+
+      expect(await c.setupPlayer('li_1', _server, 't', userName: 'u'), isTrue);
+
+      expect(answers, isEmpty);
+      expect(c.bookPosition, 100, reason: 'the newer server position wins');
+      await http.runWithClient(c.close, () => client);
+    });
+
+    test("a push doesn't send it when the check fails", () async {
+      writePending();
+      routes['PATCH /api/me/progress/li_1'] = () async => ok();
+
+      routes['GET /api/me/progress/li_1'] = () async => http.Response('', 502);
+      await push();
+      routes['GET /api/me/progress/li_1'] = () async =>
+          throw http.ClientException('timeout');
+      await push();
+      expect(requests, isNot(contains('PATCH /api/me/progress/li_1')));
+      expect(progress(), containsPair('pending', true));
+
+      // Retried on the next push; the server has no progress (404).
+      routes['GET /api/me/progress/li_1'] = () async => http.Response('', 404);
+      await push();
+      expect(requests, contains('PATCH /api/me/progress/li_1'));
+      expect(jsonDecode(bodies.last), containsPair('currentTime', 50));
+      expect(progress(), containsPair('pending', false));
+    });
+
+    test('a stale download reopens an MP4 book as a stream', () async {
+      // Downloaded as MP3, since converted to m4b on the server.
+      writePending();
+      routes['GET /api/me/progress/li_1'] = () async => http.Response('', 404);
+      final dir = Directory('${docs.path}/li_1')..createSync();
+      File('${dir.path}/session.json').writeAsStringSync('{}');
+      final plays = <Map<String, dynamic>>[];
+      routes['POST /api/items/li_1/play'] = () async {
+        plays.add(jsonDecode(bodies.last) as Map<String, dynamic>);
+        return plays.length == 1
+            ? ok({
+                'id': 's1',
+                'currentTime': 100,
+                'duration': 600,
+                'audioTracks': [
+                  {
+                    'index': 1,
+                    'startOffset': 0,
+                    'duration': 600,
+                    'contentUrl': '/api/items/li_1/file/222',
+                    'mimeType': 'audio/mp4',
+                  },
+                ],
+              })
+            : ok({
+                'id': 's2',
+                'audioTracks': [
+                  {
+                    'index': 1,
+                    'startOffset': 0,
+                    'duration': 600,
+                    'contentUrl': '/hls/s2/output.m3u8',
+                  },
+                ],
+              });
+      };
+      routes['POST /api/session/s1/close'] = () async => ok();
+      routes['POST /api/session/s2/close'] = () async => ok();
+      routes['POST /api/session/s2/sync'] = () async => ok();
+      routes['HEAD /hls/s2/output-8.ts'] = () async => ok();
+      final c = AudioPlayerController(client: client);
+
+      final started = await http.runWithClient(
+        () => c.setupPlayer('li_1', _server, 't', userName: 'u'),
+        () => client,
+      );
+
+      expect(started, isTrue);
+      expect(plays, hasLength(2));
+      expect(plays[0], containsPair('forceDirectPlay', true));
+      expect(plays[1], isNot(contains('forceDirectPlay')));
+      expect(c.sessionId, 's2');
+      // The old session closes at the server's position; the stream loads
+      // at the newer offline one (50 s is in segment 8).
+      final close = bodies[requests.indexOf('POST /api/session/s1/close')];
+      expect(jsonDecode(close), containsPair('currentTime', 100));
+      expect(requests, contains('HEAD /hls/s2/output-8.ts'));
+      expect(c.bookPosition, 50);
+      await http.runWithClient(c.close, () => client);
+    });
+  });
 }
