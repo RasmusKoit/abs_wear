@@ -58,5 +58,10 @@
     "noDownloads": "لا توجد تنزيلات.",
     "finished": "مكتمل",
     "playbackError": "خطأ في التشغيل. انقر على تشغيل لإعادة المحاولة.",
-    "audioPlaybackChannel": "تشغيل الصوت"
+    "audioPlaybackChannel": "تشغيل الصوت",
+    "hoursCount": "{count, plural, zero{{count} ساعة} one{ساعة واحدة} two{ساعتان} few{{count} ساعات} many{{count} ساعة} other{{count} ساعة}}",
+    "minutesCount": "{count, plural, zero{{count} دقيقة} one{دقيقة واحدة} two{دقيقتان} few{{count} دقائق} many{{count} دقيقة} other{{count} دقيقة}}",
+    "secondsCount": "{count, plural, zero{{count} ثانية} one{ثانية واحدة} two{ثانيتان} few{{count} ثوانٍ} many{{count} ثانية} other{{count} ثانية}}",
+    "loading": "جارٍ التحميل",
+    "volumeLevel": "مستوى الصوت {percent}%"
 }

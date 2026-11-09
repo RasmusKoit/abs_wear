@@ -85,7 +85,9 @@ class _DownloadsPageState extends State<DownloadsPage> {
           ),
         ),
         body: items == null
-            ? const Center(child: CircularProgressIndicator())
+            ? Center(
+                child: CircularProgressIndicator(semanticsLabel: l10n.loading),
+              )
             : items.isEmpty
             ? Center(
                 child: Text(l10n.noDownloads, style: theme.textTheme.bodySmall),
@@ -144,6 +146,8 @@ class _DownloadTile extends StatelessWidget {
                 height: size,
                 cacheWidth: pixels,
                 fit: BoxFit.cover,
+                // Decorative: the title is read out next to it.
+                excludeFromSemantics: true,
                 errorBuilder: (_, _, _) =>
                     const Icon(Icons.book_rounded, size: size * 0.6),
               ),

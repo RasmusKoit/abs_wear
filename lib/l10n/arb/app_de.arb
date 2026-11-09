@@ -58,5 +58,10 @@
     "noDownloads": "Keine Downloads.",
     "finished": "Gehört",
     "playbackError": "Wiedergabefehler. Zum Wiederholen auf Abspielen tippen.",
-    "audioPlaybackChannel": "Audiowiedergabe"
+    "audioPlaybackChannel": "Audiowiedergabe",
+    "hoursCount": "{count, plural, =1{1 Stunde} other{{count} Stunden}}",
+    "minutesCount": "{count, plural, =1{1 Minute} other{{count} Minuten}}",
+    "secondsCount": "{count, plural, =1{1 Sekunde} other{{count} Sekunden}}",
+    "loading": "Wird geladen",
+    "volumeLevel": "Lautstärke {percent} %"
 }

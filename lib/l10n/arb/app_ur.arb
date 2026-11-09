@@ -58,5 +58,10 @@
     "noDownloads": "کچھ ڈاؤن لوڈ نہیں ہوا۔",
     "finished": "مکمل سنا",
     "playbackError": "پلے بیک میں خرابی۔ دوبارہ کوشش کے لیے چلائیں ٹیپ کریں۔",
-    "audioPlaybackChannel": "آڈیو پلے بیک"
+    "audioPlaybackChannel": "آڈیو پلے بیک",
+    "hoursCount": "{count, plural, =1{1 گھنٹہ} other{{count} گھنٹے}}",
+    "minutesCount": "{count, plural, other{{count} منٹ}}",
+    "secondsCount": "{count, plural, other{{count} سیکنڈ}}",
+    "loading": "لوڈ ہو رہا ہے",
+    "volumeLevel": "والیوم {percent}%"
 }

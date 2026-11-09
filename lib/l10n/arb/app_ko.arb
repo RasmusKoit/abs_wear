@@ -58,5 +58,10 @@
     "noDownloads": "다운로드한 항목이 없습니다.",
     "finished": "다 들음",
     "playbackError": "재생 오류. 재생을 탭하여 다시 시도하세요.",
-    "audioPlaybackChannel": "오디오 재생"
+    "audioPlaybackChannel": "오디오 재생",
+    "hoursCount": "{count, plural, other{{count}시간}}",
+    "minutesCount": "{count, plural, other{{count}분}}",
+    "secondsCount": "{count, plural, other{{count}초}}",
+    "loading": "불러오는 중",
+    "volumeLevel": "볼륨 {percent}%"
 }

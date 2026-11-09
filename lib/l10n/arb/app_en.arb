@@ -265,5 +265,49 @@
     "audioPlaybackChannel": "Audio playback",
     "@audioPlaybackChannel": {
         "description": "Name of the media notification channel, shown in the Android notification settings"
+    },
+    "hoursCount": "{count, plural, =1{1 hour} other{{count} hours}}",
+    "@hoursCount": {
+        "description": "A number of hours, read out by screen readers as part of a duration (e.g. \"1 hour 5 minutes\")",
+        "placeholders": {
+            "count": {
+                "type": "int",
+                "example": "2"
+            }
+        }
+    },
+    "minutesCount": "{count, plural, =1{1 minute} other{{count} minutes}}",
+    "@minutesCount": {
+        "description": "A number of minutes, read out by screen readers as part of a duration",
+        "placeholders": {
+            "count": {
+                "type": "int",
+                "example": "5"
+            }
+        }
+    },
+    "secondsCount": "{count, plural, =1{1 second} other{{count} seconds}}",
+    "@secondsCount": {
+        "description": "A number of seconds, read out by screen readers as part of a duration",
+        "placeholders": {
+            "count": {
+                "type": "int",
+                "example": "30"
+            }
+        }
+    },
+    "loading": "Loading",
+    "@loading": {
+        "description": "Screen reader label for a spinner while something loads"
+    },
+    "volumeLevel": "Volume {percent}%",
+    "@volumeLevel": {
+        "description": "Screen reader label for the volume level on the controls page",
+        "placeholders": {
+            "percent": {
+                "type": "int",
+                "example": "50"
+            }
+        }
     }
 }

@@ -58,5 +58,10 @@
     "noDownloads": "Aucun téléchargement.",
     "finished": "Terminé",
     "playbackError": "Erreur de lecture. Touchez Lecture pour réessayer.",
-    "audioPlaybackChannel": "Lecture audio"
+    "audioPlaybackChannel": "Lecture audio",
+    "hoursCount": "{count, plural, one{{count} heure} other{{count} heures}}",
+    "minutesCount": "{count, plural, one{{count} minute} other{{count} minutes}}",
+    "secondsCount": "{count, plural, one{{count} seconde} other{{count} secondes}}",
+    "loading": "Chargement",
+    "volumeLevel": "Volume {percent} %"
 }

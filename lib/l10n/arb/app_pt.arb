@@ -58,5 +58,10 @@
     "noDownloads": "Nenhum download.",
     "finished": "Concluído",
     "playbackError": "Erro na reprodução. Toque em Reproduzir para tentar de novo.",
-    "audioPlaybackChannel": "Reprodução de áudio"
+    "audioPlaybackChannel": "Reprodução de áudio",
+    "hoursCount": "{count, plural, one{{count} hora} other{{count} horas}}",
+    "minutesCount": "{count, plural, one{{count} minuto} other{{count} minutos}}",
+    "secondsCount": "{count, plural, one{{count} segundo} other{{count} segundos}}",
+    "loading": "Carregando",
+    "volumeLevel": "Volume em {percent}%"
 }
