@@ -90,7 +90,11 @@ void main() {
     final updatedAt = DateTime.now().millisecondsSinceEpoch - 60000;
     late Directory progressDir;
 
-    File progressFile(String itemId, {required bool pending}) {
+    File progressFile(
+      String itemId, {
+      required bool pending,
+      int listenedMs = 0,
+    }) {
       final file = File('${progressDir.path}/$itemId.json')
         ..parent.createSync(recursive: true)
         ..writeAsStringSync(
@@ -100,7 +104,7 @@ void main() {
             'itemId': itemId,
             'duration': 600,
             'currentTime': 50,
-            'listenedMs': 0,
+            'listenedMs': listenedMs,
             'updatedAt': updatedAt,
             'pending': pending,
           }),
@@ -165,6 +169,27 @@ void main() {
         find.widgetWithText(ElevatedButton, 'Login'),
       );
       expect(login.onPressed, isNotNull);
+    });
+
+    testWidgets('keeps listening time the push could not report', (
+      tester,
+    ) async {
+      // Played offline for 2 min: the push sends the position, but the
+      // listening time only reaches the server through a playback session.
+      final listened = progressFile('li_1', pending: true, listenedMs: 120000);
+      routes['GET /api/me/progress/li_1'] = () => http.Response('', 404);
+      routes['PATCH /api/me/progress/li_1'] = () => ok({});
+      routes['POST /logout'] = () => ok({});
+
+      await logOut(tester);
+
+      expect(requests, contains('PATCH /api/me/progress/li_1'));
+      // Kept for alice's next online play of the book to report.
+      expect(listened.existsSync(), isTrue);
+      final json =
+          jsonDecode(listened.readAsStringSync()) as Map<String, dynamic>;
+      expect(json['pending'], isFalse);
+      expect(json['listenedMs'], 120000);
     });
 
     testWidgets('keeps offline progress the server could not take', (

@@ -574,9 +574,11 @@ class AudioPlayerController extends ChangeNotifier {
 
   /// Removes all progress kept on the watch (e.g. on logout). With
   /// [keepPending], progress that never reached the server stays, so a
-  /// later [pushLocalProgress] by the same user can still send it. Files
-  /// record their server and user, and only matching ones are ever read,
-  /// so another account never sees them.
+  /// later [pushLocalProgress] by the same user can still send it. So does
+  /// unreported listening time: a push sends the position but not that
+  /// time, which only reaches the server when the book is next played
+  /// online. Files record their server and user, and only matching ones
+  /// are ever read, so another account never sees them.
   static Future<void> clearAllLocalProgress({bool keepPending = false}) async {
     try {
       final dir = await _localProgressDir();
@@ -590,6 +592,7 @@ class AudioPlayerController extends ChangeNotifier {
           final json =
               jsonDecode(file.readAsStringSync()) as Map<String, dynamic>;
           if (json['pending'] == true) continue;
+          if (((json['listenedMs'] as num?) ?? 0) > 0) continue;
         } on Object {
           // Unreadable: nothing can be pushed from it either.
         }
