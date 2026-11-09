@@ -140,9 +140,13 @@ class AudioPlayerController extends ChangeNotifier {
   static Future<void> get lastClose =>
       _previousClose.timeout(const Duration(seconds: 45), onTimeout: () {});
 
-  /// Local progress keys of books open in a player; [pushLocalProgress]
-  /// leaves those to the player.
-  static final Set<String> _openKeys = {};
+  /// Local progress keys of books open in a player, with how many players
+  /// have each open; [pushLocalProgress] leaves those to the player. Counted,
+  /// because a reopened book registers before the old player has closed.
+  static final Map<String, int> _openKeys = {};
+
+  /// The key this controller registered in [_openKeys], if any.
+  String? _openKey;
 
   /// The running [pushLocalProgress], so runs don't overlap and a player
   /// starts only after a push of its book finished.
@@ -182,6 +186,10 @@ class AudioPlayerController extends ChangeNotifier {
   List<BookTrack> _playing = [];
   List<BookChapter> chapters = [];
   String sessionId = '';
+
+  /// Whether the server session was started with direct play; a session
+  /// started again after the server forgot it asks for the same.
+  bool _directPlay = false;
   String bookTitle = '';
 
   /// Author (or, for an episode, the podcast), for the media notification.
@@ -423,7 +431,10 @@ class AudioPlayerController extends ChangeNotifier {
     serverUrl = srvUrl;
     token = authToken;
     user = userName;
-    _openKeys.add(_localKey);
+    if (_openKey == null) {
+      final key = _openKey = _localKey;
+      _openKeys.update(key, (n) => n + 1, ifAbsent: () => 1);
+    }
 
     try {
       // Let the previous book finish closing (bounded, it has its own
@@ -438,20 +449,13 @@ class AudioPlayerController extends ChangeNotifier {
       if (_closed) return false;
       // A downloaded book doesn't wait long for a slow network.
       final canPlayOffline = _metaFile(await localDirPath()).existsSync();
-      final response = await _client
-          .post(
-            Uri.parse(
-              '$serverUrl/api/items/$libraryItemId/play'
-              '${episodeId == null ? '' : '/$episodeId'}',
-            ),
-            headers: {..._authHeaders, 'Content-Type': 'application/json'},
-            // A downloaded book plays its files; podcast episodes are
-            // small enough to play directly.
-            body: await _deviceInfoBody(
-              directPlay: canPlayOffline || episodeId != null,
-            ),
-          )
-          .timeout(Duration(seconds: canPlayOffline ? 5 : 20));
+      // A downloaded book plays its files; podcast episodes are small
+      // enough to play directly.
+      _directPlay = canPlayOffline || episodeId != null;
+      final response = await _postPlay(
+        directPlay: _directPlay,
+        timeout: Duration(seconds: canPlayOffline ? 5 : 20),
+      );
       if (response.statusCode == 401) return false; // Log in again.
       if (response.statusCode != 200) {
         if (!await _startOffline()) return false;
@@ -601,7 +605,7 @@ class AudioPlayerController extends ChangeNotifier {
             json['episodeId'] as String?,
           );
           final key = _keyFor(serverUrl, user, mediaPath);
-          if (_openKeys.contains(key)) continue;
+          if (_openKeys.containsKey(key)) continue;
           final url = Uri.parse('$serverUrl/api/me/progress/$mediaPath');
           final current = await client
               .get(url, headers: headers)
@@ -642,7 +646,7 @@ class AudioPlayerController extends ChangeNotifier {
           }
           // Synchronous, so nothing else runs between the check and the
           // write: keep a file a player changed meanwhile.
-          if (_openKeys.contains(key) ||
+          if (_openKeys.containsKey(key) ||
               !file.existsSync() ||
               file.readAsStringSync() != raw) {
             continue;
@@ -825,26 +829,50 @@ class AudioPlayerController extends ChangeNotifier {
   }
 
   /// Closes a session that was started after the player was closed.
-  /// Uses its own client because the controller's is already closed.
-  Future<void> _closeOrphanSession() async {
-    if (sessionId.isEmpty) return;
+  Future<void> _closeOrphanSession() =>
+      _closeSessionAt(sessionId, _lastSyncedTime);
+
+  /// Closes session [id] at [position] without reporting listening time.
+  /// Uses its own client because the controller's may already be closed.
+  Future<void> _closeSessionAt(String id, double position) async {
+    if (id.isEmpty) return;
     final client = http.Client();
     try {
       await client
           .post(
-            Uri.parse('$serverUrl/api/session/$sessionId/close'),
+            Uri.parse('$serverUrl/api/session/$id/close'),
             headers: {..._authHeaders, 'Content-Type': 'application/json'},
             body: jsonEncode({
-              'currentTime': _lastSyncedTime,
+              'currentTime': position,
               'timeListened': 0,
               'duration': duration,
             }),
           )
           .timeout(const Duration(seconds: 20));
     } on Object catch (e) {
-      debugPrint('Could not close orphan session: $e');
+      debugPrint('Could not close session $id: $e');
     } finally {
       client.close();
+    }
+  }
+
+  /// Starts a new server session after the server forgot the current one,
+  /// as the current one was started. Only its id is used: the player keeps
+  /// its position and audio. False when none could be started.
+  Future<bool> _restartSession() async {
+    try {
+      final response = await _postPlay(
+        directPlay: _directPlay,
+        timeout: const Duration(seconds: 10),
+      );
+      if (response.statusCode != 200) return false;
+      final json = jsonDecode(response.body) as Map<String, dynamic>;
+      sessionId = json['id'] as String;
+      debugPrint('Server forgot the session; started $sessionId');
+      return true;
+    } on Object catch (e) {
+      debugPrint('Could not restart the session: $e');
+      return false;
     }
   }
 
@@ -944,6 +972,23 @@ class AudioPlayerController extends ChangeNotifier {
     'audio/x-wav',
     'audio/webm',
   ];
+
+  /// Starts a server session for the book (or episode).
+  Future<http.Response> _postPlay({
+    required bool directPlay,
+    Duration timeout = const Duration(seconds: 20),
+  }) async {
+    return await _client
+        .post(
+          Uri.parse(
+            '$serverUrl/api/items/$libraryItemId/play'
+            '${episodeId == null ? '' : '/$episodeId'}',
+          ),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: await _deviceInfoBody(directPlay: directPlay),
+        )
+        .timeout(timeout);
+  }
 
   Future<String> _deviceInfoBody({required bool directPlay}) async {
     final info = await DeviceInfoPlugin().androidInfo;
@@ -1220,13 +1265,11 @@ class AudioPlayerController extends ChangeNotifier {
   Future<void> togglePlayPause() async {
     final pending = _playAfterReload;
     if (pending != null) {
-      // Reloading after an error: a second tap cancels the play.
+      // Reloading (after an error, or a download added or deleted): a tap
+      // toggles whether it plays once loaded.
       _playAfterReload = !pending;
       return;
     }
-    // The audio is being swapped (download added or deleted); it resumes
-    // on its own if it was playing.
-    if (_reloading) return;
     if (player.playing) {
       await player.pause();
       return;
@@ -1253,8 +1296,8 @@ class AudioPlayerController extends ChangeNotifier {
     unawaited(player.play());
   }
 
-  /// While play reloads the audio after an error: whether to play once it
-  /// is loaded.
+  /// While the audio reloads (play after an error, or [reloadSources]):
+  /// whether to play once it is loaded.
   bool? _playAfterReload;
 
   /// Failed syncs in a row, and when a paused player may retry: 2, 4, 8 …
@@ -1302,20 +1345,33 @@ class AudioPlayerController extends ChangeNotifier {
     final listened =
         _listenClock.elapsed - _reportedListening + _carriedListening;
     var synced = false;
+    final body = jsonEncode({
+      'currentTime': current,
+      'timeListened': listened.inMilliseconds / 1000,
+      'duration': duration,
+    });
+    Future<http.Response> post() => _client
+        .post(
+          Uri.parse(
+            '$serverUrl/api/session/$sessionId/${close ? 'close' : 'sync'}',
+          ),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: body,
+        )
+        .timeout(const Duration(seconds: 20));
     try {
-      final response = await _client
-          .post(
-            Uri.parse(
-              '$serverUrl/api/session/$sessionId/${close ? 'close' : 'sync'}',
-            ),
-            headers: {..._authHeaders, 'Content-Type': 'application/json'},
-            body: jsonEncode({
-              'currentTime': current,
-              'timeListened': listened.inMilliseconds / 1000,
-              'duration': duration,
-            }),
-          )
-          .timeout(const Duration(seconds: 20));
+      final id = sessionId;
+      var response = await post();
+      // The server forgot the session (e.g. it restarted): every later sync
+      // would fail too, so start a new one and send the progress there, once
+      // per sync. Not for a close: the pending file below keeps the position
+      // for pushLocalProgress. When the session was replaced meanwhile
+      // (_reopenStream), just send to the new one.
+      if (response.statusCode == 404 &&
+          !close &&
+          (sessionId != id || await _restartSession())) {
+        response = await post();
+      }
       if (response.statusCode == 200) {
         synced = true;
         _lastSyncedTime = current;
@@ -1550,6 +1606,9 @@ class AudioPlayerController extends ChangeNotifier {
     unawaited(syncOpenSession(position: pos));
     _needsReload = false;
     _reloading = true;
+    // A play/pause tap meanwhile toggles this (see togglePlayPause).
+    _playAfterReload = wasPlaying;
+    var play = wasPlaying;
     try {
       await player.stop();
       // A downloaded book's session plays its files directly; once the
@@ -1558,13 +1617,21 @@ class AudioPlayerController extends ChangeNotifier {
           !_streamTracks.any((t) => t.isHls) &&
           tracks.any((t) => !t.directPlayable) &&
           !await isDownloaded()) {
-        await _reopenStream(pos);
+        await _reopenStream(_pendingPosition);
       }
-      await _loadSources(initialTime: pos);
+      // Seeks made meanwhile moved the pending position (the stopped
+      // player reports it as its position): load there, not at pos.
+      await _loadSources(initialTime: _pendingPosition);
     } finally {
       _reloading = false;
+      play = _playAfterReload ?? false;
+      _playAfterReload = null;
     }
-    if (wasPlaying) unawaited(player.play());
+    // stop() reported paused, so a media button pressed meanwhile (headset,
+    // notification) played the player: take that as a toggle too.
+    if (player.playing) play = !play;
+    if (play && !player.playing) unawaited(player.play());
+    if (!play && player.playing) unawaited(player.pause());
     _notify();
   }
 
@@ -1619,23 +1686,13 @@ class AudioPlayerController extends ChangeNotifier {
   }
 
   /// Replaces the server session with a new one that streams the book as
-  /// HLS where needed, starting at [position]. Keeps the current session
-  /// when that fails.
+  /// HLS where needed. The old session is closed at [position] only once
+  /// the new one started, so when that fails the old one, still open, is
+  /// kept.
   Future<void> _reopenStream(double position) async {
     if (isOffline || _closed) return;
-    // Ends the old session with the progress so far, so the new stream
-    // starts where the player will.
-    if (sessionId.isNotEmpty) {
-      await syncOpenSession(close: true, position: position);
-    }
     try {
-      final response = await _client
-          .post(
-            Uri.parse('$serverUrl/api/items/$libraryItemId/play'),
-            headers: {..._authHeaders, 'Content-Type': 'application/json'},
-            body: await _deviceInfoBody(directPlay: false),
-          )
-          .timeout(const Duration(seconds: 20));
+      final response = await _postPlay(directPlay: false);
       if (response.statusCode != 200) return;
       final json = jsonDecode(response.body) as Map<String, dynamic>;
       final stream =
@@ -1644,7 +1701,13 @@ class AudioPlayerController extends ChangeNotifier {
               .map((t) => BookTrack.fromJson(t, const {}))
               .toList()
             ..sort((a, b) => a.startOffset.compareTo(b.startOffset));
+      final oldId = sessionId;
       sessionId = json['id'] as String;
+      _directPlay = false;
+      // Saves the position on the old session. Unreported listening time
+      // goes to the new one with the next sync. ABS may have closed the old
+      // one already when the new one started; its 404 is fine.
+      await _closeSessionAt(oldId, position);
       if (_closed) {
         unawaited(_closeOrphanSession());
         return;
@@ -1662,7 +1725,14 @@ class AudioPlayerController extends ChangeNotifier {
     _closed = true;
     // Ends a running download now, releasing its service and wake lock.
     cancelDownload();
-    return _previousClose = _close();
+    // Chained, so a quick close can't let the next player start before a
+    // slower earlier close saved its book's position. Errors are swallowed:
+    // one failed close must not block the ones after it.
+    final previous = _previousClose;
+    return _previousClose = Future.wait([previous, _close()]).then<void>(
+      (_) {},
+      onError: (Object e) => debugPrint('Error closing player: $e'),
+    );
   }
 
   Future<void> _close() async {
@@ -1685,7 +1755,17 @@ class AudioPlayerController extends ChangeNotifier {
     } on Object catch (e) {
       debugPrint('Error closing player: $e');
     } finally {
-      _openKeys.remove(_localKey);
+      // Only this player's registration: a newer player of the same book
+      // may already be open.
+      final key = _openKey;
+      if (key != null) {
+        final left = (_openKeys[key] ?? 1) - 1;
+        if (left > 0) {
+          _openKeys[key] = left;
+        } else {
+          _openKeys.remove(key);
+        }
+      }
       _client.close();
       downloadProgress.dispose();
       _sleepTimer?.cancel();
