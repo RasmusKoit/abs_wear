@@ -1,15 +1,15 @@
 import 'dart:async';
 
+import 'package:abs_wear/app/crown.dart';
+import 'package:abs_wear/app/view/round_scrollbar.dart';
 import 'package:flutter/material.dart';
-import 'package:rotary_scrollbar/rotary_scrollbar.dart';
-import 'package:wearable_rotary/wearable_rotary.dart';
 
 /// Crown (rotary) scrolling plus a round scrollbar, active only while its
 /// page is on top.
 ///
-/// The package's RotaryScrollbar listens to the global rotary stream for
-/// as long as it is mounted, and pages under the current one stay mounted,
-/// so a hidden list would scroll along with the visible one.
+/// Crown turns arrive on one app-wide stream and pages under the current
+/// one stay mounted, so each listener checks that its page is on top;
+/// otherwise a hidden list would scroll along with the visible one.
 class CrownScrollbar extends StatefulWidget {
   const CrownScrollbar({
     required this.controller,
@@ -30,7 +30,7 @@ class _CrownScrollbarState extends State<CrownScrollbar> {
   static const double _step = 50;
   static const _duration = Duration(milliseconds: 150);
 
-  StreamSubscription<RotaryEvent>? _subscription;
+  StreamSubscription<bool>? _subscription;
 
   /// Where consecutive detents are heading, so fast turns add up instead
   /// of restarting from the current (animating) offset.
@@ -40,7 +40,7 @@ class _CrownScrollbarState extends State<CrownScrollbar> {
   @override
   void initState() {
     super.initState();
-    _subscription = rotaryEvents.listen(_onRotary);
+    _subscription = crownTurns.listen(_onCrown);
   }
 
   @override
@@ -49,13 +49,13 @@ class _CrownScrollbarState extends State<CrownScrollbar> {
     super.dispose();
   }
 
-  void _onRotary(RotaryEvent event) {
+  void _onCrown(bool clockwise) {
     if (!mounted) return;
     final route = ModalRoute.of(context);
     if (route != null && !route.isCurrent) return;
     final controller = widget.controller;
     if (!controller.hasClients) return;
-    final forward = event.direction == RotaryDirection.clockwise;
+    final forward = clockwise;
 
     if (controller is PageController) {
       unawaited(
@@ -88,12 +88,6 @@ class _CrownScrollbarState extends State<CrownScrollbar> {
 
   @override
   Widget build(BuildContext context) {
-    return RoundScrollbar(
-      controller: widget.controller,
-      width: 2,
-      padding: 1,
-      autoHide: false,
-      child: widget.child,
-    );
+    return RoundScrollbar(controller: widget.controller, child: widget.child);
   }
 }

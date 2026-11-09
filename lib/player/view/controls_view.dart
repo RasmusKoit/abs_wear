@@ -1,9 +1,9 @@
 import 'dart:async';
 
+import 'package:abs_wear/app/toast.dart';
 import 'package:abs_wear/l10n/l10n.dart';
 import 'package:abs_wear/player/darts/audio_player.dart';
 import 'package:flutter/material.dart';
-import 'package:fluttertoast/fluttertoast.dart';
 import 'package:volume_controller/volume_controller.dart';
 
 enum _LocalState { none, partial, complete }
@@ -58,8 +58,7 @@ class _ControlViewPageState extends State<ControlViewPage> {
     if (mounted) setState(() => _currentVolume = next);
   }
 
-  Future<void> _toast(String msg) =>
-      Fluttertoast.showToast(msg: msg, gravity: ToastGravity.CENTER);
+  Future<void> _toast(String msg) => showToast(msg);
 
   Future<void> _download() async {
     final l10n = context.l10n;
