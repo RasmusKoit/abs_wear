@@ -58,5 +58,10 @@
     "noDownloads": "कुछ भी डाउनलोड नहीं है।",
     "finished": "पूरा सुना",
     "playbackError": "प्लेबैक में त्रुटि। फिर से कोशिश के लिए चलाएं टैप करें।",
-    "audioPlaybackChannel": "ऑडियो प्लेबैक"
+    "audioPlaybackChannel": "ऑडियो प्लेबैक",
+    "hoursCount": "{count, plural, =1{1 घंटा} other{{count} घंटे}}",
+    "minutesCount": "{count, plural, =1{1 मिनट} other{{count} मिनट}}",
+    "secondsCount": "{count, plural, =1{1 सेकंड} other{{count} सेकंड}}",
+    "loading": "लोड हो रहा है",
+    "volumeLevel": "वॉल्यूम {percent}%"
 }

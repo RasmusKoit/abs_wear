@@ -44,7 +44,7 @@
     "forward10": "Avanzar 10 segundos",
     "play": "Reproducir",
     "pause": "Pausar",
-    "timeLeftLabel": "Quedan {time} del capítulo",
+    "timeLeftLabel": "Tiempo restante del capítulo: {time}",
     "allPodcasts": "Todos los podcasts",
     "podcastCount": "{count, plural, =1{1 podcast} other{{count} podcasts}}",
     "libraries": "Bibliotecas",
@@ -58,5 +58,10 @@
     "noDownloads": "No hay descargas.",
     "finished": "Terminado",
     "playbackError": "Error de reproducción. Toca reproducir para reintentar.",
-    "audioPlaybackChannel": "Reproducción de audio"
+    "audioPlaybackChannel": "Reproducción de audio",
+    "hoursCount": "{count, plural, =1{1 hora} other{{count} horas}}",
+    "minutesCount": "{count, plural, =1{1 minuto} other{{count} minutos}}",
+    "secondsCount": "{count, plural, =1{1 segundo} other{{count} segundos}}",
+    "loading": "Cargando",
+    "volumeLevel": "Volumen {percent} %"
 }

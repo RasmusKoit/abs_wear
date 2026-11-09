@@ -129,6 +129,11 @@ class DownloadService : Service() {
     }
 
     override fun onDestroy() {
+        // A Dart progress update that landed between a Cancel's stopSelf()
+        // and here re-posted the notification without the foreground state,
+        // so nothing would remove it. This runs on the main thread after
+        // that update, and before a newer download's service is created.
+        getSystemService(NotificationManager::class.java)?.cancel(NOTIFICATION_ID)
         instance = null
         wakeLock?.let { if (it.isHeld) it.release() }
         wakeLock = null

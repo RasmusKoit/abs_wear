@@ -175,6 +175,39 @@ void main() {
       await c.close();
     });
 
+    test('listening during the restart goes to the next sync', () async {
+      final play = Completer<http.Response>();
+      routes['POST /api/items/li_1/play'] = () => play.future;
+      routes['POST /api/session/s2/sync'] = () async => ok();
+      final c = controller()..listenClock.start();
+
+      final sync = c.syncOpenSession(position: 42);
+      // Still listening while the restart waits for the server.
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      final restarted = c.listenClock.elapsed.inMicroseconds / 1e6;
+      play.complete(ok({'id': 's2'}));
+      await sync;
+      c.listenClock.stop();
+      await c.syncOpenSession(position: 43);
+
+      double listened(int i) =>
+          (jsonDecode(bodies[i]) as Map<String, dynamic>)['timeListened']
+              as double;
+      // The resend repeats the first body; the time since is in the next.
+      expect(bodies[2], bodies[0]);
+      expect(restarted - listened(0), greaterThan(0.05));
+      expect(
+        listened(3),
+        greaterThanOrEqualTo(restarted - listened(0) - 0.001),
+      );
+      // Each body counts whole milliseconds: allow 1 ms each.
+      expect(
+        listened(0) + listened(3),
+        closeTo(c.listenClock.elapsed.inMicroseconds / 1e6, 0.002),
+      );
+      await c.close();
+    });
+
     test('an episode session is started for the episode', () async {
       routes['POST /api/items/li_1/play/ep_1'] = () async => ok({'id': 's2'});
       routes['POST /api/session/s2/sync'] = () async => ok();
@@ -534,6 +567,115 @@ void main() {
       await http.runWithClient(c.close, () => client);
     });
 
+    group('when the check fails at open', () {
+      late List<http.Response> answers;
+
+      /// Opens the book with every progress check failing until [answers]
+      /// has some.
+      Future<AudioPlayerController> open() async {
+        writePending();
+        routes['POST /api/items/li_1/play'] = () async => ok(mp3Session);
+        answers = [];
+        routes['GET /api/me/progress/li_1'] = () async =>
+            answers.isEmpty ? http.Response('', 504) : answers.removeAt(0);
+        routes['POST /api/session/s1/sync'] = () async => ok();
+        routes['POST /api/session/s1/close'] = () async => ok();
+        final c = AudioPlayerController(client: client);
+        expect(
+          await c.setupPlayer('li_1', _server, 't', userName: 'u'),
+          isTrue,
+        );
+        return c;
+      }
+
+      Map<String, dynamic> lastBody(String request) =>
+          jsonDecode(bodies[requests.lastIndexOf(request)])
+              as Map<String, dynamic>;
+
+      test(
+        'resumes offline but sends nothing, closing without progress',
+        () async {
+          final c = await open();
+          expect(c.bookPosition, 50, reason: 'where the watch was');
+          expect(requests, isNot(contains('POST /api/session/s1/sync')));
+
+          await http.runWithClient(c.close, () => client);
+          // An empty close leaves the server's progress untouched (even a
+          // finished book's, whose session starts at 0).
+          expect(lastBody('POST /api/session/s1/close'), isEmpty);
+          // Still pending, unchanged: a later push compares the times.
+          expect(progress(), containsPair('pending', true));
+          expect(progress(), containsPair('updatedAt', updatedAt));
+          expect(progress(), containsPair('currentTime', 50));
+        },
+      );
+
+      test('a later answer with newer server progress moves there', () async {
+        final c = await open();
+        // Played elsewhere after the offline listening, further back.
+        answers.add(ok({'currentTime': 20, 'lastUpdate': updatedAt + 1000}));
+        await c.periodicSync();
+        expect(c.bookPosition, 20);
+        // Offline listening time is still reported.
+        expect(lastBody('POST /api/session/s1/sync'), {
+          'currentTime': 20,
+          'timeListened': 30,
+          'duration': 600,
+        });
+        await http.runWithClient(c.close, () => client);
+      });
+
+      test('a later answer with older server progress sends the offline '
+          'position', () async {
+        final c = await open();
+        answers.add(ok({'currentTime': 100, 'lastUpdate': updatedAt - 1000}));
+        await c.periodicSync();
+        expect(c.bookPosition, 50);
+        expect(
+          lastBody('POST /api/session/s1/sync'),
+          containsPair('currentTime', 50),
+        );
+        await http.runWithClient(c.close, () => client);
+      });
+
+      test('a seek on the watch makes its progress the latest', () async {
+        final c = await open();
+        await c.seekToBookTime(60);
+        final checks = requests
+            .where((r) => r == 'GET /api/me/progress/li_1')
+            .length;
+        // Newer server progress no longer matters: the seek is newer.
+        answers.add(ok({'currentTime': 20, 'lastUpdate': updatedAt + 1000}));
+        await c.periodicSync();
+        expect(
+          requests.where((r) => r == 'GET /api/me/progress/li_1').length,
+          checks,
+        );
+        expect(
+          lastBody('POST /api/session/s1/sync'),
+          containsPair('currentTime', 60),
+        );
+        expect(c.bookPosition, 60);
+        await http.runWithClient(c.close, () => client);
+      });
+
+      test('still no answer: keeps waiting, asking with backoff', () async {
+        final c = await open();
+        int checks() =>
+            requests.where((r) => r == 'GET /api/me/progress/li_1').length;
+        final before = checks();
+        await c.periodicSync();
+        expect(checks(), before + 1);
+        expect(c.retryAt, isNotNull);
+        // Within the backoff: not asked again.
+        await c.periodicSync();
+        expect(checks(), before + 1);
+        expect(requests, isNot(contains('POST /api/session/s1/sync')));
+        expect(c.bookPosition, 50);
+        await http.runWithClient(c.close, () => client);
+      });
+    });
+
     test("a push doesn't send it when the check fails", () async {
       writePending();
       routes['PATCH /api/me/progress/li_1'] = () async => ok();
@@ -606,10 +748,10 @@ void main() {
       expect(plays[0], containsPair('forceDirectPlay', true));
       expect(plays[1], isNot(contains('forceDirectPlay')));
       expect(c.sessionId, 's2');
-      // The old session closes at the server's position; the stream loads
-      // at the newer offline one (50 s is in segment 8).
+      // The old session closes leaving the server's progress as it is; the
+      // stream loads at the newer offline one (50 s is in segment 8).
       final close = bodies[requests.indexOf('POST /api/session/s1/close')];
-      expect(jsonDecode(close), containsPair('currentTime', 100));
+      expect(jsonDecode(close), isEmpty);
       expect(requests, contains('HEAD /hls/s2/output-8.ts'));
       expect(c.bookPosition, 50);
       await http.runWithClient(c.close, () => client);

@@ -172,10 +172,23 @@ class _ScrollingTextState extends State<ScrollingText>
             ),
           );
         }
-        return GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: scrolling ? null : () => _scheduleScroll(delay: Duration.zero),
-          child: RepaintBoundary(child: line),
+        // The tap only replays the scroll, which a screen reader doesn't
+        // need (it reads the whole text): no semantic tap action, which
+        // would also be a 16 dp high tap target. While scrolling, the
+        // doubled text is read once.
+        return Semantics(
+          label: scrolling ? widget.text : null,
+          textDirection: scrolling ? direction : null,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            excludeFromSemantics: true,
+            onTap: scrolling
+                ? null
+                : () => _scheduleScroll(delay: Duration.zero),
+            child: RepaintBoundary(
+              child: scrolling ? ExcludeSemantics(child: line) : line,
+            ),
+          ),
         );
       },
     );

@@ -18,3 +18,20 @@ AppLocalizations deviceL10n() => lookupAppLocalizations(
     AppLocalizations.supportedLocales,
   ),
 );
+
+extension SpokenDuration on AppLocalizations {
+  /// [duration] in words, for screen readers, which read "01:06:40" digit
+  /// by digit or as a time of day: "1 hour 6 minutes", "6 minutes 40
+  /// seconds". Seconds only under an hour, and not at all without
+  /// [seconds] (for displays that show minutes only).
+  String spokenDuration(Duration duration, {bool seconds = true}) {
+    final h = duration.inHours;
+    final m = duration.inMinutes % 60;
+    final s = seconds && h == 0 ? duration.inSeconds % 60 : 0;
+    return [
+      if (h > 0) hoursCount(h),
+      if (m > 0 || (h == 0 && s == 0)) minutesCount(m),
+      if (s > 0) secondsCount(s),
+    ].join(' ');
+  }
+}
