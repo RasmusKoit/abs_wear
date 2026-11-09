@@ -214,10 +214,13 @@ object DownloadNetwork {
             override fun onAvailable(network: Network) {
                 main.post {
                     if (callback !== this) return@post
+                    // A failed bind (Wi-Fi gone again) isn't answered: a
+                    // later onAvailable may still bind, else the timeout
+                    // answers false and drops the request.
                     if (!timedOut && !useDefault && manager.bindProcessToNetwork(network)) {
                         bound = network
+                        answer(true)
                     }
-                    answer(bound != null)
                 }
             }
 
@@ -252,7 +255,9 @@ object DownloadNetwork {
 
     /**
      * Routes over the default network again, for a server that the watch's
-     * Wi-Fi can't reach, and drops the Wi-Fi request.
+     * Wi-Fi can't reach. Drops the Wi-Fi request only when the default
+     * network isn't Wi-Fi: otherwise the request is what keeps Wi-Fi up
+     * with the screen off, so it stays until [release].
      */
     fun useDefaultNetwork(context: Context) {
         useDefault = true
@@ -262,7 +267,10 @@ object DownloadNetwork {
             manager.bindProcessToNetwork(null)
             bound = null
         }
-        callback?.let { dropRequest(manager, it) }
+        val default = manager.activeNetwork ?: return
+        val defaultIsWifi = manager.getNetworkCapabilities(default)
+            ?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ?: true
+        if (!defaultIsWifi) callback?.let { dropRequest(manager, it) }
     }
 
     /** Unregisters [cb] if it is still the current request (not a newer one). */
