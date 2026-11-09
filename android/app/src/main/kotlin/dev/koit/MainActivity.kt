@@ -1,6 +1,8 @@
 package dev.koit.abs_wear
 
 import android.Manifest
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
@@ -108,6 +110,25 @@ class MainActivity : AudioServiceActivity() {
                 toast?.cancel()
                 toast = Toast.makeText(context, call.argument<String>("message") ?: "", length)
                     .also { it.show() }
+                result.success(null)
+            }
+        // audio_service names its channel only when it first creates it.
+        // Registering the same id again renames it (e.g. after a language
+        // change) and keeps what the user set. Same importance and badge as
+        // audio_service, for when this runs before it creates the channel.
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "notification_channel")
+            .setMethodCallHandler { call, result ->
+                val id = call.argument<String>("id")
+                val name = call.argument<String>("name")
+                if (call.method != "nameAudio" || id == null || name.isNullOrEmpty()) {
+                    result.notImplemented()
+                    return@setMethodCallHandler
+                }
+                context.getSystemService(NotificationManager::class.java)?.createNotificationChannel(
+                    NotificationChannel(id, name, NotificationManager.IMPORTANCE_LOW).apply {
+                        setShowBadge(false)
+                    },
+                )
                 result.success(null)
             }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "network_lock")
