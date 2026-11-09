@@ -388,8 +388,9 @@ class AudioPlayerController extends ChangeNotifier {
   /// reloaded before it can play again.
   bool _needsReload = false;
 
-  /// Called with a short message when playback fails (e.g. network loss).
-  void Function(String message)? onPlaybackError;
+  /// Called when playback fails (e.g. network loss); the page shows the
+  /// localized message.
+  void Function()? onPlaybackError;
 
   /// Serialises syncs so overlapping calls don't double-report time.
   Future<void> _syncChain = Future.value();
@@ -872,7 +873,7 @@ class AudioPlayerController extends ChangeNotifier {
     }
     _needsReload = true;
     unawaited(player.pause());
-    onPlaybackError?.call('Playback error. Tap play to retry.');
+    onPlaybackError?.call();
     _notify();
   }
 

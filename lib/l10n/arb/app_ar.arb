@@ -56,5 +56,7 @@
     "sleepTimerOff": "إيقاف",
     "downloads": "التنزيلات",
     "noDownloads": "لا توجد تنزيلات.",
-    "finished": "مكتمل"
+    "finished": "مكتمل",
+    "playbackError": "خطأ في التشغيل. انقر على تشغيل لإعادة المحاولة.",
+    "audioPlaybackChannel": "تشغيل الصوت"
 }

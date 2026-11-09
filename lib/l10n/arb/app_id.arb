@@ -56,5 +56,7 @@
     "sleepTimerOff": "Mati",
     "downloads": "Unduhan",
     "noDownloads": "Belum ada unduhan.",
-    "finished": "Selesai"
+    "finished": "Selesai",
+    "playbackError": "Kesalahan pemutaran. Ketuk Putar untuk mencoba lagi.",
+    "audioPlaybackChannel": "Pemutaran audio"
 }

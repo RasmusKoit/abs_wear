@@ -56,5 +56,7 @@
     "sleepTimerOff": "বন্ধ",
     "downloads": "ডাউনলোড",
     "noDownloads": "কিছু ডাউনলোড করা নেই।",
-    "finished": "শোনা শেষ"
+    "finished": "শোনা শেষ",
+    "playbackError": "প্লেব্যাকে সমস্যা। আবার চেষ্টা করতে চালান ট্যাপ করুন।",
+    "audioPlaybackChannel": "অডিও প্লেব্যাক"
 }

@@ -42,8 +42,9 @@ class _PlayerPageState extends State<PlayerPage> {
   }
 
   Future<void> _init() async {
-    _playerController.onPlaybackError = (message) =>
-        unawaited(showToast(message));
+    _playerController.onPlaybackError = () {
+      if (mounted) unawaited(showToast(context.l10n.playbackError));
+    };
     final ok = await _playerController.setupPlayer(
       widget.libraryItemId,
       widget.serverUrl,

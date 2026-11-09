@@ -56,5 +56,7 @@
     "sleepTimerOff": "끔",
     "downloads": "다운로드한 항목",
     "noDownloads": "다운로드한 항목이 없습니다.",
-    "finished": "다 들음"
+    "finished": "다 들음",
+    "playbackError": "재생 오류. 재생을 탭하여 다시 시도하세요.",
+    "audioPlaybackChannel": "오디오 재생"
 }

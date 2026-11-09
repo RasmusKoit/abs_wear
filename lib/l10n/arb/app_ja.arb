@@ -56,5 +56,7 @@
     "sleepTimerOff": "オフ",
     "downloads": "ダウンロード済み",
     "noDownloads": "ダウンロードはありません。",
-    "finished": "再生済み"
+    "finished": "再生済み",
+    "playbackError": "再生エラー。再生をタップして再試行。",
+    "audioPlaybackChannel": "オーディオ再生"
 }

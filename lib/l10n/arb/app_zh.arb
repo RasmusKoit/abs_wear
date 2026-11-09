@@ -56,5 +56,7 @@
     "sleepTimerOff": "关闭",
     "downloads": "下载内容",
     "noDownloads": "没有下载内容。",
-    "finished": "已听完"
+    "finished": "已听完",
+    "playbackError": "播放出错。点按播放以重试。",
+    "audioPlaybackChannel": "音频播放"
 }
