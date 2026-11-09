@@ -856,10 +856,18 @@ class AudioPlayerController extends ChangeNotifier {
     }
   }
 
+  /// The running [_restartSession]; [_reopenStream] waits for it, so the
+  /// two never start sessions at once (ABS closes the device's other
+  /// session when one starts).
+  Future<bool>? _restarting;
+
   /// Starts a new server session after the server forgot the current one,
   /// as the current one was started. Only its id is used: the player keeps
-  /// its position and audio. False when none could be started.
-  Future<bool> _restartSession() async {
+  /// its position and audio. False when there is no current session.
+  Future<bool> _restartSession() => _restarting = _startReplacementSession();
+
+  Future<bool> _startReplacementSession() async {
+    final id = sessionId;
     try {
       final response = await _postPlay(
         directPlay: _directPlay,
@@ -867,7 +875,13 @@ class AudioPlayerController extends ChangeNotifier {
       );
       if (response.statusCode != 200) return false;
       final json = jsonDecode(response.body) as Map<String, dynamic>;
-      sessionId = json['id'] as String;
+      final newId = json['id'] as String;
+      if (sessionId != id || _closed) {
+        // Replaced (_reopenStream) or closed meanwhile: drop this one.
+        unawaited(_closeSessionAt(newId, bookPosition));
+        return sessionId != id && sessionId.isNotEmpty;
+      }
+      sessionId = newId;
       debugPrint('Server forgot the session; started $sessionId');
       return true;
     } on Object catch (e) {
@@ -1263,10 +1277,15 @@ class AudioPlayerController extends ChangeNotifier {
 
   /// Pausing syncs progress through the player state listener.
   Future<void> togglePlayPause() async {
+    // The audio is being swapped (download added or deleted) and the
+    // stopped player shows Play: a tap means play once it is loaded.
+    if (_reloading) {
+      _playAfterReload = true;
+      return;
+    }
     final pending = _playAfterReload;
     if (pending != null) {
-      // Reloading (after an error, or a download added or deleted): a tap
-      // toggles whether it plays once loaded.
+      // Reloading after an error: a second tap cancels the play.
       _playAfterReload = !pending;
       return;
     }
@@ -1367,9 +1386,13 @@ class AudioPlayerController extends ChangeNotifier {
       // per sync. Not for a close: the pending file below keeps the position
       // for pushLocalProgress. When the session was replaced meanwhile
       // (_reopenStream), just send to the new one.
+      // Not once the player is closing either: its queued close then 404s
+      // and saves the position as above, within the close's time bound.
       if (response.statusCode == 404 &&
           !close &&
-          (sessionId != id || await _restartSession())) {
+          !_closed &&
+          (sessionId != id || await _restartSession()) &&
+          !_closed) {
         response = await post();
       }
       if (response.statusCode == 200) {
@@ -1606,7 +1629,8 @@ class AudioPlayerController extends ChangeNotifier {
     unawaited(syncOpenSession(position: pos));
     _needsReload = false;
     _reloading = true;
-    // A play/pause tap meanwhile toggles this (see togglePlayPause).
+    // A Play tap meanwhile sets this (see togglePlayPause). Pausing during
+    // the reload isn't supported: the stopped player only offers Play.
     _playAfterReload = wasPlaying;
     var play = wasPlaying;
     try {
@@ -1628,8 +1652,8 @@ class AudioPlayerController extends ChangeNotifier {
       _playAfterReload = null;
     }
     // stop() reported paused, so a media button pressed meanwhile (headset,
-    // notification) played the player: take that as a toggle too.
-    if (player.playing) play = !play;
+    // notification) was a Play press: play.
+    if (player.playing) play = true;
     if (play && !player.playing) unawaited(player.play());
     if (!play && player.playing) unawaited(player.pause());
     _notify();
@@ -1691,6 +1715,9 @@ class AudioPlayerController extends ChangeNotifier {
   /// kept.
   Future<void> _reopenStream(double position) async {
     if (isOffline || _closed) return;
+    // A restart after a 404 may be starting a session right now.
+    await _restarting;
+    if (_closed) return;
     try {
       final response = await _postPlay(directPlay: false);
       if (response.statusCode != 200) return;

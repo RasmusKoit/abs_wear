@@ -182,6 +182,45 @@ void main() {
       await c.close();
     });
 
+    test('no restart once the player is closing', () async {
+      final sync = Completer<http.Response>();
+      routes['POST /api/session/s1/sync'] = () => sync.future;
+      final c = controller()..isLoaded = true;
+
+      unawaited(c.syncOpenSession(position: 42));
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      unawaited(http.runWithClient(c.close, () => client));
+      sync.complete(http.Response('', 404));
+      await AudioPlayerController.lastClose;
+
+      expect(requests, [
+        'POST /api/session/s1/sync',
+        'POST /api/session/s1/close',
+      ]);
+      expect(pendingFiles(), hasLength(1));
+    });
+
+    test('a restart that lands after the close drops its session', () async {
+      final play = Completer<http.Response>();
+      routes['POST /api/items/li_1/play'] = () => play.future;
+      routes['POST /api/session/s3/close'] = () async => ok();
+      final c = controller()..isLoaded = true;
+
+      unawaited(
+        http.runWithClient(() => c.syncOpenSession(position: 42), () => client),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      unawaited(http.runWithClient(c.close, () => client));
+      play.complete(ok({'id': 's3'}));
+      await AudioPlayerController.lastClose;
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      expect(c.sessionId, 's1');
+      expect(requests, contains('POST /api/session/s3/close'));
+      expect(requests, contains('POST /api/session/s1/close'));
+      expect(requests, isNot(contains('POST /api/session/s3/sync')));
+    });
+
     test('a close keeps the position for pushLocalProgress', () async {
       final c = controller()..isLoaded = true;
       await http.runWithClient(c.close, () => client);
@@ -247,6 +286,82 @@ void main() {
       expect(requests, isNot(contains('POST /api/session/s1/close')));
       await c.syncOpenSession(position: 10);
       expect(requests.last, 'POST /api/session/s1/sync');
+      await c.close();
+    });
+
+    test(
+      "a 404 restart doesn't replace the reopened stream's session",
+      () async {
+        // Each /play waits until the test answers it.
+        final plays = <Completer<http.Response>>[];
+        routes['POST /api/items/li_1/play'] = () {
+          final play = Completer<http.Response>();
+          plays.add(play);
+          return play.future;
+        };
+        final sync = Completer<http.Response>();
+        routes['POST /api/session/s1/sync'] = () => sync.future;
+        routes['POST /api/session/s3/close'] = () async => ok();
+        routes['HEAD /hls/s2/output-0.ts'] = () async => ok();
+        final c = controller()..tracks = const [m4b];
+
+        final reload = http.runWithClient(c.deleteDownload, () => client);
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        expect(plays, hasLength(1), reason: 'the stream reopen');
+        // The reload's sync to the old session 404s: a restart starts.
+        sync.complete(http.Response('', 404));
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        expect(plays, hasLength(2));
+        plays[0].complete(ok(hlsSession));
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        plays[1].complete(ok({'id': 's3'}));
+        await reload;
+        await c.syncOpenSession(position: 10);
+
+        expect(c.sessionId, 's2');
+        expect(requests, contains('POST /api/session/s3/close'));
+        expect(requests, isNot(contains('POST /api/session/s3/sync')));
+        expect(requests.last, 'POST /api/session/s2/sync');
+        await c.close();
+      },
+    );
+
+    test('a stream reopen waits for a running 404 restart', () async {
+      final plays = <Completer<http.Response>>[];
+      routes['POST /api/items/li_1/play'] = () {
+        final play = Completer<http.Response>();
+        plays.add(play);
+        return play.future;
+      };
+      routes['POST /api/session/s1/sync'] = () async => http.Response('', 404);
+      routes['POST /api/session/s3/sync'] = () async => ok();
+      routes['POST /api/session/s3/close'] = () async => ok();
+      routes['HEAD /hls/s2/output-0.ts'] = () async => ok();
+      final c = controller()..tracks = const [m4b];
+
+      unawaited(
+        http.runWithClient(() => c.syncOpenSession(position: 0), () => client),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(plays, hasLength(1), reason: 'the restart');
+      final reload = http.runWithClient(c.deleteDownload, () => client);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(plays, hasLength(1), reason: 'the reopen waits');
+
+      plays[0].complete(ok({'id': 's3'}));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(plays, hasLength(2));
+      plays[1].complete(ok(hlsSession));
+      await reload;
+
+      expect(c.sessionId, 's2');
+      expect(
+        requests,
+        containsAllInOrder([
+          'POST /api/session/s3/sync',
+          'POST /api/session/s3/close',
+        ]),
+      );
       await c.close();
     });
 
