@@ -395,9 +395,13 @@ class LoginPageState extends State<LoginPage> {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           children: [
             if (_checking)
-              const Padding(
-                padding: EdgeInsets.all(24),
-                child: Center(child: CircularProgressIndicator()),
+              Padding(
+                padding: const EdgeInsets.all(24),
+                child: Center(
+                  child: CircularProgressIndicator(
+                    semanticsLabel: l10n.loading,
+                  ),
+                ),
               )
             else if (_token == '')
               _buildLoginForm(theme)
@@ -471,9 +475,12 @@ class LoginPageState extends State<LoginPage> {
                   unawaited(login(serverUrl, username, password));
                 },
           child: _loggingIn || _loggingOut
-              ? const SizedBox.square(
+              ? SizedBox.square(
                   dimension: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    semanticsLabel: l10n.loading,
+                  ),
                 )
               : Text(l10n.login, style: theme.textTheme.bodyMedium),
         ),
@@ -513,7 +520,13 @@ class LoginPageState extends State<LoginPage> {
               backgroundColor: theme.colorScheme.error,
             ),
             onPressed: () => unawaited(_confirmLogout()),
-            child: Text(l10n.logout, style: theme.textTheme.bodyMedium),
+            // Dark text: white on the error red is too faint to read.
+            child: Text(
+              l10n.logout,
+              style: theme.textTheme.bodyMedium!.copyWith(
+                color: theme.colorScheme.onError,
+              ),
+            ),
           ),
         ),
         const SizedBox(height: 32),

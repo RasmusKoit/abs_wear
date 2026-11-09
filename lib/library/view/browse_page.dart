@@ -257,12 +257,21 @@ class _BrowsePageState extends State<BrowsePage> {
           child: AppBar(
             centerTitle: true,
             automaticallyImplyLeading: false,
-            title: Text(switch ((widget.isPodcast, _total)) {
-              (false, null) => l10n.allBooks,
-              (true, null) => l10n.allPodcasts,
-              (false, final total?) => l10n.bookCount(total),
-              (true, final total?) => l10n.podcastCount(total),
-            }, style: theme.textTheme.bodyLarge),
+            // Inset so the ellipsis stays inside the round screen.
+            title: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 40),
+              child: Text(
+                switch ((widget.isPodcast, _total)) {
+                  (false, null) => l10n.allBooks,
+                  (true, null) => l10n.allPodcasts,
+                  (false, final total?) => l10n.bookCount(total),
+                  (true, final total?) => l10n.podcastCount(total),
+                },
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodyLarge,
+              ),
+            ),
           ),
         ),
         body: ListView.builder(
@@ -307,10 +316,13 @@ class _BrowsePageState extends State<BrowsePage> {
         ),
       );
     }
-    return const Center(
+    return Center(
       child: SizedBox.square(
         dimension: 24,
-        child: CircularProgressIndicator(strokeWidth: 2),
+        child: CircularProgressIndicator(
+          strokeWidth: 2,
+          semanticsLabel: l10n.loading,
+        ),
       ),
     );
   }

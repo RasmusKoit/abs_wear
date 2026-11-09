@@ -61,6 +61,8 @@ class _LibrariesPageState extends State<LibrariesPage> {
                   trailing: library.id == widget.currentId
                       ? const Icon(Icons.check_rounded)
                       : null,
+                  // The check mark, for screen readers.
+                  selected: library.id == widget.currentId,
                   onTap: () => Navigator.of(context).pop(library.id),
                 ),
               ),
