@@ -29,7 +29,7 @@ jobs:
           [[ "$BUILD_NAME" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "build_name must be X.Y.Z"; exit 1; }
           [[ "$BUILD_NUMBER" =~ ^[0-9]+$ ]] || { echo "build_number must be an integer"; exit 1; }
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: subosito/flutter-action@v2
         with:
