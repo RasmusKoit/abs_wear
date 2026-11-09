@@ -260,6 +260,35 @@ void main() {
       expect(find.text('Login'), findsOneWidget);
     });
 
+    testWidgets('a logout cut short before dropping its token is finished', (
+      tester,
+    ) async {
+      // Killed after the marker was written, before the token was removed:
+      // the saved token is the one being logged out, not a newer login.
+      SharedPreferences.setMockInitialValues({
+        'serverUrl': _server,
+        'username': 'alice',
+        'token': 'tok',
+        'defaultLibraryId': 'lib1',
+        'pendingLogout': <String>[_server, 'tok'],
+      });
+      final download = Directory('${root.path}/docs/li_2')
+        ..createSync(recursive: true);
+      routes['POST /logout'] = () => ok({});
+
+      await http.runWithClient(() async {
+        await tester.pumpApp(const LoginPage());
+        await tester.pumpAndSettle();
+      }, () => client);
+
+      expect(download.existsSync(), isFalse);
+      expect(requests, ['POST /logout']);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString('token'), isNull);
+      expect(prefs.getStringList('pendingLogout'), isNull);
+      expect(find.text('Login'), findsOneWidget);
+    });
+
     testWidgets("a cut short logout keeps a newer login's downloads", (
       tester,
     ) async {
