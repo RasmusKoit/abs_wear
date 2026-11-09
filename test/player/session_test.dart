@@ -550,6 +550,22 @@ void main() {
       expect(progress(), containsPair('currentTime', 100));
     });
 
+    test('listening on from the server position replaces it', () async {
+      writePending();
+      routes['POST /api/items/li_1/play'] = () async => ok(mp3Session);
+      routes['GET /api/me/progress/li_1'] = () async => http.Response('', 504);
+      routes['POST /api/session/s1/sync'] = () async => ok();
+      routes['POST /api/session/s1/close'] = () async => ok();
+      final c = AudioPlayerController(client: client);
+
+      expect(await c.setupPlayer('li_1', _server, 't', userName: 'u'), isTrue);
+      await c.syncOpenSession(position: 160);
+
+      // Newer than the offline position, as the server's will be too.
+      expect(pendingFiles(), isEmpty);
+      await http.runWithClient(c.close, () => client);
+    });
+
     test("a push doesn't send it when the check fails", () async {
       writePending();
       routes['PATCH /api/me/progress/li_1'] = () async => ok();

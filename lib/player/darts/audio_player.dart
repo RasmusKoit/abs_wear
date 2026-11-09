@@ -234,10 +234,11 @@ class AudioPlayerController extends ChangeNotifier {
   /// Listening time from offline play, added to the next successful sync.
   Duration _carriedListening = Duration.zero;
 
-  /// Pending offline progress that couldn't be checked against the server
-  /// when the book opened. Successful syncs leave its file pending, so
-  /// pushLocalProgress can settle it by timestamp once the server answers.
-  bool _unreconciled = false;
+  /// Set to the server's position from /play when pending offline
+  /// progress couldn't be checked against the server as the book opened.
+  /// Until the player moves from there, successful syncs leave the file
+  /// pending, so pushLocalProgress can settle it by timestamp later.
+  double? _uncheckedAt;
 
   /// What the local progress file holds, so unchanged progress isn't
   /// rewritten with a newer timestamp (it would then beat newer progress
@@ -811,7 +812,7 @@ class AudioPlayerController extends ChangeNotifier {
       // A timeout or server error says nothing about newer progress from
       // another device: keep the server's position from /play, and the
       // local one pending for pushLocalProgress to compare later.
-      _unreconciled = true;
+      _uncheckedAt = _pendingPosition;
       return;
     }
     if (serverUpdated > local.updatedAt) return; // The next sync replaces it.
@@ -1485,11 +1486,11 @@ class AudioPlayerController extends ChangeNotifier {
       // network dropped while listening to a downloaded book).
       await _savePendingProgress(current, listened);
       // The file now holds this player's own, newer position.
-      _unreconciled = false;
-    } else if (_unreconciled) {
-      // Not replaced: this sync carries the server's position, so the
-      // offline one would be lost before pushLocalProgress compared the
-      // two. Only its listening time was reported now.
+      _uncheckedAt = null;
+    } else if (current == _uncheckedAt) {
+      // Not replaced: this sync only repeats the server's position, and
+      // the offline one would be lost before pushLocalProgress compared
+      // the two. Only its listening time was reported now.
       await _clearPendingListening();
     } else if (await isDownloaded()) {
       // Where offline play resumes next time.
