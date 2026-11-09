@@ -3,13 +3,13 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
 
+import 'package:abs_wear/app/toast.dart';
 import 'package:abs_wear/app/view/crown_scrollbar.dart';
 import 'package:abs_wear/l10n/l10n.dart';
 import 'package:abs_wear/library/data/json_cache.dart';
 import 'package:abs_wear/library/view/library_page.dart';
 import 'package:abs_wear/player/player.dart';
 import 'package:flutter/material.dart';
-import 'package:fluttertoast/fluttertoast.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -105,11 +105,7 @@ class LoginPageState extends State<LoginPage> {
     });
   }
 
-  Future<void> _toast(String msg) => Fluttertoast.showToast(
-    msg: msg,
-    toastLength: Toast.LENGTH_LONG,
-    gravity: ToastGravity.CENTER,
-  );
+  Future<void> _toast(String msg) => showToast(msg, long: true);
 
   Future<void> login(String rawUrl, String username, String password) async {
     // "https://abs.example.com/" and "https://abs.example.com" both work.

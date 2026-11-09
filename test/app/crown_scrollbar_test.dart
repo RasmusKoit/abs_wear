@@ -1,16 +1,15 @@
+import 'package:abs_wear/app/crown.dart';
 import 'package:abs_wear/app/view/crown_scrollbar.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  const channel = EventChannel('flutter.wearable_rotary.channel');
   MockStreamHandlerEventSink? crown;
 
   setUp(() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockStreamHandler(
-          channel,
+          crownChannel,
           MockStreamHandler.inline(
             onListen: (_, sink) {
               crown = sink;

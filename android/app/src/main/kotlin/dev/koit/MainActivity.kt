@@ -1,16 +1,19 @@
 package dev.koit.abs_wear
 
 import android.os.Bundle
+import android.view.InputDevice
 import android.view.MotionEvent
+import android.widget.Toast
 import androidx.wear.ambient.AmbientLifecycleObserver
 import com.ryanheise.audioservice.AudioServiceActivity
-import com.samsung.wearable_rotary.WearableRotaryPlugin
 import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
+import java.lang.ref.WeakReference
 
 /**
  * Extends [AudioServiceActivity] (required by just_audio_background) so that
- * this activity can be the launcher activity and still forward rotary input.
+ * this activity can be the launcher activity and still handle rotary input.
  */
 class MainActivity : AudioServiceActivity() {
 
@@ -58,6 +61,41 @@ class MainActivity : AudioServiceActivity() {
         super.configureFlutterEngine(flutterEngine)
         ambientChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "ambient_mode")
         val context = applicationContext
+        // Crown turns for Dart's crownTurns stream: true when clockwise.
+        // Registered once per engine: audio_service's cached engine outlives
+        // this activity, and Dart keeps its subscription, so a handler set by
+        // a later activity would never see onListen.
+        if (crownEngine?.get() !== flutterEngine) {
+            crownEngine = WeakReference(flutterEngine)
+            crownSink = null
+            EventChannel(flutterEngine.dartExecutor.binaryMessenger, "crown")
+                .setStreamHandler(object : EventChannel.StreamHandler {
+                    override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                        crownSink = events
+                    }
+
+                    override fun onCancel(arguments: Any?) {
+                        crownSink = null
+                    }
+                })
+        }
+        // Plain system toasts; a new one replaces the one still showing.
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "toast")
+            .setMethodCallHandler { call, result ->
+                if (call.method != "show") {
+                    result.notImplemented()
+                    return@setMethodCallHandler
+                }
+                val length = if (call.argument<Boolean>("long") == true) {
+                    Toast.LENGTH_LONG
+                } else {
+                    Toast.LENGTH_SHORT
+                }
+                toast?.cancel()
+                toast = Toast.makeText(context, call.argument<String>("message") ?: "", length)
+                    .also { it.show() }
+                result.success(null)
+            }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "network_lock")
             .setMethodCallHandler { call, result ->
                 when (call.method) {
@@ -101,13 +139,29 @@ class MainActivity : AudioServiceActivity() {
     }
 
     /**
-     * Hooks rotary input (crown / bezel) into the "WearableRotaryPlugin" class.
+     * Sends rotary input (crown / bezel) to Dart. A negative scroll axis is a
+     * clockwise turn.
      */
     override fun onGenericMotionEvent(event: MotionEvent?): Boolean {
-        return when {
-            WearableRotaryPlugin.onGenericMotionEvent(event) -> true
-            else -> super.onGenericMotionEvent(event)
+        if (event == null ||
+            event.action != MotionEvent.ACTION_SCROLL ||
+            !event.isFromSource(InputDevice.SOURCE_ROTARY_ENCODER)
+        ) {
+            return super.onGenericMotionEvent(event)
         }
+        val delta = event.getAxisValue(MotionEvent.AXIS_SCROLL)
+        if (delta != 0f) crownSink?.success(delta < 0)
+        return true
+    }
+
+    /**
+     * State shared with the long-lived engine's channel handlers, kept off
+     * the activity so they never hold a destroyed one.
+     */
+    companion object {
+        private var crownEngine: WeakReference<FlutterEngine>? = null
+        private var crownSink: EventChannel.EventSink? = null
+        private var toast: Toast? = null
     }
 
     /**

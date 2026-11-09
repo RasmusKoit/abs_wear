@@ -1,11 +1,11 @@
 import 'dart:async';
 
+import 'package:abs_wear/app/toast.dart';
 import 'package:abs_wear/app/view/crown_scrollbar.dart';
 import 'package:abs_wear/app/view/overscroll_to_previous_page.dart';
 import 'package:abs_wear/l10n/l10n.dart';
 import 'package:abs_wear/player/player.dart';
 import 'package:flutter/material.dart';
-import 'package:fluttertoast/fluttertoast.dart';
 
 class PlayerPage extends StatefulWidget {
   const PlayerPage({
@@ -42,9 +42,8 @@ class _PlayerPageState extends State<PlayerPage> {
   }
 
   Future<void> _init() async {
-    _playerController.onPlaybackError = (message) => unawaited(
-      Fluttertoast.showToast(msg: message, gravity: ToastGravity.CENTER),
-    );
+    _playerController.onPlaybackError = (message) =>
+        unawaited(showToast(message));
     final ok = await _playerController.setupPlayer(
       widget.libraryItemId,
       widget.serverUrl,
@@ -55,24 +54,14 @@ class _PlayerPageState extends State<PlayerPage> {
     if (!mounted) return;
     final l10n = context.l10n;
     if (!ok) {
-      unawaited(
-        Fluttertoast.showToast(
-          msg: l10n.couldNotStartPlayback,
-          gravity: ToastGravity.CENTER,
-        ),
-      );
+      unawaited(showToast(l10n.couldNotStartPlayback));
       // Remove this page even if a dialog is open on top of it.
       final route = ModalRoute.of(context);
       if (route != null) Navigator.of(context).removeRoute(route);
       return;
     }
     if (_playerController.isOffline) {
-      unawaited(
-        Fluttertoast.showToast(
-          msg: l10n.playingOffline,
-          gravity: ToastGravity.CENTER,
-        ),
-      );
+      unawaited(showToast(l10n.playingOffline));
     }
     // Keep the server's progress in sync while the player is open.
     // Offline, this saves progress on the watch instead.
