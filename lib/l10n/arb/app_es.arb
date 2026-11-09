@@ -44,7 +44,7 @@
     "forward10": "Avanzar 10 segundos",
     "play": "Reproducir",
     "pause": "Pausar",
-    "timeLeftLabel": "Quedan {time} del capítulo",
+    "timeLeftLabel": "Tiempo restante del capítulo: {time}",
     "allPodcasts": "Todos los podcasts",
     "podcastCount": "{count, plural, =1{1 podcast} other{{count} podcasts}}",
     "libraries": "Bibliotecas",

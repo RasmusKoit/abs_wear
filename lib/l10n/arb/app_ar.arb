@@ -44,7 +44,7 @@
     "forward10": "تقديم 10 ثوانٍ",
     "play": "تشغيل",
     "pause": "إيقاف مؤقت",
-    "timeLeftLabel": "متبقٍ {time} في الفصل",
+    "timeLeftLabel": "الوقت المتبقي في الفصل: {time}",
     "allPodcasts": "كل البودكاست",
     "podcastCount": "{count, plural, zero{لا بودكاست} one{بودكاست واحد} two{بودكاستان} few{{count} بودكاستات} many{{count} بودكاست} other{{count} بودكاست}}",
     "libraries": "المكتبات",

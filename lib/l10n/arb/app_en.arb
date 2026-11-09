@@ -196,11 +196,11 @@
     },
     "timeLeftLabel": "{time} left in chapter",
     "@timeLeftLabel": {
-        "description": "Screen reader label for the time left",
+        "description": "Screen reader label for the time left. {time} is a spoken duration of one or more units (\"1 minute\", \"2 hours 5 minutes\"): keep the wording independent of its number, e.g. with a colon",
         "placeholders": {
             "time": {
                 "type": "String",
-                "example": "00:12:34"
+                "example": "1 hour 5 minutes"
             }
         }
     },
