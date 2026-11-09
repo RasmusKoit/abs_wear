@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:abs_wear/player/darts/audio_player.dart';
 import 'package:flutter/services.dart';
@@ -65,6 +66,22 @@ const _androidBuild = <String, Object?>{
 
 const _server = 'http://abs.test';
 
+/// /play requests that wait until the test answers them.
+class _Plays {
+  final started = <Completer<http.Response>>[];
+  int _inFlight = 0;
+
+  /// The most /play requests waiting for an answer at once.
+  int maxInFlight = 0;
+
+  Future<http.Response> call() {
+    final play = Completer<http.Response>();
+    started.add(play);
+    maxInFlight = max(maxInFlight, ++_inFlight);
+    return play.future.whenComplete(() => _inFlight--);
+  }
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -107,6 +124,12 @@ void main() {
     ..libraryItemId = 'li_1'
     ..sessionId = 's1'
     ..duration = 600;
+
+  _Plays playsQueue() {
+    final plays = _Plays();
+    routes['POST /api/items/li_1/play'] = plays.call;
+    return plays;
+  }
 
   /// Pending progress files the player wrote.
   List<Map<String, dynamic>> pendingFiles() {
@@ -290,49 +313,40 @@ void main() {
     });
 
     test(
-      "a 404 restart doesn't replace the reopened stream's session",
+      "a 404 restart doesn't start a session once a reopen replaced it",
       () async {
-        // Each /play waits until the test answers it.
-        final plays = <Completer<http.Response>>[];
-        routes['POST /api/items/li_1/play'] = () {
-          final play = Completer<http.Response>();
-          plays.add(play);
-          return play.future;
-        };
+        final plays = playsQueue();
         final sync = Completer<http.Response>();
         routes['POST /api/session/s1/sync'] = () => sync.future;
-        routes['POST /api/session/s3/close'] = () async => ok();
         routes['HEAD /hls/s2/output-0.ts'] = () async => ok();
         final c = controller()..tracks = const [m4b];
 
         final reload = http.runWithClient(c.deleteDownload, () => client);
         await Future<void>.delayed(const Duration(milliseconds: 50));
-        expect(plays, hasLength(1), reason: 'the stream reopen');
-        // The reload's sync to the old session 404s: a restart starts.
+        expect(plays.started, hasLength(1), reason: 'the stream reopen');
+        // The reload's sync to the old session 404s while the reopen's
+        // /play is in flight: the restart waits for it.
         sync.complete(http.Response('', 404));
         await Future<void>.delayed(const Duration(milliseconds: 50));
-        expect(plays, hasLength(2));
-        plays[0].complete(ok(hlsSession));
-        await Future<void>.delayed(const Duration(milliseconds: 50));
-        plays[1].complete(ok({'id': 's3'}));
+        expect(plays.started, hasLength(1), reason: 'the restart waits');
+        plays.started[0].complete(ok(hlsSession));
         await reload;
         await c.syncOpenSession(position: 10);
 
+        // The restart found the session replaced and resent to it.
+        expect(plays.started, hasLength(1));
+        expect(plays.maxInFlight, 1);
         expect(c.sessionId, 's2');
-        expect(requests, contains('POST /api/session/s3/close'));
-        expect(requests, isNot(contains('POST /api/session/s3/sync')));
-        expect(requests.last, 'POST /api/session/s2/sync');
+        expect(
+          requests.where((r) => r == 'POST /api/session/s2/sync'),
+          hasLength(2),
+        );
         await c.close();
       },
     );
 
     test('a stream reopen waits for a running 404 restart', () async {
-      final plays = <Completer<http.Response>>[];
-      routes['POST /api/items/li_1/play'] = () {
-        final play = Completer<http.Response>();
-        plays.add(play);
-        return play.future;
-      };
+      final plays = playsQueue();
       routes['POST /api/session/s1/sync'] = () async => http.Response('', 404);
       routes['POST /api/session/s3/sync'] = () async => ok();
       routes['POST /api/session/s3/close'] = () async => ok();
@@ -343,17 +357,18 @@ void main() {
         http.runWithClient(() => c.syncOpenSession(position: 0), () => client),
       );
       await Future<void>.delayed(const Duration(milliseconds: 50));
-      expect(plays, hasLength(1), reason: 'the restart');
+      expect(plays.started, hasLength(1), reason: 'the restart');
       final reload = http.runWithClient(c.deleteDownload, () => client);
       await Future<void>.delayed(const Duration(milliseconds: 50));
-      expect(plays, hasLength(1), reason: 'the reopen waits');
+      expect(plays.started, hasLength(1), reason: 'the reopen waits');
 
-      plays[0].complete(ok({'id': 's3'}));
+      plays.started[0].complete(ok({'id': 's3'}));
       await Future<void>.delayed(const Duration(milliseconds: 50));
-      expect(plays, hasLength(2));
-      plays[1].complete(ok(hlsSession));
+      expect(plays.started, hasLength(2));
+      plays.started[1].complete(ok(hlsSession));
       await reload;
 
+      expect(plays.maxInFlight, 1);
       expect(c.sessionId, 's2');
       expect(
         requests,

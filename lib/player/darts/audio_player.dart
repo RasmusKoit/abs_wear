@@ -856,38 +856,49 @@ class AudioPlayerController extends ChangeNotifier {
     }
   }
 
-  /// The running [_restartSession]; [_reopenStream] waits for it, so the
-  /// two never start sessions at once (ABS closes the device's other
-  /// session when one starts).
-  Future<bool>? _restarting;
+  /// Tail of the session replacements ([_restartSession], [_reopenStream]).
+  /// They run one at a time: ABS closes a device's other session when one
+  /// starts, so overlapping /play calls could kill the session just set up.
+  Future<void> _sessionStart = Future.value();
+
+  /// Runs [replace] once the session replacements before it are done.
+  Future<T> _replacingSession<T>(Future<T> Function() replace) {
+    final result = _sessionStart.then((_) => replace());
+    _sessionStart = result.then<void>((_) {}, onError: (Object _) {});
+    return result;
+  }
 
   /// Starts a new server session after the server forgot the current one,
   /// as the current one was started. Only its id is used: the player keeps
-  /// its position and audio. False when there is no current session.
-  Future<bool> _restartSession() => _restarting = _startReplacementSession();
-
-  Future<bool> _startReplacementSession() async {
+  /// its position and audio. True when there is a current session to send
+  /// to (a new one, or one that replaced the forgotten one meanwhile).
+  Future<bool> _restartSession() {
     final id = sessionId;
-    try {
-      final response = await _postPlay(
-        directPlay: _directPlay,
-        timeout: const Duration(seconds: 10),
-      );
-      if (response.statusCode != 200) return false;
-      final json = jsonDecode(response.body) as Map<String, dynamic>;
-      final newId = json['id'] as String;
-      if (sessionId != id || _closed) {
-        // Replaced (_reopenStream) or closed meanwhile: drop this one.
-        unawaited(_closeSessionAt(newId, bookPosition));
-        return sessionId != id && sessionId.isNotEmpty;
+    return _replacingSession(() async {
+      if (_closed) return false;
+      // _reopenStream replaced it while this waited: send there.
+      if (sessionId != id) return sessionId.isNotEmpty;
+      try {
+        final response = await _postPlay(
+          directPlay: _directPlay,
+          timeout: const Duration(seconds: 10),
+        );
+        if (response.statusCode != 200) return false;
+        final json = jsonDecode(response.body) as Map<String, dynamic>;
+        final newId = json['id'] as String;
+        if (_closed) {
+          // Closed meanwhile: the queued close saves the position.
+          unawaited(_closeSessionAt(newId, bookPosition));
+          return false;
+        }
+        sessionId = newId;
+        debugPrint('Server forgot the session; started $sessionId');
+        return true;
+      } on Object catch (e) {
+        debugPrint('Could not restart the session: $e');
+        return false;
       }
-      sessionId = newId;
-      debugPrint('Server forgot the session; started $sessionId');
-      return true;
-    } on Object catch (e) {
-      debugPrint('Could not restart the session: $e');
-      return false;
-    }
+    });
   }
 
   void _applySession(Map<String, dynamic> json) {
@@ -1307,8 +1318,14 @@ class AudioPlayerController extends ChangeNotifier {
         }
         await _loadSources(initialTime: _pendingPosition);
       } finally {
-        play = _playAfterReload ?? false;
-        _playAfterReload = null;
+        if (_reloading) {
+          // reloadSources (a download finished meanwhile) is swapping the
+          // audio again; it applies the play once it is done.
+          play = false;
+        } else {
+          play = _playAfterReload ?? false;
+          _playAfterReload = null;
+        }
       }
       if (!play || _closed) return;
     }
@@ -1631,7 +1648,8 @@ class AudioPlayerController extends ChangeNotifier {
     _reloading = true;
     // A Play tap meanwhile sets this (see togglePlayPause). Pausing during
     // the reload isn't supported: the stopped player only offers Play.
-    _playAfterReload = wasPlaying;
+    // Keeps a Play from a retry after an error that is still reloading.
+    _playAfterReload = wasPlaying || (_playAfterReload ?? false);
     var play = wasPlaying;
     try {
       await player.stop();
@@ -1713,10 +1731,12 @@ class AudioPlayerController extends ChangeNotifier {
   /// HLS where needed. The old session is closed at [position] only once
   /// the new one started, so when that fails the old one, still open, is
   /// kept.
-  Future<void> _reopenStream(double position) async {
-    if (isOffline || _closed) return;
-    // A restart after a 404 may be starting a session right now.
-    await _restarting;
+  Future<void> _reopenStream(double position) {
+    if (isOffline || _closed) return Future.value();
+    return _replacingSession(() => _reopenStreamNow(position));
+  }
+
+  Future<void> _reopenStreamNow(double position) async {
     if (_closed) return;
     try {
       final response = await _postPlay(directPlay: false);
