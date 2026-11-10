@@ -678,12 +678,12 @@ class LoginPageState extends State<LoginPage> {
         body: LayoutBuilder(
           builder: (context, constraints) => SingleChildScrollView(
             controller: _scrollController,
-            // Room below, so the last button scrolls clear of the round
-            // edge.
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+            // A little room below, so a long screen's last button scrolls
+            // clear of the round edge. Short screens fit without scrolling.
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
             child: ConstrainedBox(
               constraints: BoxConstraints(
-                minHeight: constraints.maxHeight - 40,
+                minHeight: constraints.maxHeight - 20,
               ),
               child: Center(
                 child: _checking
@@ -748,7 +748,6 @@ class LoginPageState extends State<LoginPage> {
           child: _busy ? _buttonSpinner() : Text(l10n.next),
         ),
         ..._loginErrorText(theme),
-        const SizedBox(height: 16),
       ],
     );
   }
@@ -783,16 +782,16 @@ class LoginPageState extends State<LoginPage> {
         ),
         ..._loginErrorText(theme),
         _backButton(theme),
-        const SizedBox(height: 16),
       ],
     );
   }
 
   /// Password login, first screen: the username.
   Widget _buildUsernameStep(ThemeData theme) {
+    // No server line: it was on the screen before, and the field, button
+    // and Back fit the round screen without scrolling.
     return Column(
       children: [
-        _serverLabel(theme),
         TextFormField(
           style: theme.textTheme.labelSmall,
           scrollPadding: const EdgeInsets.all(8),
@@ -821,7 +820,6 @@ class LoginPageState extends State<LoginPage> {
           child: Text(l10n.next),
         ),
         _backButton(theme),
-        const SizedBox(height: 16),
       ],
     );
   }
@@ -834,7 +832,7 @@ class LoginPageState extends State<LoginPage> {
         Text(
           username,
           textAlign: TextAlign.center,
-          style: theme.textTheme.bodyMedium,
+          style: theme.textTheme.bodySmall,
         ),
         TextFormField(
           style: theme.textTheme.labelSmall,
@@ -866,7 +864,6 @@ class LoginPageState extends State<LoginPage> {
           child: _busy ? _buttonSpinner() : Text(l10n.login),
         ),
         _backButton(theme),
-        const SizedBox(height: 16),
       ],
     );
   }
@@ -1039,7 +1036,6 @@ class LoginPageState extends State<LoginPage> {
           onPressed: busy ? null : _endSso,
           child: Text(l10n.back, style: theme.textTheme.bodySmall),
         ),
-        const SizedBox(height: 16),
       ],
     );
   }

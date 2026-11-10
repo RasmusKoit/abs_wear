@@ -303,10 +303,6 @@ Future<void> enterServer(WidgetTester tester, String url) async {
   await tester.pumpWidget(const App());
   await pumpUntil(tester, find.text('Next'));
   await tester.enterText(find.widgetWithText(TextFormField, 'Server URL'), url);
-  // Done typing (the keyboard closes): otherwise the field scrolls itself
-  // back into view, away from the buttons further down.
-  FocusManager.instance.primaryFocus?.unfocus();
-  await tester.pump(const Duration(milliseconds: 300));
   await scrollAndTap(tester, find.text('Next'));
 }
 
