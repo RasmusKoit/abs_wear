@@ -21,11 +21,19 @@ class _RecordingHttp extends SsoHttp {
     String method,
     Uri url, {
     Object? body,
+    List<(String, String)>? form,
     Map<String, String> headers = const {},
     Duration wait = SsoHttp.timeout,
   }) {
     waits[url.path] = wait;
-    return super.send(method, url, body: body, headers: headers, wait: wait);
+    return super.send(
+      method,
+      url,
+      body: body,
+      form: form,
+      headers: headers,
+      wait: wait,
+    );
   }
 }
 
