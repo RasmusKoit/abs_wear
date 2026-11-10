@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en-US" data-theme="gitea-auto">
+<head>
+<title>Sign In - Gitea: Git with a cup of tea</title>
+</head>
+<body>
+	<div class="full height">
+		<noscript>This website requires JavaScript.</noscript>
+			<div role="main" aria-label="Sign In" class="page-content user signin">
+	<div class="ui middle very relaxed page grid">
+		<div class="column tw-flex tw-flex-col tw-gap-4 tw-max-w-2xl tw-m-auto">
+			<div class="ui container fluid">
+	<div class="ui negative message flash-message flash-error"><div class="tw-text-center">Username or password is incorrect.</div></div>
+	<h4 class="ui top attached header center">
+			Sign In
+	</h4>
+	<div class="ui attached segment">
+		<form class="ui form" action="/user/login" method="post">
+			<div class="required field ">
+				<label for="user_name">Username or Email Address</label>
+				<input id="user_name" type="text" name="user_name" value="wear-gitea" autofocus required tabindex="1">
+			</div>
+			<div class="required field ">
+				<div class="tw-flex tw-mb-1">
+					<label for="password" class="tw-flex-1">Password</label>
+					<a href="/user/forgot_password" tabindex="4">Forgot password?</a>
+				</div>
+				<input id="password" name="password" type="password" value="wrong-x" autocomplete="current-password" required tabindex="2">
+			</div>
+			<div class="inline field">
+				<div class="ui checkbox">
+					<label>Remember This Device</label>
+					<input name="remember" type="checkbox" tabindex="5">
+				</div>
+			</div>
+			<div class="field">
+				<button class="ui primary button tw-w-full" tabindex="3">
+						Sign In
+				</button>
+			</div>
+		</form>
+	</div>
+</div>
+<div class="ui container fluid">
+	<div class="ui attached segment header top tw-max-w-2xl tw-m-auto tw-flex tw-flex-col tw-items-center">
+			<div id="webauthn-error" class="ui negative message tw-hidden">
+	<div class="header">Could not read your security key.</div>
+	<div id="webauthn-error-msg" class="tw-pt-2"></div>
+	<div class="tw-hidden">
+		<div data-webauthn-error-msg="browser">Your browser does not currently support WebAuthn.</div>
+		<div data-webauthn-error-msg="unknown">An unknown error occurred. Please retry.</div>
+		<div data-webauthn-error-msg="insecure">WebAuthn only supports secure connections. For testing over HTTP, you can use the origin "localhost" or "127.0.0.1".</div>
+		<div data-webauthn-error-msg="unable-to-process">The server could not process your request.</div>
+		<div data-webauthn-error-msg="duplicated">The security key is not permitted for this request. Please make sure that the key is not already registered.</div>
+		<div data-webauthn-error-msg="empty">You must set a name for this key.</div>
+		<div data-webauthn-error-msg="timeout">Timeout reached before your key could be read. Please reload this page and retry.</div>
+	</div>
+</div>
+			<a class="signin-passkey">Sign in with a passkey</a>
+	</div>
+</div>
+		</div>
+	</div>
+</div>
+	</div>
+	</body>
+</html>

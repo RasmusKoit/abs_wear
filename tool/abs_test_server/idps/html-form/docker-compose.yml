@@ -1,0 +1,52 @@
+# ABS + Keycloak (and optionally Gitea) for testing ABS Wear's generic
+# HTML-form SSO adapter. Deployed to ~/code/abs-wear-idp-html-form on the
+# dev box; see README.md. Independent of ../../docker-compose.yml.
+name: abs-wear-idp-html-form
+services:
+  audiobookshelf:
+    image: ghcr.io/advplyr/audiobookshelf:2.37.2
+    restart: unless-stopped
+    ports:
+      - "${ABS_PORT:-13381}:80"
+    environment:
+      - TZ=Europe/Tallinn
+      - RATE_LIMIT_AUTH_MAX=10000
+    volumes:
+      - ./data/config:/config
+      - ./data/metadata:/metadata
+      - ${AUDIOBOOKS_DIR:?set in .env}:/audiobooks:ro
+
+  # Dev mode (H2 database in ./data/keycloak). The hostname is fixed, so
+  # ABS and the watch see the same issuer.
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.8.2
+    command: start-dev
+    restart: unless-stopped
+    ports:
+      - "${KEYCLOAK_PORT:-9001}:8080"
+    environment:
+      KC_HOSTNAME: ${KEYCLOAK_URL:?set in .env}
+      KC_HTTP_ENABLED: "true"
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?set in .env}
+    volumes:
+      - ./data/keycloak:/opt/keycloak/data
+
+  # Optional second provider: docker compose --profile gitea up -d
+  gitea:
+    image: gitea/gitea:1.27.3
+    profiles: [gitea]
+    restart: unless-stopped
+    ports:
+      - "${GITEA_PORT:-9011}:3000"
+    environment:
+      USER_UID: "1000"
+      USER_GID: "1000"
+      GITEA__database__DB_TYPE: sqlite3
+      GITEA__server__ROOT_URL: ${GITEA_URL:-http://localhost:9011}/
+      GITEA__server__HTTP_PORT: "3000"
+      GITEA__security__INSTALL_LOCK: "true"
+      GITEA__service__DISABLE_REGISTRATION: "true"
+      GITEA__oauth2__ENABLED: "true"
+    volumes:
+      - ./data/gitea:/data
