@@ -31,8 +31,8 @@ class LogtoAdapter implements IdpAdapter {
   bool _email = false;
   String? _user;
 
-  /// The sign-in screen's skippable MFA prompt was already answered.
-  bool _skippedMfa = false;
+  /// The optional prompts at `submit` already skipped (each only once).
+  final Set<String> _skipped = {};
 
   @override
   Uri? redirect;
@@ -52,6 +52,13 @@ class LogtoAdapter implements IdpAdapter {
     // A CAPTCHA needs the provider's script in a browser.
     if ((settings['captchaPolicy'] as Map?)?['enabled'] == true) {
       throw const SsoException(SsoError.unsupportedStep, 'captcha');
+    }
+    // Terms the user has to tick: Logto's sign-in app asks for them, its API
+    // doesn't, so signing in here would skip them.
+    if (settings['agreeToTermsPolicy'] == 'Manual' &&
+        (_set(settings['termsOfUseUrl']) ||
+            _set(settings['privacyPolicyUrl']))) {
+      throw const SsoException(SsoError.unsupportedStep, 'terms');
     }
     final identifiers = [
       for (final m in ((settings['signIn'] as Map?)?['methods'] as List?) ?? [])
@@ -150,18 +157,17 @@ class LogtoAdapter implements IdpAdapter {
         }
         _stage = _Stage.totp;
         return SsoPrompt(const [SsoField.code], user: _user);
-      // "Add MFA to your account?" (or a skippable "set up MFA"): skipped,
-      // as setting up an authenticator belongs on a bigger screen.
-      case 'user.suggest_mfa' || 'user.missing_mfa'
-          when !_skippedMfa &&
-              (code == 'user.suggest_mfa' || data['skippable'] == true):
-        _skippedMfa = true;
-        _check(
-          await _http.send('POST', _api('experience/profile/mfa/mfa-skipped')),
-        );
-        return await _submit();
-      // Anything else Logto wants first (setting up MFA, a missing profile
-      // field, ...) is for a browser.
+      // "Add MFA to your account?" and "Add a passkey?": optional prompts
+      // the user may skip, as setting either up belongs on a bigger screen.
+      // Logto saves the skip to the user's account (`logto_config`), so it
+      // stops asking in browsers too, the same as "Skip" there.
+      case 'user.suggest_mfa' when _skipped.add('mfa'):
+        return await _skip('experience/profile/mfa/mfa-skipped');
+      case 'user.passkey_preferred' when _skipped.add('passkey'):
+        return await _skip('experience/profile/mfa/passkey-skipped');
+      // Anything else Logto wants first is for a browser: setting up MFA,
+      // even when skippable (the admin asked for it), more MFA factors, a
+      // missing profile field, ...
       default:
         if (r.statusCode == 403 || r.statusCode == 422) {
           throw SsoException(SsoError.unsupportedStep, code);
@@ -169,6 +175,12 @@ class LogtoAdapter implements IdpAdapter {
         _check(r);
         throw SsoException(SsoError.failed, 'logto: $code');
     }
+  }
+
+  /// Skips an optional prompt with [path], then submits again.
+  Future<SsoStep?> _skip(String path) async {
+    _check(await _http.send('POST', _api(path)));
+    return await _submit();
   }
 
   /// Follows Logto's redirect back towards the server. Null once it gets
@@ -199,6 +211,8 @@ class LogtoAdapter implements IdpAdapter {
   }
 
   Uri _api(String path) => _page.resolve('/api/$path');
+
+  static bool _set(Object? url) => url is String && url.isNotEmpty;
 
   /// Throws for an error [response].
   static void _check(http.Response response) {

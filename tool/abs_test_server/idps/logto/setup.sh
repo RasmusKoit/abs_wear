@@ -77,10 +77,17 @@ api() { # api METHOD PATH [JSON]
 
 # --- Logto: sign-in experience, the "abs" app, test users -------------------
 # Username + password sign-in, and TOTP for the users who set it up.
+# LOGTO_TERMS=1 makes users tick the terms of use (the watch can't);
+# LOGTO_PASSKEY=1 turns on passkey sign-in, so Logto suggests a passkey.
+[ "${LOGTO_TERMS:-0}" = 1 ] && terms=Manual || terms=Automatic
+[ "${LOGTO_PASSKEY:-0}" = 1 ] && passkey=true || passkey=false
 api PATCH /sign-in-exp '{
   "signIn": {"methods": [{"identifier": "username", "password": true,
     "verificationCode": false, "isPasswordPrimary": true}]},
-  "mfa": {"factors": ["Totp"], "policy": "UserControlled"}
+  "mfa": {"factors": ["Totp"], "policy": "UserControlled"},
+  "agreeToTermsPolicy": "'$terms'",
+  "termsOfUseUrl": "https://example.com/terms",
+  "passkeySignIn": {"enabled": '$passkey', "showPasskeyButton": '$passkey'}
 }' >/dev/null
 uris=$(python3 -c 'import sys,json;u=sys.argv[1];print(json.dumps({"redirectUris":[u+"/auth/openid/callback",u+"/auth/openid/mobile-redirect"],"postLogoutRedirectUris":[u+"/login"]}))' "$ABS_URL")
 # app NAME THIRD_PARTY: creates the OIDC app (or updates its redirect URIs)
@@ -119,11 +126,12 @@ user() {
   echo "$id"
 }
 user "$ABS_TEST_USER" "$ABS_TEST_PASSWORD" >/dev/null
-# Logto suggests adding MFA until the user skips it once; forget the skip so
-# every run sees the suggestion (the watch skips it).
+# Logto suggests adding MFA (and a passkey) until the user skips it once,
+# and saves the skip to the account; forget it so every run sees the
+# suggestions (the watch skips them).
 docker compose exec -T logto-db psql -q -v ON_ERROR_STOP=1 -U postgres \
   -d logto -v name="$ABS_TEST_USER" >/dev/null <<'SQL'
-update users set logto_config = logto_config - 'mfa'
+update users set logto_config = logto_config - 'mfa' - 'passkey_sign_in'
 where tenant_id = 'default' and username = :'name';
 SQL
 MFA_ID=$(user "$ABS_MFA_USER" "$ABS_MFA_PASSWORD")

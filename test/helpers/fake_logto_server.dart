@@ -37,10 +37,12 @@ class FakeLogto extends FakeServers {
   FakeLogto({
     this.ssr = true,
     this.captcha = false,
+    this.terms = 'Automatic',
     this.methods = const [logtoUsernamePassword],
     this.totp = false,
     this.factors = const ['Totp'],
     this.suggestMfa = false,
+    this.passkeyPreferred = false,
     this.mfaSetup = false,
     this.mfaSetupSkippable = false,
     this.consent = false,
@@ -50,6 +52,9 @@ class FakeLogto extends FakeServers {
   /// The sign-in page embeds `window.logtoSsr` (older Logto doesn't).
   final bool ssr;
   final bool captcha;
+
+  /// `agreeToTermsPolicy`, with terms of use and a privacy policy set.
+  final String terms;
   final List<Map<String, Object>> methods;
 
   /// The user has an authenticator app; [factors] are what Logto offers.
@@ -58,6 +63,9 @@ class FakeLogto extends FakeServers {
 
   /// Logto suggests adding MFA to the account.
   final bool suggestMfa;
+
+  /// Passkey sign-in is on and the user has no passkey yet.
+  final bool passkeyPreferred;
 
   /// Logto wants the user to set up MFA (skippable or not).
   final bool mfaSetup;
@@ -70,6 +78,7 @@ class FakeLogto extends FakeServers {
   bool _identified = false;
   bool _totpOk = false;
   bool _mfaSkipped = false;
+  bool _passkeySkipped = false;
 
   Map<String, dynamic> get signInExperience => {
     'tenantId': 'default',
@@ -86,7 +95,12 @@ class FakeLogto extends FakeServers {
       'policy': 'UserControlled',
     },
     'captchaPolicy': {'enabled': captcha},
-    'passkeySignIn': <String, dynamic>{},
+    'agreeToTermsPolicy': terms,
+    'termsOfUseUrl': 'https://abs-wear.test/terms',
+    'privacyPolicyUrl': null,
+    'passkeySignIn': passkeyPreferred
+        ? {'enabled': true, 'showPasskeyButton': true, 'allowAutofill': false}
+        : <String, dynamic>{},
     if (captcha)
       'captchaConfig': {
         'type': 'Turnstile',
@@ -172,10 +186,22 @@ class FakeLogto extends FakeServers {
         _totpOk = true;
         return json({'verificationId': 'totp-1'});
       case 'POST /api/experience/profile/mfa/mfa-skipped':
+        // Logto refuses it for anything but the optional suggestion here.
+        expect(suggestMfa, isTrue);
         _mfaSkipped = true;
+        return noContent;
+      case 'POST /api/experience/profile/mfa/passkey-skipped':
+        _passkeySkipped = true;
         return noContent;
       case 'POST /api/experience/submit':
         expect(_identified, isTrue);
+        if (passkeyPreferred && !_passkeySkipped) {
+          return error(
+            422,
+            'user.passkey_preferred',
+            'Passkey sign-in is preferred. Please bind a passkey.',
+          );
+        }
         if (totp && !_totpOk) {
           return error(
             403,

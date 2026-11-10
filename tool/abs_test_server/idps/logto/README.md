@@ -25,7 +25,8 @@ docker compose up -d
   into Logto's database (a fresh Logto has no admin and no API client);
 - Logto's sign-in experience: username + password, TOTP as the MFA factor
   for users who set it up (policy `UserControlled`, so Logto suggests MFA to
-  the others; the watch skips that);
+  the others; the watch skips that). Logto saves a skip to the user's
+  account, so `setup.sh` forgets it again for `ABS_TEST_USER`;
 - the `abs` app (traditional web, first-party: no consent screen) with
   ABS's callback and mobile redirect URIs;
 - the users `ABS_TEST_USER` (password only) and `ABS_MFA_USER` (password +
@@ -36,7 +37,10 @@ docker compose up -d
 
 `LOGTO_CONSENT=1 ./setup.sh` switches ABS to a third-party app,
 `abs-third-party`, so Logto shows its consent screen; run `./setup.sh`
-again to switch back. ABS keeps its OpenID client until it restarts, so
+again to switch back. In the same way, `LOGTO_TERMS=1` makes users agree to
+terms of use (the watch gives up and leaves it to the phone), and
+`LOGTO_PASSKEY=1` turns on passkey sign-in, so Logto suggests a passkey
+(the watch skips that too). ABS keeps its OpenID client until it restarts, so
 `setup.sh` restarts it when the client changes.
 
 Gotchas:

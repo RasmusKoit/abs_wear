@@ -83,8 +83,21 @@ void main() {
     );
   });
 
-  test('skips setting up MFA when Logto allows it', () async {
-    final servers = FakeLogto(mfaSetup: true, mfaSetupSkippable: true);
+  test('skips the suggestion to add a passkey', () async {
+    final servers = FakeLogto(passkeyPreferred: true, suggestMfa: true);
+    final (login, _) = await _start(servers);
+    expect(await login.submit(_right), isA<SsoDone>());
+    expect(
+      servers.requests.map((r) => r.url.path),
+      containsAllInOrder([
+        '/api/experience/profile/mfa/passkey-skipped',
+        '/api/experience/profile/mfa/mfa-skipped',
+      ]),
+    );
+  });
+
+  test('terms the user agrees to automatically need no answer', () async {
+    final servers = FakeLogto(terms: 'ManualRegistrationOnly');
     final (login, _) = await _start(servers);
     expect(await login.submit(_right), isA<SsoDone>());
   });
@@ -154,12 +167,42 @@ void main() {
       );
     });
 
+    test('terms the user has to agree to', () async {
+      await expectLater(
+        _start(FakeLogto(terms: 'Manual')),
+        throwsA(_error(SsoError.unsupportedStep, 'terms')),
+      );
+    });
+
     test('setting up MFA', () async {
       final servers = FakeLogto(mfaSetup: true);
       final (login, _) = await _start(servers);
       await expectLater(
         login.submit(_right),
         throwsA(_error(SsoError.unsupportedStep, 'user.missing_mfa')),
+      );
+    });
+
+    // The admin asked for it, so the watch doesn't skip it for them.
+    test('setting up MFA, even when skippable', () async {
+      final servers = FakeLogto(mfaSetup: true, mfaSetupSkippable: true);
+      final (login, _) = await _start(servers);
+      await expectLater(
+        login.submit(_right),
+        throwsA(_error(SsoError.unsupportedStep, 'user.missing_mfa')),
+      );
+      expect(
+        servers.requests.map((r) => r.url.path),
+        isNot(contains('/api/experience/profile/mfa/mfa-skipped')),
+      );
+    });
+
+    test('a passkey prompt that comes back after the skip', () async {
+      final servers = _PasskeyAgain();
+      final (login, _) = await _start(servers);
+      await expectLater(
+        login.submit(_right),
+        throwsA(_error(SsoError.unsupportedStep, 'user.passkey_preferred')),
       );
     });
 
@@ -216,4 +259,15 @@ void main() {
       );
     });
   });
+}
+
+/// Logto that keeps asking for a passkey however often it is skipped.
+class _PasskeyAgain extends FakeLogto {
+  _PasskeyAgain() : super(passkeyPreferred: true);
+
+  @override
+  Future<http.Response> handle(http.Request r) async =>
+      r.url.path == '/api/experience/submit'
+      ? error(422, 'user.passkey_preferred', 'Please bind a passkey.')
+      : await super.handle(r);
 }
