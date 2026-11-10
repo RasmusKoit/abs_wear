@@ -16,12 +16,14 @@ class SsoHttp {
   static const timeout = Duration(seconds: 20);
 
   /// Sends one request without following redirects. JSON [body] is encoded
-  /// and sent with a JSON content type.
+  /// and sent with a JSON content type. [wait] replaces [timeout] for
+  /// requests the server holds open (long polling).
   Future<http.Response> send(
     String method,
     Uri url, {
     Object? body,
     Map<String, String> headers = const {},
+    Duration wait = timeout,
   }) async {
     final request = http.Request(method, url)
       ..followRedirects = false
@@ -38,8 +40,8 @@ class SsoHttp {
         ..body = jsonEncode(body);
     }
     final response = await http.Response.fromStream(
-      await _client.send(request).timeout(timeout),
-    ).timeout(timeout);
+      await _client.send(request).timeout(wait),
+    ).timeout(wait);
     _store(url, response);
     return response;
   }

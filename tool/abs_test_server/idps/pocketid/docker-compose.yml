@@ -1,0 +1,34 @@
+# Audiobookshelf + Pocket ID for testing ABS Wear's Pocket ID SSO adapter
+# ("sign in with another device"). Deployed to ~/code/abs-wear-idp-pocketid
+# on the dev box; setup.sh does the rest. Secrets come from .env.
+name: abs-wear-idp-pocketid
+services:
+  audiobookshelf:
+    image: ghcr.io/advplyr/audiobookshelf:2.37.2
+    restart: unless-stopped
+    ports:
+      - "${ABS_PORT:-13387}:80"
+    environment:
+      - TZ=Europe/Tallinn
+      - RATE_LIMIT_AUTH_MAX=10000
+    volumes:
+      - ./data/abs/config:/config
+      - ./data/abs/metadata:/metadata
+      - ${AUDIOBOOKS_DIR:?set in .env}:/audiobooks:ro
+
+  pocket-id:
+    image: ghcr.io/pocket-id/pocket-id:v2.19.2
+    restart: unless-stopped
+    ports:
+      - "${POCKET_ID_PORT:-9007}:1411"
+    environment:
+      # The URL browsers (and the watch) use; also the WebAuthn origin.
+      APP_URL: ${POCKET_ID_URL:?set in .env}
+      ENCRYPTION_KEY: ${POCKET_ID_ENCRYPTION_KEY:?set in .env}
+      # Admin API without an admin passkey (header X-API-Key).
+      STATIC_API_KEY: ${POCKET_ID_API_KEY:?set in .env}
+      TRUST_PROXY: "false"
+      ANALYTICS_DISABLED: "true"
+      VERSION_CHECK_DISABLED: "true"
+    volumes:
+      - ./data/pocket-id:/app/data
