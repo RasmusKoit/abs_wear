@@ -67,6 +67,33 @@ void main() {
     await expectLater(login.submit(_login), throwsA(_error(SsoError.failed)));
   });
 
+  test('a locked-out TOTP code fails instead of asking again', () async {
+    final (login, _) = await start(
+      FakeTinyauth(totp: true, totpLockedOut: true),
+    );
+    expect(await login.submit(_login), isA<SsoPrompt>());
+    await expectLater(
+      login.submit({SsoField.code: '123456'}),
+      throwsA(
+        _error(
+          SsoError.failed,
+        ).having((e) => e.detail, 'detail', contains('locked out')),
+      ),
+    );
+  });
+
+  test('LDAP-only setups get the username and password form', () async {
+    final fake = FakeTinyauth(
+      providers: const [
+        {'name': 'LDAP', 'id': 'ldap', 'oauth': false},
+      ],
+    );
+    final (login, first) = await start(fake);
+    expect((first as SsoPrompt).fields, [SsoField.username, SsoField.password]);
+    expect(await login.submit(_login), isA<SsoConsent>());
+    expect(await login.submit({}), isA<SsoDone>());
+  });
+
   test("an expired ticket fails with tinyauth's message", () async {
     final (login, _) = await start(FakeTinyauth(ticketExpired: true));
     await login.submit(_login);

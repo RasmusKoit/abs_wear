@@ -42,6 +42,7 @@ class FakeTinyauth {
     ],
     this.autoRedirect = '',
     this.lockedOut = false,
+    this.totpLockedOut = false,
     this.ticketExpired = false,
     this.authorizeError,
   });
@@ -56,6 +57,9 @@ class FakeTinyauth {
 
   /// Too many wrong answers: tinyauth's lock.
   final bool lockedOut;
+
+  /// Too many wrong TOTP codes: tinyauth's lock on the code step.
+  final bool totpLockedOut;
 
   /// authorize-complete no longer knows the ticket.
   final bool ticketExpired;
@@ -196,6 +200,13 @@ class FakeTinyauth {
         return loggedIn(totp ? 'pending' : 'user');
       case ('POST', '/api/user/totp'):
         if (!pending) return unauthorized();
+        if (totpLockedOut) {
+          return json({
+            'status': 429,
+            'message':
+                'Too many failed TOTP attempts. Try again in 299 seconds',
+          }, 429);
+        }
         if (body['code'] != '123456') return unauthorized();
         return loggedIn('user');
       case ('GET', '/api/oidc/skip-consent'):
