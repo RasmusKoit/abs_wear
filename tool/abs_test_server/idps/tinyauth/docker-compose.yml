@@ -1,0 +1,52 @@
+# ABS + tinyauth (as its own OpenID Connect provider) for testing ABS Wear's
+# tinyauth SSO adapter. Deployed to ~/code/abs-wear-idp-tinyauth on the dev
+# box; see README.md. Independent of ../../docker-compose.yml.
+name: abs-wear-idp-tinyauth
+services:
+  audiobookshelf:
+    image: ghcr.io/advplyr/audiobookshelf:2.37.2
+    restart: unless-stopped
+    ports:
+      - "${ABS_PORT:-13383}:80"
+    environment:
+      - TZ=Europe/Tallinn
+      - RATE_LIMIT_AUTH_MAX=10000
+      # Trust the test CA (setup.sh) when talking to tinyauth.
+      - NODE_EXTRA_CA_CERTS=/tls/ca.crt
+    volumes:
+      - ./data/config:/config
+      - ./data/metadata:/metadata
+      - ./data/tls/ca.crt:/tls/ca.crt:ro
+      - ${AUDIOBOOKS_DIR:?set in .env}:/audiobooks:ro
+
+  # The project moved from steveiliop56/tinyauth to tinyauthapp/tinyauth;
+  # v5 images are only published under the new name.
+  tinyauth:
+    image: ghcr.io/tinyauthapp/tinyauth:v5.2.0
+    restart: unless-stopped
+    environment:
+      # The issuer. tinyauth wants https and a host name (no IP address)
+      # that ABS and the watch both resolve.
+      TINYAUTH_APPURL: ${TINYAUTH_URL:?set in .env}
+      # Written by setup.sh: "user:bcrypt-hash[:totp-secret]" per line.
+      TINYAUTH_AUTH_USERSFILE: /data/users.txt
+      # Room for the wrong-password tests (default 3, then a 5 min lock).
+      TINYAUTH_AUTH_LOGINMAXRETRIES: "20"
+      TINYAUTH_OIDC_CLIENTS_ABS_CLIENTID: abs
+      TINYAUTH_OIDC_CLIENTS_ABS_CLIENTSECRET: ${ABS_OIDC_CLIENT_SECRET:?set in .env}
+      TINYAUTH_OIDC_CLIENTS_ABS_NAME: Audiobookshelf
+      TINYAUTH_OIDC_CLIENTS_ABS_TRUSTEDREDIRECTURIS: >-
+        ${ABS_URL:?set in .env}/auth/openid/callback,${ABS_URL}/auth/openid/mobile-redirect
+      TINYAUTH_ANALYTICS_ENABLED: "false"
+    volumes:
+      - ./data/tinyauth:/data
+
+  # TLS in front of tinyauth, with the certificate setup.sh makes.
+  tls:
+    image: caddy:2.10.2-alpine
+    restart: unless-stopped
+    ports:
+      - "${TINYAUTH_PORT:-9003}:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./data/tls:/tls:ro
