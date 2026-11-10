@@ -1,6 +1,7 @@
 import 'package:abs_wear/login/data/sso/authelia_adapter.dart';
 import 'package:abs_wear/login/data/sso/authentik_adapter.dart';
 import 'package:abs_wear/login/data/sso/html_form_adapter.dart';
+import 'package:abs_wear/login/data/sso/logto_adapter.dart';
 import 'package:abs_wear/login/data/sso/sso_types.dart';
 
 /// The identity providers the watch can log in to by itself, tried in this
@@ -9,6 +10,7 @@ import 'package:abs_wear/login/data/sso/sso_types.dart';
 final List<IdpAdapterFactory> idpAdapters = [
   AuthentikAdapter.forPage,
   AutheliaAdapter.forPage,
+  LogtoAdapter.forPage,
   // Generic, so after the providers with their own adapters.
   HtmlFormAdapter.forPage,
 ];

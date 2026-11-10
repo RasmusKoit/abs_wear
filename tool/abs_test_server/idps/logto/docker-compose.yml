@@ -1,0 +1,55 @@
+# Audiobookshelf + Logto (OpenID Connect provider) for testing the watch's
+# Logto adapter. Deployed to ~/code/abs-wear-idp-logto on the dev box; see
+# README.md. Secrets come from .env (alphanumeric only: Compose would expand
+# a "$").
+name: abs-wear-idp-logto
+services:
+  audiobookshelf:
+    image: ghcr.io/advplyr/audiobookshelf:2.37.2
+    restart: unless-stopped
+    ports:
+      - "13384:80"
+    environment:
+      - TZ=Europe/Tallinn
+      - RATE_LIMIT_AUTH_MAX=10000
+    volumes:
+      - abs-config:/config
+      - abs-metadata:/metadata
+      - ${ABS_AUDIOBOOKS:?set in .env}:/audiobooks:ro
+
+  logto-db:
+    image: docker.io/library/postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${LOGTO_PG_PASSWORD:?set in .env}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      retries: 10
+      start_period: 20s
+    volumes:
+      - logto-db:/var/lib/postgresql/data
+
+  logto:
+    image: svhd/logto:1.46.0
+    restart: unless-stopped
+    depends_on:
+      logto-db:
+        condition: service_healthy
+    # Seeds the database on the first start (--swe: skip if it exists).
+    entrypoint: ["sh", "-c", "npm run cli db seed -- --swe && npm start"]
+    environment:
+      TRUST_PROXY_HEADER: "1"
+      DB_URL: postgres://postgres:${LOGTO_PG_PASSWORD}@logto-db:5432/logto
+      # As seen from the watch (and from ABS, which fetches the tokens).
+      ENDPOINT: ${LOGTO_URL:?set in .env}
+      ADMIN_ENDPOINT: ${LOGTO_ADMIN_URL:?set in .env}
+    ports:
+      - "9004:3001"
+      - "9005:3002"
+
+volumes:
+  abs-config:
+  abs-metadata:
+  logto-db:
