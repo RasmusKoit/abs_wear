@@ -26,9 +26,39 @@
 - **Plays in the background** with media controls, also with the screen off.
 - **Downloads** keep going over Wi-Fi with the screen off, with a progress notification you can cancel.
 - **Made for the watch**: rotary crown scrolling, ambient mode, large text and screen reader support.
+- **Password or SSO login**, right on the watch: no phone needed.
 - **18 languages**.
 
 Needs Wear OS 3 or newer and your own [Audiobookshelf][abs_github_link] server.
+
+---
+
+## Logging in
+
+Enter your server's address and tap **Next**. The watch asks the server how you can log in and shows only that, one question per screen.
+
+### With a password
+
+**Login with password**, then your Audiobookshelf username and password.
+
+### With SSO (OpenID Connect)
+
+If your server has [OpenID Connect][abs_oidc_docs] set up, tap its SSO button (for example "Login with Authentik"). The watch signs you in with your identity provider itself, over Wi-Fi or LTE, without a browser or a phone: you get the provider's own questions (username, password, a code from your authenticator app, allow access) as watch screens. With SSO only, the watch goes straight there.
+
+For the server admin:
+
+1. Set up OpenID Connect in Audiobookshelf (**Settings → Authentication**).
+2. Add `abswear://oauth` to **Allowed Mobile Redirect URIs**. The identity provider itself needs no change for ABS Wear.
+
+Identity providers the watch can sign in to by itself:
+
+- Authentik, Authelia, Logto, VoidAuth and tinyauth
+- Keycloak and Gitea, plus Forgejo, Dex, Kanidm, Zitadel (V1 login) and Nextcloud through their sign-in forms
+- Pocket ID: the watch shows a code to approve with "sign in with another device" on a phone or computer where you're signed in
+
+Passkeys, captchas and setting up a new second factor need a browser, so they can't be done on the watch. Other providers are tracked in [issue #80][sso_providers_issue].
+
+Once you're logged in, the watch only talks to your Audiobookshelf server: the identity provider isn't asked again. So disabling someone in the identity provider doesn't log out a watch that's already signed in. To cut off access, disable the user in Audiobookshelf (or log out on the watch).
 
 ---
 
@@ -87,6 +117,7 @@ Strings live in `lib/l10n/arb/` ([flutter_localizations][flutter_localizations_l
 ABS Wear is a third-party app and isn't affiliated with the Audiobookshelf project. Screenshots show a demo library of public-domain titles.
 
 [abs_github_link]: https://github.com/advplyr/audiobookshelf
+[abs_oidc_docs]: https://www.audiobookshelf.org/docs/documentation/server-management/oidc-authentication
 [abs_wear_header]: .github/pictures/ABS_Wear_header.png
 [advplyr_github_link]: https://github.com/advplyr
 [android_platform_tools]: https://developer.android.com/tools/releases/platform-tools
@@ -96,5 +127,6 @@ ABS Wear is a third-party app and isn't affiliated with the Audiobookshelf proje
 [nyxholas_github_link]: https://github.com/nichwall
 [play_store_link]: https://play.google.com/store/apps/details?id=dev.koit.abs_wear
 [releases_page]: https://github.com/RasmusKoit/abs_wear/releases/latest
+[sso_providers_issue]: https://github.com/RasmusKoit/abs_wear/issues/80
 [very_good_analysis_badge]: https://img.shields.io/badge/style-very_good_analysis-B22C89.svg
 [very_good_analysis_link]: https://pub.dev/packages/very_good_analysis

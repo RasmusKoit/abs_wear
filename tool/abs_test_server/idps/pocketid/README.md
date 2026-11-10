@@ -26,8 +26,8 @@ the software passkey (kept in `data/passkey.json`) and approves or denies a
 code the watch shows.
 
 ```bash
-python3 passkey.py approve PAEX5F5A
-python3 passkey.py deny PAEX5F5A
+python3 passkey.py approve <code>
+python3 passkey.py deny <code>
 python3 passkey.py forget abs   # withdraw consent: the next login asks again
 ```
 
