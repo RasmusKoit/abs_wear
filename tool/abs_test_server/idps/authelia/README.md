@@ -29,8 +29,9 @@ cp .env.example .env   # alphanumeric secrets; .env is git-ignored
 
 - **Authelia requires HTTPS** (`authelia_url` must be `https`; there is no
   plain-HTTP switch). `setup.sh` makes a test CA in
-  `data/authelia/certs/ca.crt` and a certificate for `IDP_HOST`; Authelia
-  serves TLS itself and ABS trusts the CA through `NODE_EXTRA_CA_CERTS`.
+  `data/authelia/certs/ca.crt` and a certificate for `IDP_HOST`
+  (reissued from the same CA when `IDP_HOST` changes); Authelia serves
+  TLS itself and ABS trusts the CA through `NODE_EXTRA_CA_CERTS`.
   Clients (the watch, tests) must trust `ca.crt` too: on a real server
   Authelia sits behind a proxy with a public certificate.
 - An IP address works as the session cookie domain (no nip.io needed).

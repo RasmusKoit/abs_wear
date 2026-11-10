@@ -17,17 +17,23 @@ creds() { python3 -c 'import sys,json;print(json.dumps({"username":sys.argv[1],"
 mkdir -p "$D/certs" "$D/keys" data/abs/config data/abs/metadata
 
 # Authelia serves only HTTPS: a test CA (trusted by ABS and the tests) and
-# a certificate for IDP_HOST.
+# a certificate for IDP_HOST, reissued (same CA) when IDP_HOST changes.
 # (Key usages and key ids included: strict verifiers such as Python 3.13's
 # refuse certificates without them.)
 changed=
 if [ ! -f "$D/certs/ca.crt" ]; then
-  echo "Creating test CA and certificate for $IDP_HOST"
-  if [[ $IDP_HOST =~ ^[0-9.]+$ ]]; then san="IP:$IDP_HOST"; else san="DNS:$IDP_HOST"; fi
+  echo "Creating test CA"
   openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -subj "/CN=ABS Wear test CA" \
     -addext 'basicConstraints=critical,CA:TRUE' -addext 'keyUsage=critical,keyCertSign,cRLSign' \
     -addext 'subjectKeyIdentifier=hash' \
     -keyout "$D/certs/ca.key" -out "$D/certs/ca.crt" 2>/dev/null
+  rm -f "$D/certs/authelia.crt"
+fi
+if [[ $IDP_HOST =~ ^[0-9.]+$ ]]; then san="IP:$IDP_HOST"; check=(-checkip "$IDP_HOST")
+else san="DNS:$IDP_HOST"; check=(-checkhost "$IDP_HOST"); fi
+if [ ! -f "$D/certs/authelia.crt" ] ||
+  ! openssl x509 -in "$D/certs/authelia.crt" -noout "${check[@]}" | grep -q 'does match'; then
+  echo "Creating certificate for $IDP_HOST"
   openssl req -newkey rsa:2048 -nodes -subj "/CN=$IDP_HOST" \
     -keyout "$D/certs/authelia.key" -out "$D/certs/authelia.csr" 2>/dev/null
   openssl x509 -req -in "$D/certs/authelia.csr" -CA "$D/certs/ca.crt" -CAkey "$D/certs/ca.key" \

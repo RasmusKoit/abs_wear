@@ -37,14 +37,21 @@ class AutheliaAdapter implements IdpAdapter {
   Uri? redirect;
 
   /// Authelia sends the browser to its portal with `flow=openid_connect`
-  /// and the flow's id; the portal's HTML is Authelia's React app.
+  /// and the flow's id; the portal's HTML is Authelia's React app, its
+  /// settings on `<body>`. (The name "Authelia" is only in a licence
+  /// comment, which a minifying proxy may strip.)
   static bool matches(SsoPage page) {
     final q = page.url.queryParameters;
     return q['flow'] == 'openid_connect' &&
         (q['flow_id']?.isNotEmpty ?? false) &&
-        page.body.contains('data-basepath') &&
-        page.body.contains('Authelia');
+        _portalMarkers.every(page.body.contains);
   }
+
+  static const _portalMarkers = [
+    'data-basepath=',
+    'data-rememberme=',
+    'data-resetpassword=',
+  ];
 
   static final _baseHref = RegExp('<base href="([^"]+)"');
 
@@ -84,20 +91,26 @@ class AutheliaAdapter implements IdpAdapter {
           ], retry: true);
         }
         // With a second factor still to go, there is no redirect yet.
-        final to = _data(r)['redirect'] as String?;
-        if (to == null) return await _secondFactor();
-        return await _continue(_api.resolve(to));
+        return switch (_data(r)) {
+          {'redirect': final String to} => await _continue(_api.resolve(to)),
+          {'redirect': _?} => throw const SsoException(
+            SsoError.failed,
+            'authelia: bad redirect',
+          ),
+          _ => await _secondFactor(),
+        };
       case _Screen.totp:
         final r = await _post('api/secondfactor/totp', {
           'token': answer[SsoField.code]?.trim() ?? '',
           'flow': 'openid_connect',
           'flowID': _flowId,
         });
-        // A wrong code is a 403 here (a wrong password a 401).
-        if (r.statusCode == 401 || r.statusCode == 403) {
+        // A wrong code is a 403 here (a wrong password a 401), a code that
+        // isn't 6 or 8 digits long a 400.
+        if (const {400, 401, 403}.contains(r.statusCode)) {
           return SsoPrompt([SsoField.code], user: _user, retry: true);
         }
-        return await _continue(_api.resolve(_data(r)['redirect'] as String));
+        return await _continue(_redirect(_data(r), 'redirect'));
       case _Screen.consent:
         final r = await _post('api/oidc/consent', {
           'flow_id': _flowId,
@@ -106,8 +119,7 @@ class AutheliaAdapter implements IdpAdapter {
           'pre_configure': false,
           if (_claims.isNotEmpty) 'claims': _claims,
         });
-        final to = _data(r)['redirect_uri'] as String;
-        return await _continue(_api.resolve(to));
+        return await _continue(_redirect(_data(r), 'redirect_uri'));
     }
   }
 
@@ -136,7 +148,10 @@ class AutheliaAdapter implements IdpAdapter {
     // from the session, made before they were known).
     final info = _data(await _post('api/user/info', const {}));
     final config = _data(await _send('GET', 'api/configuration'));
-    final methods = (config['available_methods'] as List?) ?? const [];
+    final methods = switch (config['available_methods']) {
+      final List<dynamic> list => list,
+      _ => const <dynamic>[],
+    };
     if (info['has_totp'] == true && methods.contains('totp')) {
       _screen = _Screen.totp;
       return SsoPrompt([SsoField.code], user: _user);
@@ -156,15 +171,24 @@ class AutheliaAdapter implements IdpAdapter {
     if (consent['require_login'] == true) {
       throw const SsoException(SsoError.unsupportedStep, 'require_login');
     }
-    _clientId = consent['client_id'] as String? ?? '';
+    _clientId = _string(consent['client_id']) ?? '';
     _claims = [
       for (final key in const ['essential_claims', 'claims'])
-        ...((consent[key] as List?) ?? const []).cast<String>(),
+        if (consent[key] case final List<dynamic> list)
+          ...list.whereType<String>(),
     ];
     _screen = _Screen.consent;
-    final app = consent['client_description'] as String?;
+    final app = _string(consent['client_description']);
     return SsoConsent(app == null || app.isEmpty ? _clientId : app);
   }
+
+  /// The redirect in an API answer's [key], resolved under the portal.
+  Uri _redirect(Map<String, dynamic> data, String key) => switch (data[key]) {
+    final String to => _api.resolve(to),
+    _ => throw SsoException(SsoError.failed, 'authelia: no $key'),
+  };
+
+  static String? _string(Object? value) => value is String ? value : null;
 
   /// Follows Authelia's redirect [to]: back to the server (null, [redirect]
   /// set) or to another portal screen.
@@ -208,7 +232,11 @@ class AutheliaAdapter implements IdpAdapter {
         'authelia ${r.statusCode}${message == null ? '' : ': $message'}',
       );
     }
-    return (json['data'] as Map<String, dynamic>?) ?? const {};
+    return switch (json['data']) {
+      final Map<String, dynamic> data => data,
+      null => const {},
+      _ => throw const SsoException(SsoError.failed, 'authelia: bad data'),
+    };
   }
 }
 

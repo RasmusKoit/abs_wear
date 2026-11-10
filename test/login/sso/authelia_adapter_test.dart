@@ -92,6 +92,40 @@ void main() {
     expect(await login.submit({}), isA<SsoDone>());
   });
 
+  test('a code of the wrong length asks again', () async {
+    final login = await _start(
+      FakeAutheliaServers(secondFactor: AutheliaSecondFactor.totp),
+    );
+    await login.submit(_password);
+    for (final wrong in ['12345', '1234567', '']) {
+      final retry = await login.submit({SsoField.code: wrong});
+      expect((retry as SsoPrompt).fields, [SsoField.code]);
+      expect(retry.retry, isTrue);
+    }
+    expect(await login.submit({SsoField.code: '123456'}), isA<SsoConsent>());
+  });
+
+  test('an answer without a redirect fails cleanly', () async {
+    final login = await _start(
+      FakeAutheliaServers(
+        secondFactor: AutheliaSecondFactor.totp,
+        noRedirect: true,
+      ),
+    );
+    await login.submit(_password);
+    await expectLater(
+      login.submit({SsoField.code: '123456'}),
+      throwsA(_error(SsoError.failed, 'authelia: no redirect')),
+    );
+  });
+
+  test("grants the consent screen's claims", () async {
+    // The fake checks the claims come back in the consent POST.
+    final login = await _start(FakeAutheliaServers(claims: true));
+    expect(await login.submit(_password), isA<SsoConsent>());
+    expect(await login.submit({}), isA<SsoDone>());
+  });
+
   test('WebAuthn and Duo push are unsupported on the watch', () async {
     for (final (factor, detail) in [
       (AutheliaSecondFactor.webauthn, 'webauthn'),
@@ -131,6 +165,17 @@ void main() {
     test("recognises Authelia's portal", () {
       final page = SsoPage(portal, autheliaPortalHtml(fakeAutheliaUrl));
       expect(AutheliaAdapter.forPage(page, context), isNotNull);
+    });
+
+    test('recognises the portal without its licence comment', () {
+      final html = autheliaPortalHtml(
+        fakeAutheliaUrl,
+      ).replaceFirst(RegExp('<!--.*?-->', dotAll: true), '');
+      expect(html, isNot(contains('Authelia')));
+      expect(
+        AutheliaAdapter.forPage(SsoPage(portal, html), context),
+        isNotNull,
+      );
     });
 
     test('ignores an Authentik page', () {

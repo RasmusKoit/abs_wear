@@ -58,6 +58,8 @@ class FakeAutheliaServers extends FakeServers {
     this.basePath = '',
     this.badFlow = false,
     this.baseHref,
+    this.claims = false,
+    this.noRedirect = false,
   });
 
   final AutheliaSecondFactor secondFactor;
@@ -74,6 +76,12 @@ class FakeAutheliaServers extends FakeServers {
 
   /// The portal's `<base href>`, if not its own root.
   final String? baseHref;
+
+  /// The consent screen lists claims to grant (else null, as seen live).
+  final bool claims;
+
+  /// A correct TOTP code gets a bare `{"status":"OK"}`, no redirect.
+  final bool noRedirect;
 
   final firstFactorBodies = <Map<String, dynamic>>[];
   bool _consented = false;
@@ -209,10 +217,16 @@ class FakeAutheliaServers extends FakeServers {
         });
       case ('POST', '/api/secondfactor/totp'):
         expect(body['flowID'], _flowId);
-        if (body['token'] != '123456') {
+        // Authelia checks the length first: 6 or 8 digits (empty is a 403).
+        final token = body['token'] as String;
+        if (token.isNotEmpty && token.length != 6 && token.length != 8) {
+          return _ko(400, 'Authentication failed, please retry later.');
+        }
+        if (token != '123456') {
           return _ko(403, 'Authentication failed, please retry later.');
         }
         _level = 2;
+        if (noRedirect) return _ok();
         return _ok({'redirect': '$_authorize&consent_id=$_flowId'});
       case ('GET', '/api/oidc/consent'):
         expect(q['flow_id'], _flowId);
@@ -223,8 +237,8 @@ class FakeAutheliaServers extends FakeServers {
           'audience': <String>[],
           'resource': <String>[],
           'pre_configuration': false,
-          'claims': null,
-          'essential_claims': null,
+          'claims': claims ? ['groups', 42] : null,
+          'essential_claims': claims ? ['email'] : null,
           'require_login': requireLogin,
         });
       case ('POST', '/api/oidc/consent'):
@@ -233,6 +247,7 @@ class FakeAutheliaServers extends FakeServers {
           'client_id': 'abs',
           'consent': true,
           'pre_configure': false,
+          if (claims) 'claims': ['email', 'groups'],
         });
         _consented = true;
         return _ok({'redirect_uri': '$_authorize&consent_id=$_flowId'});
