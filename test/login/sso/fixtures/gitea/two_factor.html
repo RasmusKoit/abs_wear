@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en-US" data-theme="gitea-auto">
+<head>
+<title>Two-Factor Authentication - Gitea: Git with a cup of tea</title>
+</head>
+<body>
+	<div class="full height">
+		<noscript>This website requires JavaScript.</noscript>
+			<div role="main" aria-label="Two-Factor Authentication" class="page-content user signin">
+	<div class="ui middle very relaxed page grid">
+		<div class="column">
+			<form class="ui form tw-max-w-2xl tw-m-auto" action="/user/two_factor" method="post">
+				<h3 class="ui top attached header">
+					Two-Factor Authentication
+				</h3>
+				<div class="ui attached segment">
+					<div class="required field">
+						<label for="passcode">Passcode</label>
+						<input id="passcode" name="passcode" type="text" autocomplete="one-time-code" inputmode="numeric" pattern="[0-9]*" autofocus required>
+					</div>
+					<div class="inline field">
+						<button class="ui primary button">Verify</button>
+						<a href="/user/two_factor/scratch">Use a scratch code</a>
+					</div>
+				</div>
+			</form>
+		</div>
+	</div>
+</div>
+	</div>
+	</body>
+</html>

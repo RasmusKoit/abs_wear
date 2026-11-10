@@ -16,11 +16,13 @@ class SsoHttp {
   static const timeout = Duration(seconds: 20);
 
   /// Sends one request without following redirects. JSON [body] is encoded
-  /// and sent with a JSON content type.
+  /// and sent with a JSON content type; [form] fields (in order, names may
+  /// repeat) are sent form-encoded, like a browser posting an HTML form.
   Future<http.Response> send(
     String method,
     Uri url, {
     Object? body,
+    List<(String, String)>? form,
     Map<String, String> headers = const {},
   }) async {
     final request = http.Request(method, url)
@@ -36,6 +38,10 @@ class SsoHttp {
       request
         ..headers['Content-Type'] = 'application/json'
         ..body = jsonEncode(body);
+    } else if (form != null) {
+      request
+        ..headers['Content-Type'] = 'application/x-www-form-urlencoded'
+        ..body = form.map((f) => '${_encode(f.$1)}=${_encode(f.$2)}').join('&');
     }
     final response = await http.Response.fromStream(
       await _client.send(request).timeout(timeout),
@@ -84,6 +90,8 @@ class SsoHttp {
       }
     }
   }
+
+  static String _encode(String s) => Uri.encodeQueryComponent(s);
 
   static String _origin(Uri url) => '${url.scheme}://${url.host}:${url.port}';
 }
