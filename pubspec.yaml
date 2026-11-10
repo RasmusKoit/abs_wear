@@ -9,6 +9,7 @@ environment:
 
 dependencies:
   audio_session: ^0.2.4
+  crypto: ^3.0.8
   device_info_plus: ^13.3.0
   flutter:
     sdk: flutter
