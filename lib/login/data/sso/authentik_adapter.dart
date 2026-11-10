@@ -1,19 +1,20 @@
 import 'dart:convert';
 
 import 'package:abs_wear/login/data/sso/sso_http.dart';
-import 'package:abs_wear/login/data/sso/sso_login.dart';
+import 'package:abs_wear/login/data/sso/sso_types.dart';
 import 'package:http/http.dart' as http;
-
-/// Follows redirects from a URL until a page (first) or the redirect back to
-/// the watch (second). Provided by [SsoLogin].
-typedef FollowRedirects = Future<(Uri?, Uri?)> Function(Uri url);
 
 /// Authentik's login, through its flow executor API: the JSON its own web
 /// interface uses (`/api/v3/flows/executor/<flow>/`). Each stage's challenge
 /// becomes a native [SsoStep]; the answers go back as the stage's JSON.
 class AuthentikAdapter implements IdpAdapter {
-  AuthentikAdapter(this._http, {required FollowRedirects followRedirects})
-    : _follow = followRedirects;
+  AuthentikAdapter(IdpContext context)
+    : _http = context.http,
+      _follow = context.follow;
+
+  /// The adapter for [page] if it is one of Authentik's flows.
+  static IdpAdapter? forPage(SsoPage page, IdpContext context) =>
+      matches(page.url) ? AuthentikAdapter(context) : null;
 
   final SsoHttp _http;
   final FollowRedirects _follow;
@@ -37,8 +38,8 @@ class AuthentikAdapter implements IdpAdapter {
   }
 
   @override
-  Future<SsoStep> begin(Uri page) async {
-    final step = await _enter(page);
+  Future<SsoStep> begin(SsoPage page) async {
+    final step = await _enter(page.url);
     if (step == null) {
       // A flow with nothing to ask (e.g. implicit consent) went straight on.
       throw const SsoException(SsoError.failed, 'flow had no steps');
@@ -155,8 +156,8 @@ class AuthentikAdapter implements IdpAdapter {
           redirect = back;
           return null;
         }
-        if (page != null && matches(page)) return await _enter(page);
-        throw SsoException(SsoError.unsupportedStep, page?.path);
+        if (page != null && matches(page.url)) return await _enter(page.url);
+        throw SsoException(SsoError.unsupportedStep, page?.url.path);
       case 'ak-stage-access-denied':
         throw SsoException(
           SsoError.accessDenied,

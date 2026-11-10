@@ -77,5 +77,8 @@
     "ssoFailed": "SSOログインに失敗しました。もう一度お試しください。",
     "next": "次へ",
     "passwordLogin": "パスワードでログイン",
-    "back": "戻る"
+    "back": "戻る",
+    "emailLabel": "メール",
+    "ssoWaitApprove": "別のデバイスでサインインを承認してください。",
+    "ssoWaitCode": "別のデバイスでこのコードを入力してください: {code}"
 }

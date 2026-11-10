@@ -58,6 +58,9 @@ class LoginPageState extends State<LoginPage> {
   /// Which of the current SSO screen's fields is shown.
   int _ssoFieldIndex = 0;
 
+  /// The next check while an [SsoWait] is shown.
+  Timer? _ssoPoll;
+
   /// Why the server check or the last SSO login failed, shown under the
   /// buttons.
   String? _loginError;
@@ -78,6 +81,7 @@ class LoginPageState extends State<LoginPage> {
     usernameController.dispose();
     passwordController.dispose();
     _scrollController.dispose();
+    _ssoPoll?.cancel();
     _sso?.close();
     for (final input in _ssoInputs.values) {
       input.dispose();
@@ -338,9 +342,11 @@ class LoginPageState extends State<LoginPage> {
     if (sso == null) return;
     setState(() => _loggingIn = true);
     try {
-      await _showSsoStep(await sso.submit(answer));
+      final next = await sso.submit(answer);
+      if (!identical(_sso, sso)) return; // Cancelled meanwhile.
+      await _showSsoStep(next);
     } on Object catch (e) {
-      _ssoFailed(e);
+      if (identical(_sso, sso)) _ssoFailed(e);
     } finally {
       if (mounted) setState(() => _loggingIn = false);
     }
@@ -365,10 +371,29 @@ class LoginPageState extends State<LoginPage> {
       _ssoInputs[SsoField.password]!.clear();
       _ssoInputs[SsoField.code]!.clear();
     });
+    if (step is SsoWait) _pollSso(step);
+  }
+
+  /// While the user approves elsewhere: asks again every [SsoWait.poll].
+  void _pollSso(SsoWait step) {
+    _ssoPoll?.cancel();
+    _ssoPoll = Timer(step.poll, () async {
+      final sso = _sso;
+      if (sso == null || !identical(_ssoStep, step)) return;
+      try {
+        final next = await sso.submit(const {});
+        // Back was tapped meanwhile.
+        if (!identical(_sso, sso)) return;
+        await _showSsoStep(next);
+      } on Object catch (e) {
+        if (identical(_sso, sso)) _ssoFailed(e);
+      }
+    });
   }
 
   /// Ends (or cancels) the SSO login and goes back to the login form.
   void _endSso() {
+    _ssoPoll?.cancel();
     _sso?.close();
     _sso = null;
     for (final input in _ssoInputs.values) {
@@ -933,6 +958,7 @@ class LoginPageState extends State<LoginPage> {
             decoration: InputDecoration(
               labelText: switch (field!) {
                 SsoField.username => l10n.usernameLabel,
+                SsoField.email => l10n.emailLabel,
                 SsoField.password => l10n.passwordLabel,
                 SsoField.code => l10n.ssoCodeLabel,
               },
@@ -966,6 +992,34 @@ class LoginPageState extends State<LoginPage> {
                     );
                   },
             child: busy ? _buttonSpinner() : Text(l10n.next),
+          ),
+        ] else if (step is SsoWait) ...[
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            child: Text(
+              switch (step.code) {
+                final code? => l10n.ssoWaitCode(code),
+                null => l10n.ssoWaitApprove,
+              },
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodySmall,
+            ),
+          ),
+          if (step.url case final url?)
+            Text(
+              '${url.authority}${url.path == '/' ? '' : url.path}',
+              textAlign: TextAlign.center,
+              style: small,
+            ),
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: SizedBox.square(
+              dimension: 24,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                semanticsLabel: l10n.loading,
+              ),
+            ),
           ),
         ] else if (step is SsoConsent) ...[
           Padding(

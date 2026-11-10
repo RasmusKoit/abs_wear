@@ -77,5 +77,8 @@
     "ssoFailed": "SSO sisselogimine ebaõnnestus. Proovi uuesti.",
     "next": "Edasi",
     "passwordLogin": "Logi sisse parooliga",
-    "back": "Tagasi"
+    "back": "Tagasi",
+    "emailLabel": "E-post",
+    "ssoWaitApprove": "Kinnita sisselogimine oma teises seadmes.",
+    "ssoWaitCode": "Sisesta see kood teises seadmes: {code}"
 }

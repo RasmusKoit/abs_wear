@@ -1,101 +1,13 @@
 import 'dart:convert';
 import 'dart:math';
 
-import 'package:abs_wear/login/data/sso/authentik_adapter.dart';
+import 'package:abs_wear/login/data/sso/idp_adapters.dart';
 import 'package:abs_wear/login/data/sso/sso_http.dart';
+import 'package:abs_wear/login/data/sso/sso_types.dart';
 import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
 
-/// Redirect URI the server admin allows for ABS Wear under Settings →
-/// Authentication → Allowed Mobile Redirect URIs. Nothing ever opens it:
-/// the watch reads the code from the redirect itself.
-const ssoRedirectUri = 'abswear://oauth';
-
-/// What a field on an SSO login screen asks for.
-enum SsoField { username, password, code }
-
-/// The next thing the user has to do on the watch.
-sealed class SsoStep {
-  const SsoStep();
-}
-
-/// Fill in [fields] (in this order). [user] is the account being logged in,
-/// once the identity provider knows it. [retry] means the last answer was
-/// wrong (a wrong password or code).
-class SsoPrompt extends SsoStep {
-  const SsoPrompt(this.fields, {this.user, this.retry = false});
-
-  final List<SsoField> fields;
-  final String? user;
-  final bool retry;
-}
-
-/// Allow [app] to use the account (the identity provider's consent screen).
-class SsoConsent extends SsoStep {
-  const SsoConsent(this.app);
-
-  final String app;
-}
-
-/// Logged in: [data] is the server's login response, the same as for
-/// password login (`user`, `userDefaultLibraryId`, ...).
-class SsoDone extends SsoStep {
-  const SsoDone(this.data);
-
-  final Map<String, dynamic> data;
-}
-
-enum SsoError {
-  /// The server has no SSO (or is older than ABS 2.7).
-  notEnabled,
-
-  /// The server doesn't allow [ssoRedirectUri] yet.
-  redirectNotAllowed,
-
-  /// The identity provider's login page isn't one the watch can drive.
-  unsupportedProvider,
-
-  /// The identity provider asks for something the watch can't do (passkey,
-  /// captcha, a sign-up form).
-  unsupportedStep,
-
-  /// The identity provider refused this user for the app.
-  accessDenied,
-
-  /// SSO worked, but the user has no Audiobookshelf account.
-  noAccount,
-
-  /// Anything else: an unexpected answer, a login that went stale.
-  failed,
-}
-
-class SsoException implements Exception {
-  const SsoException(this.error, [this.detail]);
-
-  final SsoError error;
-  final String? detail;
-
-  @override
-  String toString() =>
-      'SsoException($error${detail == null ? '' : ': $detail'})';
-}
-
-/// Drives one identity provider's login screens over plain HTTP.
-abstract class IdpAdapter {
-  /// The identity provider's product name, shown above its screens.
-  String get name;
-
-  /// The first screen, starting from the identity provider's [page].
-  Future<SsoStep> begin(Uri page);
-
-  /// Sends the user's [answer] to the current screen. Returns the next
-  /// screen, or null once the identity provider redirects back to
-  /// [redirect] (where the caller carries on).
-  Future<SsoStep?> submit(Map<SsoField, String> answer);
-
-  /// Where the identity provider sent the browser after the last screen.
-  Uri? get redirect;
-}
+export 'sso_types.dart';
 
 /// One SSO login on the watch, from the server's `/auth/openid` to its
 /// callback, with the identity provider's screens shown natively in between.
@@ -192,7 +104,7 @@ class SsoLogin {
     }
     final idp = _adapterFor(page!);
     if (idp == null) {
-      throw SsoException(SsoError.unsupportedProvider, page.toString());
+      throw SsoException(SsoError.unsupportedProvider, page.url.toString());
     }
     _idp = idp;
     return await idp.begin(page);
@@ -200,7 +112,7 @@ class SsoLogin {
 
   /// Follows redirects from [url] until a page (returned first) or the
   /// redirect back to the watch (returned second).
-  Future<(Uri?, Uri?)> _follow(Uri url) async {
+  Future<(SsoPage?, Uri?)> _follow(Uri url) async {
     var current = url;
     for (var i = 0; i < _maxRedirects; i++) {
       if (_isRedirectUri(current)) return (null, current);
@@ -217,16 +129,18 @@ class SsoLogin {
             '${response.statusCode} at ${current.path}',
           );
         }
-        return (current, null);
+        return (SsoPage(current, response.body), null);
       }
       current = next;
     }
     throw const SsoException(SsoError.failed, 'too many redirects');
   }
 
-  IdpAdapter? _adapterFor(Uri page) {
-    if (AuthentikAdapter.matches(page)) {
-      return AuthentikAdapter(_http, followRedirects: _follow);
+  /// The first adapter in [idpAdapters] that recognises [page].
+  IdpAdapter? _adapterFor(SsoPage page) {
+    final context = IdpContext(_http, _follow);
+    for (final make in idpAdapters) {
+      if (make(page, context) case final adapter?) return adapter;
     }
     return null;
   }
@@ -237,7 +151,7 @@ class SsoLogin {
     final (page, back) = await _follow(from);
     if (back == null) {
       // A page instead of the redirect back, e.g. an error page.
-      throw SsoException(SsoError.failed, 'stopped at ${page?.path}');
+      throw SsoException(SsoError.failed, 'stopped at ${page?.url.path}');
     }
     final query = back.queryParameters;
     final code = query['code'];

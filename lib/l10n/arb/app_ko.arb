@@ -77,5 +77,8 @@
     "ssoFailed": "SSO 로그인에 실패했습니다. 다시 시도하세요.",
     "next": "다음",
     "passwordLogin": "비밀번호로 로그인",
-    "back": "뒤로"
+    "back": "뒤로",
+    "emailLabel": "이메일",
+    "ssoWaitApprove": "다른 기기에서 로그인을 승인하세요.",
+    "ssoWaitCode": "다른 기기에서 이 코드를 입력하세요: {code}"
 }

@@ -377,5 +377,23 @@
     "back": "Back",
     "@back": {
         "description": "Login: back to the previous login screen"
+    },
+    "emailLabel": "Email",
+    "@emailLabel": {
+        "description": "Label for an email address input field"
+    },
+    "ssoWaitApprove": "Approve the sign-in on your other device.",
+    "@ssoWaitApprove": {
+        "description": "SSO login: waiting while the user approves the sign-in on another device (for example a push notification on their phone)"
+    },
+    "ssoWaitCode": "On another device, enter this code: {code}",
+    "@ssoWaitCode": {
+        "description": "SSO login: the user enters this code on another device to approve the sign-in",
+        "placeholders": {
+            "code": {
+                "type": "String",
+                "example": "K7Q2-M9XD"
+            }
+        }
     }
 }

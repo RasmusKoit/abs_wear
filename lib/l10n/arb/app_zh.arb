@@ -77,5 +77,8 @@
     "ssoFailed": "SSO 登录失败，请重试。",
     "next": "下一步",
     "passwordLogin": "使用密码登录",
-    "back": "返回"
+    "back": "返回",
+    "emailLabel": "电子邮件",
+    "ssoWaitApprove": "请在你的其他设备上批准登录。",
+    "ssoWaitCode": "请在另一台设备上输入此代码：{code}"
 }

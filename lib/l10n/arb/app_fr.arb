@@ -77,5 +77,8 @@
     "ssoFailed": "Échec de la connexion SSO. Réessayez.",
     "next": "Suivant",
     "passwordLogin": "Connexion par mot de passe",
-    "back": "Retour"
+    "back": "Retour",
+    "emailLabel": "E-mail",
+    "ssoWaitApprove": "Approuvez la connexion sur votre autre appareil.",
+    "ssoWaitCode": "Sur un autre appareil, saisissez ce code : {code}"
 }

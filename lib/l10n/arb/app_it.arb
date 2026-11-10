@@ -77,5 +77,8 @@
     "ssoFailed": "Accesso SSO non riuscito. Riprova.",
     "next": "Avanti",
     "passwordLogin": "Accedi con password",
-    "back": "Indietro"
+    "back": "Indietro",
+    "emailLabel": "Email",
+    "ssoWaitApprove": "Approva l'accesso sull'altro dispositivo.",
+    "ssoWaitCode": "Su un altro dispositivo, inserisci questo codice: {code}"
 }

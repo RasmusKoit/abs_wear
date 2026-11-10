@@ -77,5 +77,8 @@
     "ssoFailed": "SSO girişi başarısız. Tekrar deneyin.",
     "next": "İleri",
     "passwordLogin": "Parola ile giriş",
-    "back": "Geri"
+    "back": "Geri",
+    "emailLabel": "E-posta",
+    "ssoWaitApprove": "Girişi diğer cihazınızda onaylayın.",
+    "ssoWaitCode": "Başka bir cihazda bu kodu girin: {code}"
 }

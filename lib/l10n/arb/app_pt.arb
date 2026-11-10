@@ -77,5 +77,8 @@
     "ssoFailed": "Falha no login SSO. Tente novamente.",
     "next": "Próximo",
     "passwordLogin": "Entrar com senha",
-    "back": "Voltar"
+    "back": "Voltar",
+    "emailLabel": "E-mail",
+    "ssoWaitApprove": "Aprove o login no seu outro dispositivo.",
+    "ssoWaitCode": "Em outro dispositivo, digite este código: {code}"
 }

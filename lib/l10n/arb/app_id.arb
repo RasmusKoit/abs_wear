@@ -77,5 +77,8 @@
     "ssoFailed": "Login SSO gagal. Coba lagi.",
     "next": "Berikutnya",
     "passwordLogin": "Masuk dengan kata sandi",
-    "back": "Kembali"
+    "back": "Kembali",
+    "emailLabel": "Email",
+    "ssoWaitApprove": "Setujui login di perangkat Anda yang lain.",
+    "ssoWaitCode": "Di perangkat lain, masukkan kode ini: {code}"
 }

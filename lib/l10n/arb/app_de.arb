@@ -77,5 +77,8 @@
     "ssoFailed": "SSO-Anmeldung fehlgeschlagen. Erneut versuchen.",
     "next": "Weiter",
     "passwordLogin": "Mit Passwort anmelden",
-    "back": "Zurück"
+    "back": "Zurück",
+    "emailLabel": "E-Mail",
+    "ssoWaitApprove": "Die Anmeldung auf dem anderen Gerät bestätigen.",
+    "ssoWaitCode": "Auf einem anderen Gerät diesen Code eingeben: {code}"
 }

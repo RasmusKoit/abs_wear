@@ -77,5 +77,8 @@
     "ssoFailed": "Error al iniciar sesión con SSO. Inténtalo de nuevo.",
     "next": "Siguiente",
     "passwordLogin": "Iniciar sesión con contraseña",
-    "back": "Atrás"
+    "back": "Atrás",
+    "emailLabel": "Correo electrónico",
+    "ssoWaitApprove": "Aprueba el inicio de sesión en tu otro dispositivo.",
+    "ssoWaitCode": "En otro dispositivo, introduce este código: {code}"
 }

@@ -27,9 +27,10 @@ void main() {
     'de': {'pause', 'downloads', 'ssoCodeLabel'},
     'es': {'podcastCount'},
     'fr': {'pause', 'ssoCodeLabel'},
-    'id': {'volumeLevel'},
-    'it': {'passwordLabel', 'sleepTimerOff'},
+    'id': {'volumeLevel', 'emailLabel'},
+    'it': {'passwordLabel', 'sleepTimerOff', 'emailLabel'},
     'pt': {'downloads'},
+    'vi': {'emailLabel'},
   };
 
   test('every ARB locale is supported, and every supported locale has one', () {
