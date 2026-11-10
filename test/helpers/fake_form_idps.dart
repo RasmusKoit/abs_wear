@@ -20,10 +20,14 @@ String recordedPage(String provider, String name) =>
 /// which answers with the pages, statuses and redirects recorded from a
 /// real login.
 abstract class FakeFormIdp {
-  FakeFormIdp(this.provider, this.user);
+  FakeFormIdp(this.provider, this.user, {this.app = 'Audiobookshelf'});
 
   /// The fixture folder.
   final String provider;
+
+  /// The OAuth2 client's name on the consent page (recorded as
+  /// "Audiobookshelf").
+  final String app;
 
   /// Who ends up logged in to ABS.
   final String user;
@@ -67,7 +71,7 @@ abstract class FakeFormIdp {
 
   http.Response page(String name, {Map<String, String> headers = const {}}) =>
       http.Response(
-        recordedPage(provider, name),
+        recordedPage(provider, name).replaceAll('Audiobookshelf', app),
         200,
         headers: {'content-type': 'text/html;charset=utf-8', ...headers},
       );
@@ -126,6 +130,8 @@ class FakeKeycloak extends FakeFormIdp {
     this.otp = false,
     this.consent = true,
     this.newPassword = false,
+    this.terms = false,
+    super.app,
   }) : super('keycloak', otp ? 'wear-otp' : 'wear');
 
   /// The user has a TOTP code (the recorded OTP pages are "wear-otp"'s).
@@ -136,6 +142,10 @@ class FakeKeycloak extends FakeFormIdp {
 
   /// The user must set a new password first (a required action).
   final bool newPassword;
+
+  /// The realm makes the user accept its terms and conditions (a required
+  /// action).
+  final bool terms;
 
   static const _realm = '$fakeIdpUrl/realms/abs';
 
@@ -148,6 +158,9 @@ class FakeKeycloak extends FakeFormIdp {
 
   /// Where Keycloak sends the browser once the password (and code) is right.
   http.Response _loggedIn() => switch ((newPassword, consent)) {
+    _ when terms => redirect(
+      '$_realm/login-actions/required-action?execution=TERMS_AND_CONDITIONS',
+    ),
     (true, _) => redirect(
       '$_realm/login-actions/required-action?execution=UPDATE_PASSWORD',
     ),
@@ -178,6 +191,7 @@ class FakeKeycloak extends FakeFormIdp {
         return switch (r.url.queryParameters['execution']) {
           'OAUTH_GRANT' => page('consent'),
           'UPDATE_PASSWORD' => page('update_password'),
+          'TERMS_AND_CONDITIONS' => page('terms'),
           _ => http.Response('unknown action', 400),
         };
       case '/realms/abs/login-actions/authenticate':
@@ -208,7 +222,7 @@ class FakeKeycloak extends FakeFormIdp {
 
 /// Gitea 1.27 as the OpenID provider, with a not yet granted OAuth2 app.
 class FakeGitea extends FakeFormIdp {
-  FakeGitea({this.otp = false})
+  FakeGitea({this.otp = false, super.app})
     : super('gitea', otp ? 'wear-gitea-otp' : 'wear-gitea');
 
   /// The user has a TOTP code.

@@ -17,10 +17,14 @@ import 'package:html/parser.dart' as html;
 /// - Zitadel (login V1): a form posting to `/ui/login/...` with an
 ///   `authRequestID` field.
 /// - Kanidm: any other form posting to `/ui/login...`.
-/// - Nextcloud: a form posting to `/login` with a `requesttoken` field.
+///
+/// A form with nothing to type is only answered on these providers' app
+/// consent pages (see [_Form.consentPath]); other such forms, like
+/// Keycloak's terms and conditions, are unsupported steps.
 ///
 /// Keycloak and Gitea are tested against the real servers; the others
-/// follow their templates.
+/// follow their templates. (Nextcloud is not here: it draws its login form
+/// in the browser.)
 class HtmlFormAdapter implements IdpAdapter {
   HtmlFormAdapter._(this.name, IdpContext context)
     : _http = context.http,
@@ -77,9 +81,6 @@ class HtmlFormAdapter implements IdpAdapter {
         return 'Zitadel';
       }
       if (action.startsWith('/ui/login')) return 'Kanidm';
-      if (action.endsWith('/login') && has('requesttoken')) {
-        return 'Nextcloud';
-      }
     }
     return null;
   }
@@ -202,6 +203,8 @@ class HtmlFormAdapter implements IdpAdapter {
     RegExp('grant access to (.+)', caseSensitive: false),
     // Gitea / Forgejo: "Authorize "<app>" to access your account?".
     RegExp('authorize (.+?) to access', caseSensitive: false),
+    // Kanidm: "Consent to Proceed to <client>".
+    RegExp('consent to proceed to (.+)', caseSensitive: false),
   ];
 
   static final _captcha = RegExp(
@@ -214,8 +217,9 @@ class HtmlFormAdapter implements IdpAdapter {
 }
 
 /// A form the watch can fill in: [inputs] are asked for, [fixed] fields
-/// (hidden, read-only, preselected) are sent as they are, with [button].
-/// Without inputs it is a consent form and [button] accepts.
+/// (hidden, read-only, preselected, or only there for password managers)
+/// are sent as they are, with [button]. Without inputs it is an app
+/// consent form and [button] accepts.
 class _Form {
   _Form(this.action, this.fixed, this.inputs, this.button);
 
@@ -264,7 +268,9 @@ class _Form {
           if (a.containsKey('checked')) fixed.add((name, a['value'] ?? 'on'));
         case 'button' || 'reset':
           break;
-        case _ when a.containsKey('readonly'):
+        case _ when a.containsKey('readonly') || _hidden(e, form):
+          // Read-only, or hidden with CSS for a password manager to fill
+          // (Kanidm, Zitadel): sent as the page has it, not asked for.
           fixed.add((name, a['value'] ?? ''));
         default:
           final field = _field(type, name, a);
@@ -285,12 +291,43 @@ class _Form {
       final button = buttons.where((b) => !_isCancel(b)).firstOrNull;
       return _Form(action, fixed, inputs, _pair(button));
     }
-    // Nothing to type: a consent form, if it has an accept button.
-    final accept = buttons
-        .where((b) => !_isCancel(b) && _accept.hasMatch(_describe(b)))
-        .firstOrNull;
+    // Nothing to type: only a known app consent page is answered. Other
+    // forms like it (Keycloak's terms and conditions) are not the watch's
+    // to accept.
+    if (!consentPath.hasMatch(action.path)) return null;
+    // The accept button, else the one that isn't cancel (Kanidm's
+    // "Proceed").
+    final ok = buttons.where((b) => !_isCancel(b));
+    final accept =
+        ok.where((b) => _accept.hasMatch(_describe(b))).firstOrNull ??
+        ok.firstOrNull;
     return accept == null ? null : _Form(action, fixed, inputs, _pair(accept));
   }
+
+  /// Where the app consent forms post: Keycloak, Gitea / Forgejo, Dex,
+  /// Kanidm.
+  static final consentPath = RegExp(
+    '(/login-actions/consent|/login/oauth/grant|/approval|'
+    r'/ui/oauth2/consent)$',
+  );
+
+  /// Whether [e], or a parent inside [form], is hidden from the user.
+  static bool _hidden(Element e, Element form) {
+    for (Element? x = e; x != null && x != form; x = x.parent) {
+      final a = x.attributes;
+      final classes = (a['class'] ?? '').split(RegExp(r'\s+'));
+      if (a.containsKey('hidden') ||
+          a['aria-hidden'] == 'true' ||
+          _displayNone.hasMatch(a['style'] ?? '') ||
+          classes.any(_hiddenClasses.contains)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  static const _hiddenClasses = {'hidden', 'd-none', 'tw-hidden'};
+  static final _displayNone = RegExp(r'display\s*:\s*none');
 
   /// What a visible input asks for, from its type, name and autocomplete.
   static SsoField? _field(String type, String name, Map<Object, String> a) {

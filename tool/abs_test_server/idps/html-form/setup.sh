@@ -11,6 +11,10 @@ set -euo pipefail
 cd "$(dirname "$0")"
 # load_env from the main test server's env.sh (in the repo, or copied here).
 for f in ../../env.sh ./env.sh; do [ -f "$f" ] && { . "$f"; break; }; done
+if ! command -v load_env >/dev/null; then
+  echo "env.sh not found: copy tool/abs_test_server/env.sh next to setup.sh" >&2
+  exit 1
+fi
 load_env ./.env
 ABS=http://localhost:${ABS_PORT:-13381}
 KC=http://localhost:${KEYCLOAK_PORT:-9001}

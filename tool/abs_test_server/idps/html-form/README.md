@@ -7,7 +7,12 @@ SSO adapter (`lib/login/data/sso/html_form_adapter.dart`). It runs next to
 the main test server and doesn't touch it; the books come read-only from its
 `data/audiobooks`.
 
+Deployed outside the repo (as on the dev box), copy this folder and the
+main test server's `tool/abs_test_server/env.sh` into one directory; in the
+repo, `setup.sh` finds `../../env.sh` by itself.
+
 ```bash
+cp <repo>/tool/abs_test_server/env.sh .   # only outside the repo
 cp .env.example .env     # letters and digits only; .env is git-ignored
 docker compose up -d     # add --profile gitea for Gitea
 ./setup.sh               # or: ./setup.sh gitea

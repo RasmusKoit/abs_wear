@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html class="login-pf" lang="en">
+<head>
+<title>Sign in to abs</title>
+</head>
+<body id="keycloak-bg" class="" data-page-id="login-terms">
+<div class="pf-v5-c-login">
+  <div class="pf-v5-c-login__container">
+    <header id="kc-header" class="pf-v5-c-login__header">
+      <div id="kc-header-wrapper"
+              class="pf-v5-c-brand">abs</div>
+    </header>
+    <main class="pf-v5-c-login__main">
+      <div class="pf-v5-c-login__main-header">
+        <h1 class="pf-v5-c-title pf-m-3xl" id="kc-page-title"><!-- template: terms.ftl -->
+        Terms and Conditions
+</h1>
+      </div>
+      <div class="pf-v5-c-login__main-body">
+<!-- template: terms.ftl -->
+    <div class="pf-v5-u-mb-md-on-md">
+        <p>Terms and conditions to be defined</p>
+    </div>
+    <form class="pf-v5-c-form pf-v5-u-w-100" action="http://idp.test/realms/abs/login-actions/required-action?session_code=U7EdRsraKQcxQJxhTEIPA3B62rKO_ACSMYiQu0s50QU&amp;execution=TERMS_AND_CONDITIONS&amp;client_id=abs&amp;tab_id=NoP1w1-CRek&amp;client_data=eyJ0ZXN0Ijp0cnVlfQ" method="POST">
+  <div class="pf-v5-c-form__group">
+    <div class="pf-v5-c-form__actions pf-v5-u-pt-xs pf-v5-u-flex-nowrap">
+  <button class="pf-v5-c-button pf-m-primary pf-m-block" name="accept" id="kc-accept"
+          type="submit" >
+  Accept
+  </button>
+  <button class="pf-v5-c-button pf-m-secondary pf-m-block" name="cancel" id="kc-decline"
+          type="submit" >
+  Decline
+  </button>
+    </div>
+  </div>
+    </form>
+    <div class="clearfix"></div>
+          <div class="pf-v5-c-login__main-footer">
+<!-- template: terms.ftl -->
+          </div>
+      </div>
+        <div class="pf-v5-c-login__main-footer">
+        </div>
+    </main>
+  </div>
+</div>
+</body>
+</html>

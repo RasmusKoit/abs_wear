@@ -2,6 +2,8 @@ import 'package:abs_wear/login/data/sso/html_form_adapter.dart';
 import 'package:abs_wear/login/data/sso/sso_http.dart';
 import 'package:abs_wear/login/data/sso/sso_login.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 
 import '../../helpers/fake_form_idps.dart';
 import '../../helpers/fake_sso_servers.dart';
@@ -89,6 +91,26 @@ void main() {
       });
     });
 
+    test("the consent page's app name", () async {
+      final kc = FakeKeycloak(app: 'My Books');
+      final (login, _) = await SsoLogin.start(fakeAbsUrl, client: kc.client);
+      expect(
+        await login.submit(_login),
+        isA<SsoConsent>().having((c) => c.app, 'app', 'My Books'),
+      );
+    });
+
+    test('terms and conditions are not accepted for the user', () async {
+      final kc = FakeKeycloak(terms: true);
+      final (login, _) = await SsoLogin.start(fakeAbsUrl, client: kc.client);
+      await expectLater(
+        login.submit(_login),
+        throwsA(_error(SsoError.unsupportedStep, 'login-terms')),
+      );
+      // Only the password was posted, not the terms' accept button.
+      expect(kc.posts, hasLength(1));
+    });
+
     test('a required new password is unsupported', () async {
       final kc = FakeKeycloak(newPassword: true);
       final (login, _) = await SsoLogin.start(fakeAbsUrl, client: kc.client);
@@ -143,6 +165,156 @@ void main() {
       );
       expect(await sso.submit({SsoField.code: '123456'}), isA<SsoConsent>());
       expect(await sso.submit({}), isA<SsoDone>());
+    });
+
+    test("the grant page's app name, without its quotes", () async {
+      final gitea = FakeGitea(app: 'My Books');
+      final (sso, _) = await SsoLogin.start(fakeAbsUrl, client: gitea.client);
+      expect(
+        await sso.submit({...login, SsoField.password: 'secret'}),
+        isA<SsoConsent>().having((c) => c.app, 'app', 'My Books'),
+      );
+    });
+  });
+
+  group('from templates', () {
+    // Pages as Kanidm and Zitadel render them (trimmed), not recorded.
+    late List<(String, Map<String, String>)> posts;
+    late http.Response Function() answer;
+    late IdpContext context;
+    setUp(() {
+      posts = [];
+      final client = MockClient((r) async {
+        posts.add((r.url.path, Uri.splitQueryString(r.body)));
+        return answer();
+      });
+      // Every redirect goes back to ABS.
+      context = IdpContext(SsoHttp(client), (url) async => (null, url));
+    });
+    http.Response html(String body) =>
+        http.Response(body, 200, headers: {'content-type': 'text/html'});
+    http.Response backToAbs() => http.Response(
+      '',
+      302,
+      headers: {'location': 'http://abs.test/auth/openid/mobile-redirect'},
+    );
+
+    const kanidmBegin = '''
+<form id="login" action="/ui/login/begin" method="post">
+  <div class="input-group mb-3">
+    <input autofocus=true class="autofocus form-control" id="username"
+      name="username" type="text" autocomplete="username" value="" required>
+  </div>
+  <!-- BEGIN: allows a password manager to autocomplete these fields. -->
+  <input class="d-none" id="password" name="password" type="password"
+    autocomplete="current-password" value="">
+  <input class="d-none" id="totp" name="totp" type="text" inputmode="numeric"
+    autocomplete="one-time-code" value="">
+  <!-- END -->
+  <input type="checkbox" name="remember_me" class="form-check-input"
+    role="switch" id="remember_me_check" value="1">
+  <button type="submit" class="btn btn-primary">Begin</button>
+</form>''';
+    const kanidmTotp = '''
+<form id="login" action="/ui/login/totp" method="post">
+  <div class="input-group mb-3">
+    <input class="d-none" id="password" name="password" type="password"
+      autocomplete="current-password" value="">
+    <input autofocus=true class="autofocus form-control" id="totp" name="totp"
+      type="text" inputmode="numeric" autocomplete="one-time-code" value=""
+      required=true>
+  </div>
+  <button type="submit" class="btn btn-primary">Submit</button>
+</form>''';
+    const kanidmPassword = '''
+<form id="login" action="/ui/login/pw" method="post">
+  <input autofocus=true class="autofocus form-control" id="password"
+    name="password" type="password" autocomplete="current-password" value=""
+    required=true>
+  <button type="submit" class="btn btn-primary">Submit</button>
+</form>''';
+    const kanidmConsent = '''
+<main id="main" class="flex-shrink-0 form-signin m-auto">
+  <h2 class="h3 mb-3 fw-normal">Consent to Proceed to My Books</h2>
+  <form id="login" action="/ui/oauth2/consent" method="post">
+    <input type="hidden" id="consent_token" name="consent_token" value="ct">
+    <button autofocus=true class="w-100 btn btn-lg btn-primary"
+      type="submit">Proceed</button>
+  </form>
+</main>''';
+
+    test(
+      'Kanidm: no password-manager fields asked for, then consent',
+      () async {
+        final page = SsoPage(
+          Uri.parse('http://kani.test/ui/login?next=x'),
+          kanidmBegin,
+        );
+        final kanidm = HtmlFormAdapter.forPage(page, context)!;
+        expect(kanidm.name, 'Kanidm');
+        expect(await kanidm.begin(page), _prompt([SsoField.username]));
+        answer = () => html(kanidmTotp);
+        expect(
+          await kanidm.submit({SsoField.username: 'wear'}),
+          _prompt([SsoField.code], user: 'wear'),
+        );
+        answer = () => html(kanidmPassword);
+        expect(
+          await kanidm.submit({SsoField.code: '123456'}),
+          _prompt([SsoField.password], user: 'wear'),
+        );
+        answer = () => html(kanidmConsent);
+        expect(
+          await kanidm.submit({SsoField.password: 'secret'}),
+          isA<SsoConsent>().having((c) => c.app, 'app', 'My Books'),
+        );
+        answer = backToAbs;
+        expect(await kanidm.submit({}), isNull);
+        expect(kanidm.redirect?.host, 'abs.test');
+        expect(posts.map((p) => p.$1), [
+          '/ui/login/begin',
+          '/ui/login/totp',
+          '/ui/login/pw',
+          '/ui/oauth2/consent',
+        ]);
+        expect(posts.map((p) => p.$2), [
+          {'username': 'wear', 'password': '', 'totp': ''},
+          {'password': '', 'totp': '123456'},
+          {'password': 'secret'},
+          {'consent_token': 'ct'},
+        ]);
+      },
+    );
+
+    test("Zitadel: the password page's hidden login name", () async {
+      final page = SsoPage(
+        Uri.parse('http://zitadel.test/ui/login/password'),
+        '''
+<form action="/ui/login/password" method="POST">
+  <input type="hidden" name="gorilla.csrf.Token" value="csrf">
+  <input type="hidden" name="authRequestID" value="req">
+  <input type="text" name="loginName" value="wear" autocomplete="username"
+    class="hidden">
+  <div class="fields">
+    <label class="lgn-label" for="password">Password</label>
+    <input class="lgn-input" type="password" id="password" name="password"
+      autocomplete="current-password" autofocus required>
+  </div>
+  <button id="submit-button" class="lgn-raised-button lgn-primary right"
+    type="submit">Next</button>
+</form>''',
+      );
+      final zitadel = HtmlFormAdapter.forPage(page, context)!;
+      expect(zitadel.name, 'Zitadel');
+      expect(await zitadel.begin(page), _prompt([SsoField.password]));
+      answer = backToAbs;
+      expect(await zitadel.submit({SsoField.password: 'secret'}), isNull);
+      expect(posts.single.$2, {
+        'gorilla.csrf.Token': 'csrf',
+        'authRequestID': 'req',
+        'loginName': 'wear',
+        'password': 'secret',
+      });
     });
   });
 
@@ -201,12 +373,6 @@ void main() {
         provider('http://dex.test/dex/auth/local/login?back=&state=x', '''
 <form method="post" action="/dex/auth/local/login?state=x">$fields</form>'''),
         'Dex',
-      );
-      expect(
-        provider('http://cloud.test/login?redirect_url=x', '''
-<form method="post" action="/login">
-<input type="hidden" name="requesttoken" value="t">$fields</form>'''),
-        'Nextcloud',
       );
     });
   });
