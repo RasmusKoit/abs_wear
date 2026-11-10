@@ -1,3 +1,4 @@
+import 'package:abs_wear/login/data/sso/authelia_adapter.dart';
 import 'package:abs_wear/login/data/sso/authentik_adapter.dart';
 import 'package:abs_wear/login/data/sso/html_form_adapter.dart';
 import 'package:abs_wear/login/data/sso/sso_types.dart';
@@ -7,5 +8,7 @@ import 'package:abs_wear/login/data/sso/sso_types.dart';
 /// (by URL or HTML) and returns null for anyone else's.
 final List<IdpAdapterFactory> idpAdapters = [
   AuthentikAdapter.forPage,
+  AutheliaAdapter.forPage,
+  // Generic, so after the providers with their own adapters.
   HtmlFormAdapter.forPage,
 ];
