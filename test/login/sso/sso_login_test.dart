@@ -43,7 +43,7 @@ class FakeServers {
   late final client = MockClient((request) async {
     requests.add(request);
     expect(request.followRedirects, isFalse);
-    return handle(request);
+    return await handle(request);
   });
 
   http.Response redirect(String to, {Map<String, String> headers = const {}}) =>
@@ -99,6 +99,7 @@ class FakeServers {
               // Joined the way dart:io joins repeated headers.
               'set-cookie':
                   'auth_method=openid-mobile; Max-Age=315360000; Path=/; '
+                  // ignore: missing_whitespace_between_adjacent_strings
                   'Expires=Thu, 08 Nov 2036 10:00:00 GMT; HttpOnly,'
                   'connect.sid=s%3Aabc.def; Path=/; HttpOnly',
             },
