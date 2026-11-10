@@ -65,7 +65,6 @@
     "loading": "لوڈ ہو رہا ہے",
     "volumeLevel": "والیوم {percent}%",
     "ssoLogin": "SSO سے لاگ ان",
-    "ssoContinue": "جاری رکھیں",
     "ssoCodeLabel": "کوڈ",
     "ssoWrongCode": "غلط کوڈ۔",
     "ssoConsent": "کیا {app} کو آپ کا اکاؤنٹ استعمال کرنے دیں؟",

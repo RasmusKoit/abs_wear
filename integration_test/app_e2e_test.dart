@@ -388,13 +388,13 @@ void main() {
     // The server's own label for its SSO button.
     await pumpUntil(tester, find.text('Login with Authentik'));
     await scrollAndTap(tester, find.text('Login with Authentik'));
-    await pumpUntil(tester, find.text('Continue'));
+    await pumpUntil(tester, find.text('Next'));
     expect(find.text('Authentik'), findsOneWidget);
     await tester.enterText(
       find.widgetWithText(TextFormField, 'Username'),
       absUser,
     );
-    await scrollAndTap(tester, find.text('Continue'));
+    await scrollAndTap(tester, find.text('Next'));
     await pumpUntil(tester, find.widgetWithText(TextFormField, 'Password'));
   }
 
@@ -404,7 +404,7 @@ void main() {
       find.widgetWithText(TextFormField, 'Password'),
       absPassword,
     );
-    await scrollAndTap(tester, find.text('Continue'));
+    await scrollAndTap(tester, find.text('Next'));
     // Authentik asks for consent once per user, then remembers it.
     final allow = find.text('Allow');
     final hello = find.text('Hello $absUser');
@@ -429,9 +429,9 @@ void main() {
       find.widgetWithText(TextFormField, 'Password'),
       'not-the-password',
     );
-    await scrollAndTap(tester, find.text('Continue'));
+    await scrollAndTap(tester, find.text('Next'));
     await pumpUntil(tester, find.text('Wrong username or password.'));
-    await scrollAndTap(tester, find.text('Cancel'));
+    await scrollAndTap(tester, find.text('Back'));
     await pumpUntil(tester, find.text('Login with Authentik'));
   });
 

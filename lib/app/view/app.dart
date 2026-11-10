@@ -20,6 +20,15 @@ ThemeData appTheme({bool ambient = false}) => ThemeData(
           onSurface: Colors.white60,
         )
       : const ColorScheme.dark(primary: Color(0xFF00B5FF)),
+  // The one main action on a screen: filled, so it reads as a button on
+  // the black background (text buttons are the secondary actions).
+  elevatedButtonTheme: ElevatedButtonThemeData(
+    style: ElevatedButton.styleFrom(
+      backgroundColor: ambient ? Colors.white60 : const Color(0xFF00B5FF),
+      foregroundColor: Colors.black,
+      textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+    ),
+  ),
 );
 
 /// The largest text scale the layouts are made for; larger system font

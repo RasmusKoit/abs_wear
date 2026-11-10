@@ -65,7 +65,6 @@
     "loading": "Đang tải",
     "volumeLevel": "Âm lượng {percent}%",
     "ssoLogin": "Đăng nhập bằng SSO",
-    "ssoContinue": "Tiếp tục",
     "ssoCodeLabel": "Mã",
     "ssoWrongCode": "Sai mã.",
     "ssoConsent": "Cho phép {app} dùng tài khoản của bạn?",

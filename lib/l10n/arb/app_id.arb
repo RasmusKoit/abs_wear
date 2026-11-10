@@ -65,7 +65,6 @@
     "loading": "Memuat",
     "volumeLevel": "Volume {percent}%",
     "ssoLogin": "Masuk dengan SSO",
-    "ssoContinue": "Lanjutkan",
     "ssoCodeLabel": "Kode",
     "ssoWrongCode": "Kode salah.",
     "ssoConsent": "Izinkan {app} menggunakan akun Anda?",

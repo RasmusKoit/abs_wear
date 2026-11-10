@@ -314,10 +314,6 @@
     "@ssoLogin": {
         "description": "Login page: button that starts single sign-on (SSO) login"
     },
-    "ssoContinue": "Continue",
-    "@ssoContinue": {
-        "description": "SSO login: button that sends the filled-in fields"
-    },
     "ssoCodeLabel": "Code",
     "@ssoCodeLabel": {
         "description": "SSO login: label of the field for a one-time code from an authenticator app"

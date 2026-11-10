@@ -65,7 +65,6 @@
     "loading": "Yükleniyor",
     "volumeLevel": "Ses düzeyi %{percent}",
     "ssoLogin": "SSO ile giriş",
-    "ssoContinue": "Devam",
     "ssoCodeLabel": "Kod",
     "ssoWrongCode": "Yanlış kod.",
     "ssoConsent": "{app} hesabınızı kullanabilsin mi?",

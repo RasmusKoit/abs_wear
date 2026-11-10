@@ -65,7 +65,6 @@
     "loading": "Laadimine",
     "volumeLevel": "Helitugevus {percent}%",
     "ssoLogin": "Logi sisse SSO-ga",
-    "ssoContinue": "Jätka",
     "ssoCodeLabel": "Kood",
     "ssoWrongCode": "Vale kood.",
     "ssoConsent": "Kas lubada {app} sinu kontot kasutada?",

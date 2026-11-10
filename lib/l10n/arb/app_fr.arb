@@ -65,7 +65,6 @@
     "loading": "Chargement",
     "volumeLevel": "Volume {percent} %",
     "ssoLogin": "Connexion SSO",
-    "ssoContinue": "Continuer",
     "ssoCodeLabel": "Code",
     "ssoWrongCode": "Code incorrect.",
     "ssoConsent": "Autoriser {app} à utiliser votre compte ?",

@@ -720,9 +720,7 @@ class LoginPageState extends State<LoginPage> {
                   }
                   unawaited(_next(serverUrlController.text));
                 },
-          child: _busy
-              ? _buttonSpinner()
-              : Text(l10n.next, style: theme.textTheme.bodyMedium),
+          child: _busy ? _buttonSpinner() : Text(l10n.next),
         ),
         ..._loginErrorText(theme),
         const SizedBox(height: 16),
@@ -744,7 +742,7 @@ class LoginPageState extends State<LoginPage> {
                   _loginError = null;
                   _stage = _Stage.username;
                 }),
-          child: Text(l10n.passwordLogin, style: theme.textTheme.bodySmall),
+          child: Text(l10n.passwordLogin),
         ),
         const SizedBox(height: 4),
         ElevatedButton(
@@ -756,7 +754,6 @@ class LoginPageState extends State<LoginPage> {
               : Text(
                   server?.ssoButtonText ?? l10n.ssoLogin,
                   textAlign: TextAlign.center,
-                  style: theme.textTheme.bodySmall,
                 ),
         ),
         ..._loginErrorText(theme),
@@ -796,7 +793,7 @@ class LoginPageState extends State<LoginPage> {
                   }
                   setState(() => _stage = _Stage.password);
                 },
-          child: Text(l10n.next, style: theme.textTheme.bodyMedium),
+          child: Text(l10n.next),
         ),
         _backButton(theme),
         const SizedBox(height: 16),
@@ -841,9 +838,7 @@ class LoginPageState extends State<LoginPage> {
                     login(serverUrlController.text, username, password),
                   );
                 },
-          child: _busy
-              ? _buttonSpinner()
-              : Text(l10n.login, style: theme.textTheme.bodyMedium),
+          child: _busy ? _buttonSpinner() : Text(l10n.login),
         ),
         _backButton(theme),
         const SizedBox(height: 16),
@@ -855,7 +850,9 @@ class LoginPageState extends State<LoginPage> {
   Widget _serverLabel(ThemeData theme) => Padding(
     padding: const EdgeInsets.symmetric(horizontal: 16),
     child: Text(
-      serverUrlController.text,
+      // Host (and port) only: the full URL is long on a watch.
+      Uri.tryParse(serverUrlController.text)?.authority ??
+          serverUrlController.text,
       textAlign: TextAlign.center,
       style: theme.textTheme.labelSmall,
     ),
@@ -968,9 +965,7 @@ class LoginPageState extends State<LoginPage> {
                       _submitSso({for (final f in step.fields) f: value(f)}),
                     );
                   },
-            child: busy
-                ? _buttonSpinner()
-                : Text(l10n.ssoContinue, style: theme.textTheme.bodyMedium),
+            child: busy ? _buttonSpinner() : Text(l10n.next),
           ),
         ] else if (step is SsoConsent) ...[
           Padding(
@@ -983,14 +978,12 @@ class LoginPageState extends State<LoginPage> {
           ),
           ElevatedButton(
             onPressed: busy ? null : () => unawaited(_submitSso(const {})),
-            child: busy
-                ? _buttonSpinner()
-                : Text(l10n.ssoAllow, style: theme.textTheme.bodyMedium),
+            child: busy ? _buttonSpinner() : Text(l10n.ssoAllow),
           ),
         ],
         TextButton(
           onPressed: busy ? null : _endSso,
-          child: Text(l10n.cancel, style: theme.textTheme.bodySmall),
+          child: Text(l10n.back, style: theme.textTheme.bodySmall),
         ),
         const SizedBox(height: 16),
       ],
@@ -1019,7 +1012,7 @@ class LoginPageState extends State<LoginPage> {
         ),
         ElevatedButton(
           onPressed: () => unawaited(_openLibrary()),
-          child: Text(l10n.library, style: theme.textTheme.bodyMedium),
+          child: Text(l10n.library),
         ),
         const SizedBox(height: 8),
         Center(

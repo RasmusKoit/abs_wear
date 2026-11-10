@@ -65,7 +65,6 @@
     "loading": "불러오는 중",
     "volumeLevel": "볼륨 {percent}%",
     "ssoLogin": "SSO로 로그인",
-    "ssoContinue": "계속",
     "ssoCodeLabel": "코드",
     "ssoWrongCode": "코드가 올바르지 않습니다.",
     "ssoConsent": "{app}에서 계정을 사용하도록 허용할까요?",

@@ -34,8 +34,8 @@ void main() {
 
   Future<void> fill(WidgetTester tester, String label, String text) async {
     await tester.enterText(find.widgetWithText(TextFormField, label), text);
-    await tester.ensureVisible(find.text('Continue'));
-    await tester.tap(find.text('Continue'));
+    await tester.ensureVisible(find.text('Next'));
+    await tester.tap(find.text('Next'));
     await tester.pumpAndSettle();
   }
 
@@ -93,12 +93,12 @@ void main() {
     expect(find.text('Login with password'), findsOneWidget);
   });
 
-  testWidgets('cancel goes back to the choice', (tester) async {
+  testWidgets('back from SSO returns to the choice', (tester) async {
     final servers = FakeServers();
     await http.runWithClient(() async {
       await startSso(tester);
-      await tester.ensureVisible(find.text('Cancel'));
-      await tester.tap(find.text('Cancel'));
+      await tester.ensureVisible(find.text('Back'));
+      await tester.tap(find.text('Back'));
       await tester.pumpAndSettle();
     }, () => servers.client);
     expect(find.text('Login with password'), findsOneWidget);

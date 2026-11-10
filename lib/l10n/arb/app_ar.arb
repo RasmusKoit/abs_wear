@@ -65,7 +65,6 @@
     "loading": "جارٍ التحميل",
     "volumeLevel": "مستوى الصوت {percent}%",
     "ssoLogin": "تسجيل الدخول عبر SSO",
-    "ssoContinue": "متابعة",
     "ssoCodeLabel": "الرمز",
     "ssoWrongCode": "رمز خاطئ.",
     "ssoConsent": "السماح لـ {app} باستخدام حسابك؟",

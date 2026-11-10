@@ -65,7 +65,6 @@
     "loading": "लोड हो रहा है",
     "volumeLevel": "वॉल्यूम {percent}%",
     "ssoLogin": "SSO से लॉगिन",
-    "ssoContinue": "जारी रखें",
     "ssoCodeLabel": "कोड",
     "ssoWrongCode": "गलत कोड।",
     "ssoConsent": "{app} को आपका खाता इस्तेमाल करने दें?",

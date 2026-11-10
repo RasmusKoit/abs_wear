@@ -65,7 +65,6 @@
     "loading": "Wird geladen",
     "volumeLevel": "Lautstärke {percent} %",
     "ssoLogin": "Mit SSO anmelden",
-    "ssoContinue": "Weiter",
     "ssoCodeLabel": "Code",
     "ssoWrongCode": "Falscher Code.",
     "ssoConsent": "{app} Zugriff auf das Konto erlauben?",

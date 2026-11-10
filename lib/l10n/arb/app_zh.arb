@@ -65,7 +65,6 @@
     "loading": "正在加载",
     "volumeLevel": "音量 {percent}%",
     "ssoLogin": "使用 SSO 登录",
-    "ssoContinue": "继续",
     "ssoCodeLabel": "验证码",
     "ssoWrongCode": "验证码错误。",
     "ssoConsent": "允许 {app} 使用你的账号？",

@@ -65,7 +65,6 @@
     "loading": "Загрузка",
     "volumeLevel": "Громкость {percent}%",
     "ssoLogin": "Войти через SSO",
-    "ssoContinue": "Продолжить",
     "ssoCodeLabel": "Код",
     "ssoWrongCode": "Неверный код.",
     "ssoConsent": "Разрешить {app} использовать ваш аккаунт?",
