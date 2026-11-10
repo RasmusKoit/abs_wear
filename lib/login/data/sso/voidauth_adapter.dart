@@ -140,7 +140,12 @@ class VoidAuthAdapter implements IdpAdapter {
   Future<SsoStep> _mfa() async {
     final response = await _http.send('GET', _base.resolve('api/user/me'));
     if (response.statusCode != 200) throw _failed(response);
-    final me = jsonDecode(response.body) as Map<String, dynamic>;
+    final Map<String, dynamic> me;
+    try {
+      me = jsonDecode(response.body) as Map<String, dynamic>;
+    } on Object {
+      throw const SsoException(SsoError.failed, 'voidauth: bad /me');
+    }
     if (me['hasTotp'] != true) {
       throw SsoException(
         SsoError.unsupportedStep,
@@ -157,7 +162,7 @@ class VoidAuthAdapter implements IdpAdapter {
     try {
       final detail = jsonDecode(response.body) as Map<String, dynamic>;
       return detail['clientName'] as String?;
-    } on FormatException {
+    } on Object {
       return null;
     }
   }

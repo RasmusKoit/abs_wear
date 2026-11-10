@@ -53,23 +53,57 @@ enum VoidAuthNext {
 
   /// The account is waiting for an admin's approval.
   approval,
+
+  /// The account has expired.
+  userExpired,
+
+  /// The user is not in a group allowed to use the app.
+  forbidden,
+
+  /// The MFA page for a user who must set up a second factor and has none.
+  mfaSetup,
 }
 
 /// A fake Audiobookshelf + VoidAuth pair answering like the real ones (the
 /// requests and responses are trimmed copies of VoidAuth 1.19's, recorded
 /// against the dev box test stack).
 class FakeVoidAuthServers extends FakeServers {
-  FakeVoidAuthServers({this.next = VoidAuthNext.consent, String base = '/'})
-    : _base = base,
-      super(
-        idpAuthorizeUrl:
-            '$fakeIdpUrl${base}oidc/auth?client_id=abs&scope=openid%20profile'
-            '%20email&response_type=code&redirect_uri=http%3A%2F%2Fabs.test'
-            '%2Fauth%2Fopenid%2Fmobile-redirect',
-      );
+  FakeVoidAuthServers({
+    this.next = VoidAuthNext.consent,
+    String base = '/',
+    this.fail = const {},
+    this.meBody,
+    this.detailBody,
+  }) : _base = base,
+       super(
+         idpAuthorizeUrl:
+             '$fakeIdpUrl${base}oidc/auth?client_id=abs&scope=openid%20profile'
+             '%20email&response_type=code&redirect_uri=http%3A%2F%2Fabs.test'
+             '%2Fauth%2Fopenid%2Fmobile-redirect',
+       );
 
   final VoidAuthNext next;
   final String _base;
+
+  /// Error statuses VoidAuth answers with instead, by API call: `login`
+  /// (419: the login took too long), `totp` (423: too many wrong codes),
+  /// `confirm` (419 or 400 from the consent confirm).
+  final Map<String, int> fail;
+
+  /// Raw bodies for `api/user/me` and the consent detail, in place of the
+  /// recorded JSON (a proxy's HTML page, another VoidAuth version, ...).
+  final String? meBody;
+  final String? detailBody;
+
+  http.Response? _failure(String call) {
+    final status = fail[call];
+    if (status == null) return null;
+    return http.Response(
+      'Error',
+      status,
+      headers: {'content-type': 'text/plain; charset=utf-8'},
+    );
+  }
 
   /// Interaction steps left after the password: 'totp', 'consent'.
   final _pending = <String>[];
@@ -155,6 +189,8 @@ class FakeVoidAuthServers extends FakeServers {
         'totp' => _page('mfa'),
         'verify' => _page('verification_email_sent?sent=false'),
         'approval' => _page('approval_required'),
+        'expired' => _page('user_expired'),
+        'forbidden' => _page('forbidden'),
         _ => _page('consent/$_uidNow'),
       };
     }
@@ -162,6 +198,8 @@ class FakeVoidAuthServers extends FakeServers {
         (path == '${_base}login' ||
             path == '${_base}mfa' ||
             path == '${_base}approval_required' ||
+            path == '${_base}user_expired' ||
+            path == '${_base}forbidden' ||
             path == '${_base}verification_email_sent' ||
             path.startsWith('${_base}consent/'))) {
       final page = voidAuthPage.replaceFirst(
@@ -173,6 +211,8 @@ class FakeVoidAuthServers extends FakeServers {
     if (path == '${_base}api/interaction/login') {
       expect(r.method, 'POST');
       expect(interaction, isTrue);
+      final failure = _failure('login');
+      if (failure != null) return failure;
       final body = jsonDecode(r.body) as Map<String, dynamic>;
       if (body['input'] != 'wear' || body['password'] != 'secret') {
         return _unauthorized;
@@ -185,19 +225,25 @@ class FakeVoidAuthServers extends FakeServers {
         VoidAuthNext.passkey => ['totp'],
         VoidAuthNext.verifyEmail => ['verify'],
         VoidAuthNext.approval => ['approval'],
+        VoidAuthNext.userExpired => ['expired'],
+        VoidAuthNext.forbidden => ['forbidden'],
+        VoidAuthNext.mfaSetup => ['totp'],
       });
       return _redirectLocation();
     }
     if (path == '${_base}api/user/me') {
-      final totp = next != VoidAuthNext.passkey;
+      if (meBody != null) return http.Response(meBody!, 200);
+      final totp =
+          next != VoidAuthNext.passkey && next != VoidAuthNext.mfaSetup;
+      final passkeys = next == VoidAuthNext.passkey;
       return this.json({
         'id': 'c740670f-1ce9-428b-a4db-3232e0983569',
         'isAdmin': false,
         'emailVerified': false,
         'mfaRequired': true,
         'hasTotp': totp,
-        'hasPasskeys': !totp,
-        'hasVerifyPasskeys': !totp,
+        'hasPasskeys': passkeys,
+        'hasVerifyPasskeys': passkeys,
         'expiresAt': null,
         'approved': true,
         'skipPasskeyPrompt': false,
@@ -212,12 +258,15 @@ class FakeVoidAuthServers extends FakeServers {
     }
     if (path == '${_base}api/interaction/totp') {
       expect(r.method, 'POST');
+      final failure = _failure('totp');
+      if (failure != null) return failure;
       final body = jsonDecode(r.body) as Map<String, dynamic>;
       if (body['token'] != '123456') return _unauthorized;
       _pending.remove('totp');
       return _redirectLocation();
     }
     if (path == '${_base}api/interaction/$_uidNow/detail') {
+      if (detailBody != null) return http.Response(detailBody!, 200);
       return this.json({
         'uid': _uidNow,
         'clientId': 'abs',
@@ -229,6 +278,8 @@ class FakeVoidAuthServers extends FakeServers {
     if (path == '${_base}api/interaction/$_uidNow/confirm/') {
       expect(r.method, 'POST');
       expect(interaction, isTrue);
+      final failure = _failure('confirm');
+      if (failure != null) return failure;
       consented = true;
       _pending.remove('consent');
       return http.Response(

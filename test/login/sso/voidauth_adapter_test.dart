@@ -101,8 +101,13 @@ void main() {
     expect(await login.submit({}), isA<SsoDone>());
   });
 
-  Future<void> passwordThen(VoidAuthNext next, Matcher error) async {
-    final servers = FakeVoidAuthServers(next: next);
+  Future<void> passwordThen(
+    VoidAuthNext next,
+    Matcher error, {
+    Map<String, int> fail = const {},
+    String? meBody,
+  }) async {
+    final servers = FakeVoidAuthServers(next: next, fail: fail, meBody: meBody);
     final (login, _) = await _start(servers);
     await expectLater(
       login.submit({SsoField.username: 'wear', SsoField.password: 'secret'}),
@@ -126,6 +131,87 @@ void main() {
 
   test('an account waiting for approval is denied', () async {
     await passwordThen(VoidAuthNext.approval, _error(SsoError.accessDenied));
+  });
+
+  test('an expired or forbidden account is denied', () async {
+    await passwordThen(
+      VoidAuthNext.userExpired,
+      _error(SsoError.accessDenied, 'user_expired'),
+    );
+    await passwordThen(
+      VoidAuthNext.forbidden,
+      _error(SsoError.accessDenied, 'forbidden'),
+    );
+  });
+
+  test('a required second factor not set up yet is unsupported', () async {
+    await passwordThen(
+      VoidAuthNext.mfaSetup,
+      _error(SsoError.unsupportedStep, 'mfa setup'),
+    );
+  });
+
+  test('an expired login fails', () async {
+    await passwordThen(
+      VoidAuthNext.consent,
+      _error(SsoError.failed, 'voidauth 419'),
+      fail: {'login': 419},
+    );
+  });
+
+  test('an /me answer that is not a JSON object fails cleanly', () async {
+    for (final body in [voidAuthPage, '[]']) {
+      await passwordThen(
+        VoidAuthNext.totp,
+        _error(SsoError.failed, 'voidauth: bad /me'),
+        meBody: body,
+      );
+    }
+  });
+
+  test('too many wrong codes fails instead of asking again', () async {
+    final servers = FakeVoidAuthServers(
+      next: VoidAuthNext.totp,
+      fail: {'totp': 423},
+    );
+    final (login, _) = await _start(servers);
+    await login.submit({
+      SsoField.username: 'wear',
+      SsoField.password: 'secret',
+    });
+    await expectLater(
+      login.submit({SsoField.code: '123456'}),
+      throwsA(_error(SsoError.failed, 'voidauth 423')),
+    );
+  });
+
+  test('a consent confirm that does not redirect fails', () async {
+    for (final status in [419, 400]) {
+      final servers = FakeVoidAuthServers(fail: {'confirm': status});
+      final (login, _) = await _start(servers);
+      await login.submit({
+        SsoField.username: 'wear',
+        SsoField.password: 'secret',
+      });
+      await expectLater(
+        login.submit({}),
+        throwsA(_error(SsoError.failed, 'voidauth $status')),
+      );
+      expect(servers.consented, isFalse);
+    }
+  });
+
+  test('an unusable consent detail falls back to a default name', () async {
+    for (final body in [voidAuthPage, '[]', '{"clientName": 7}']) {
+      final servers = FakeVoidAuthServers(detailBody: body);
+      final (login, _) = await _start(servers);
+      final consent = await login.submit({
+        SsoField.username: 'wear',
+        SsoField.password: 'secret',
+      });
+      expect(consent, isA<SsoConsent>());
+      expect((consent as SsoConsent).app, 'Audiobookshelf');
+    }
   });
 
   group('forPage', () {
