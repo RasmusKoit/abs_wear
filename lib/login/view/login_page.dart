@@ -648,26 +648,34 @@ class LoginPageState extends State<LoginPage> {
             ),
           ),
         ),
-        body: ListView(
-          controller: _scrollController,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          children: [
-            if (_checking)
-              Padding(
-                padding: const EdgeInsets.all(24),
-                child: Center(
-                  child: CircularProgressIndicator(
-                    semanticsLabel: l10n.loading,
-                  ),
-                ),
-              )
-            else if (_token == '' && _ssoStep != null)
-              _buildSsoStep(theme)
-            else if (_token == '')
-              _buildLoginForm(theme)
-            else
-              _buildLoggedInState(theme),
-          ],
+        // Centred on the round screen, where it is widest; scrolls when
+        // large text makes it taller than the screen.
+        body: LayoutBuilder(
+          builder: (context, constraints) => SingleChildScrollView(
+            controller: _scrollController,
+            // Room below, so the last button scrolls clear of the round
+            // edge.
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                minHeight: constraints.maxHeight - 40,
+              ),
+              child: Center(
+                child: _checking
+                    ? Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: CircularProgressIndicator(
+                          semanticsLabel: l10n.loading,
+                        ),
+                      )
+                    : _token == '' && _ssoStep != null
+                    ? _buildSsoStep(theme)
+                    : _token == ''
+                    ? _buildLoginForm(theme)
+                    : _buildLoggedInState(theme),
+              ),
+            ),
+          ),
         ),
       ),
     );

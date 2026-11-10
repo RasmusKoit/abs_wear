@@ -159,7 +159,7 @@ void main() {
     ) async {
       await next(tester, app);
       // The second choice is SSO.
-      await tester.drag(find.byType(ListView), const Offset(0, -400));
+      await tester.drag(find.byType(SingleChildScrollView), const Offset(0, -400));
       await tester.pumpAndSettle();
       await tester.tap(find.byType(ElevatedButton).last);
       await tester.pumpAndSettle();
@@ -169,7 +169,7 @@ void main() {
       await tester.enterText(find.byType(TextFormField).first, text);
       FocusManager.instance.primaryFocus?.unfocus();
       await tester.pumpAndSettle();
-      await tester.drag(find.byType(ListView), const Offset(0, -400));
+      await tester.drag(find.byType(SingleChildScrollView), const Offset(0, -400));
       await tester.pumpAndSettle();
       await tester.tap(find.byType(ElevatedButton));
       await tester.pumpAndSettle();
