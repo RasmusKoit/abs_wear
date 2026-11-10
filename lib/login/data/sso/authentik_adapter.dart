@@ -18,6 +18,9 @@ class AuthentikAdapter implements IdpAdapter {
   final SsoHttp _http;
   final FollowRedirects _follow;
 
+  @override
+  String get name => 'Authentik';
+
   /// The flow executor of the current flow.
   late Uri _executor;
   Map<String, dynamic> _challenge = const {};

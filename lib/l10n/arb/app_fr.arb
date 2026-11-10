@@ -75,5 +75,8 @@
     "ssoUnsupported": "Cette connexion n'est pas encore possible sur la montre.",
     "ssoAccessDenied": "Le service de connexion a refusé l'accès.",
     "ssoNoAccount": "Aucun compte Audiobookshelf pour cet utilisateur.",
-    "ssoFailed": "Échec de la connexion SSO. Réessayez."
+    "ssoFailed": "Échec de la connexion SSO. Réessayez.",
+    "next": "Suivant",
+    "passwordLogin": "Connexion par mot de passe",
+    "back": "Retour"
 }

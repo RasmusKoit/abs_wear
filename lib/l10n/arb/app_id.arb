@@ -75,5 +75,8 @@
     "ssoUnsupported": "Login ini belum bisa dilakukan di jam tangan.",
     "ssoAccessDenied": "Layanan login menolak akses.",
     "ssoNoAccount": "Tidak ada akun Audiobookshelf untuk pengguna ini.",
-    "ssoFailed": "Login SSO gagal. Coba lagi."
+    "ssoFailed": "Login SSO gagal. Coba lagi.",
+    "next": "Berikutnya",
+    "passwordLogin": "Masuk dengan kata sandi",
+    "back": "Kembali"
 }

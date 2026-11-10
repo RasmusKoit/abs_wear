@@ -75,5 +75,8 @@
     "ssoUnsupported": "Este inicio de sesión aún no se puede hacer en el reloj.",
     "ssoAccessDenied": "El servicio de inicio de sesión denegó el acceso.",
     "ssoNoAccount": "No hay cuenta de Audiobookshelf para este usuario.",
-    "ssoFailed": "Error al iniciar sesión con SSO. Inténtalo de nuevo."
+    "ssoFailed": "Error al iniciar sesión con SSO. Inténtalo de nuevo.",
+    "next": "Siguiente",
+    "passwordLogin": "Iniciar sesión con contraseña",
+    "back": "Atrás"
 }

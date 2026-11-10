@@ -24,6 +24,9 @@ void main() {
     await tester.pumpApp(const LoginPage());
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextFormField).first, fakeAbsUrl);
+    await tester.tap(find.text('Next'));
+    await tester.pumpAndSettle();
+    // The server offers both: choose SSO.
     await tester.ensureVisible(find.text('Login with SSO'));
     await tester.tap(find.text('Login with SSO'));
     await tester.pumpAndSettle();
@@ -70,11 +73,11 @@ void main() {
       ),
       findsOneWidget,
     );
-    // Still on the login form.
-    expect(find.byType(TextFormField), findsNWidgets(3));
+    // Still at the choice.
+    expect(find.text('Login with password'), findsOneWidget);
   });
 
-  testWidgets('cancel goes back to the login form', (tester) async {
+  testWidgets('cancel goes back to the choice', (tester) async {
     final servers = FakeServers();
     await http.runWithClient(() async {
       await startSso(tester);
@@ -82,7 +85,37 @@ void main() {
       await tester.tap(find.text('Cancel'));
       await tester.pumpAndSettle();
     }, () => servers.client);
-    expect(find.byType(TextFormField), findsNWidgets(3));
+    expect(find.text('Login with password'), findsOneWidget);
     expect(find.text('Login with SSO'), findsOneWidget);
+  });
+
+  Future<void> next(WidgetTester tester) async {
+    await tester.pumpApp(const LoginPage());
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextFormField).first, fakeAbsUrl);
+    await tester.tap(find.text('Next'));
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('an SSO-only server goes straight to SSO', (tester) async {
+    final servers = FakeServers(password: false);
+    await http.runWithClient(() => next(tester), () => servers.client);
+    // The identity provider's first screen, and who is asking.
+    expect(find.text('Authentik'), findsOneWidget);
+    expect(find.widgetWithText(TextFormField, 'Username'), findsOneWidget);
+    expect(find.text('Login with password'), findsNothing);
+  });
+
+  testWidgets('a password-only server asks for the password', (tester) async {
+    final servers = FakeServers(openid: false);
+    await http.runWithClient(() => next(tester), () => servers.client);
+    expect(find.widgetWithText(TextFormField, 'Username'), findsOneWidget);
+    expect(find.widgetWithText(TextFormField, 'Password'), findsOneWidget);
+    expect(find.text('Login with SSO'), findsNothing);
+    // Back to the server.
+    await tester.ensureVisible(find.text('Back'));
+    await tester.tap(find.text('Back'));
+    await tester.pumpAndSettle();
+    expect(find.text('Next'), findsOneWidget);
   });
 }

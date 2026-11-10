@@ -75,5 +75,8 @@
     "ssoUnsupported": "Chưa thể đăng nhập kiểu này trên đồng hồ.",
     "ssoAccessDenied": "Dịch vụ đăng nhập đã từ chối truy cập.",
     "ssoNoAccount": "Không có tài khoản Audiobookshelf cho người dùng này.",
-    "ssoFailed": "Đăng nhập SSO thất bại. Hãy thử lại."
+    "ssoFailed": "Đăng nhập SSO thất bại. Hãy thử lại.",
+    "next": "Tiếp",
+    "passwordLogin": "Đăng nhập bằng mật khẩu",
+    "back": "Quay lại"
 }

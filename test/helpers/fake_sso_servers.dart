@@ -15,6 +15,7 @@ const fakeIdpUrl = 'http://idp.test';
 class FakeServers {
   FakeServers({
     this.openid = true,
+    this.password = true,
     this.startStatus = 302,
     this.webauthnOnly = false,
     this.otp = false,
@@ -25,6 +26,9 @@ class FakeServers {
   });
 
   final bool openid;
+
+  /// The server also offers password login.
+  final bool password;
   final int startStatus;
   final bool webauthnOnly;
   final bool otp;
@@ -43,7 +47,8 @@ class FakeServers {
   late final client = MockClient((request) async {
     requests.add(request);
     // The SSO flow handles redirects itself (the app's other calls don't).
-    if (request.url.path != '/api/libraries') {
+    if (request.url.path.startsWith('/auth/') ||
+        request.url.toString().startsWith(fakeIdpUrl)) {
       expect(request.followRedirects, isFalse);
     }
     return await handle(request);
@@ -84,7 +89,7 @@ class FakeServers {
         case '/status':
           return json({
             'serverVersion': '2.37.2',
-            'authMethods': ['local', if (openid) 'openid'],
+            'authMethods': [if (password) 'local', if (openid) 'openid'],
           });
         case '/auth/openid':
           final q = r.url.queryParameters;

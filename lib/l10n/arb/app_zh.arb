@@ -75,5 +75,8 @@
     "ssoUnsupported": "手表上暂时无法完成这种登录。",
     "ssoAccessDenied": "登录服务拒绝了访问。",
     "ssoNoAccount": "此用户没有 Audiobookshelf 账号。",
-    "ssoFailed": "SSO 登录失败，请重试。"
+    "ssoFailed": "SSO 登录失败，请重试。",
+    "next": "下一步",
+    "passwordLogin": "使用密码登录",
+    "back": "返回"
 }

@@ -75,5 +75,8 @@
     "ssoUnsupported": "Bu giriş henüz saatte yapılamıyor.",
     "ssoAccessDenied": "Giriş hizmeti erişimi reddetti.",
     "ssoNoAccount": "Bu kullanıcının Audiobookshelf hesabı yok.",
-    "ssoFailed": "SSO girişi başarısız. Tekrar deneyin."
+    "ssoFailed": "SSO girişi başarısız. Tekrar deneyin.",
+    "next": "İleri",
+    "passwordLogin": "Parola ile giriş",
+    "back": "Geri"
 }

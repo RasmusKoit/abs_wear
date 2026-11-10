@@ -8,6 +8,7 @@ import 'package:abs_wear/app/view/crown_scrollbar.dart';
 import 'package:abs_wear/l10n/l10n.dart';
 import 'package:abs_wear/library/data/json_cache.dart';
 import 'package:abs_wear/library/view/library_page.dart';
+import 'package:abs_wear/login/data/server_login.dart';
 import 'package:abs_wear/login/data/sso/sso_login.dart';
 import 'package:abs_wear/player/player.dart';
 import 'package:flutter/material.dart';
@@ -43,12 +44,20 @@ class LoginPageState extends State<LoginPage> {
   /// doesn't see the login form flash on every start.
   bool _checking = true;
 
+  /// Where the logged-out user is: entering the server, choosing how to log
+  /// in (when the server offers both), or entering a password.
+  _Stage _stage = _Stage.server;
+
+  /// How the entered server lets users log in (after "Next").
+  ServerLogin? _serverLogin;
+
   /// The SSO login in progress and the screen it shows, or null.
   SsoLogin? _sso;
   SsoStep? _ssoStep;
 
-  /// Why the last SSO login failed, shown under the SSO button.
-  String? _ssoError;
+  /// Why the server check or the last SSO login failed, shown under the
+  /// buttons.
+  String? _loginError;
   final Map<SsoField, TextEditingController> _ssoInputs = {
     for (final field in SsoField.values) field: TextEditingController(),
   };
@@ -99,6 +108,10 @@ class LoginPageState extends State<LoginPage> {
     final savedUsername = prefs.getString('username');
     final savedDefaultLibraryId = prefs.getString('defaultLibraryId');
     if (savedToken == null || savedToken.isEmpty || savedServerUrl == null) {
+      // Logged out: offer the last server again.
+      if (savedServerUrl != null && mounted) {
+        setState(() => serverUrlController.text = savedServerUrl);
+      }
       return;
     }
     var libraryId = savedDefaultLibraryId ?? '';
@@ -237,6 +250,59 @@ class LoginPageState extends State<LoginPage> {
     });
   }
 
+  /// "Next" on the server screen: asks the server how users log in, then
+  /// shows the password form, the choice, or starts SSO straight away.
+  Future<void> _next(String rawUrl) async {
+    final url = await _serverUrl(rawUrl);
+    if (url == null) return;
+    setState(() {
+      _loggingIn = true;
+      _loginError = null;
+    });
+    ServerLogin? server;
+    String? error;
+    try {
+      server = await ServerLogin.fetch(url);
+    } on TimeoutException {
+      error = l10n.serverTimeout;
+    } on ServerStatusException catch (e) {
+      error = l10n.serverError(e.statusCode);
+    } on Object catch (e) {
+      debugPrint('Server check failed: $e');
+      error = l10n.cannotReachServer;
+    } finally {
+      if (mounted) setState(() => _loggingIn = false);
+    }
+    if (!mounted) return;
+    if (server == null) {
+      setState(() => _loginError = error);
+      return;
+    }
+    final login = server;
+    setState(() {
+      serverUrlController.text = url;
+      _serverLogin = login;
+      // SSO started from here comes back to this screen when cancelled.
+      _stage = !login.sso
+          ? _Stage.password
+          : login.password
+          ? _Stage.choose
+          : _Stage.server;
+    });
+    if (login.sso && (!login.password || login.ssoAutoLaunch)) {
+      await _startSso(url);
+    }
+  }
+
+  /// Back from the password form or the choice.
+  void _back() => setState(() {
+    _loginError = null;
+    passwordController.clear();
+    _stage = _stage == _Stage.password && (_serverLogin?.sso ?? false)
+        ? _Stage.choose
+        : _Stage.server;
+  });
+
   /// Starts an SSO login at [rawUrl]: the identity provider's screens are
   /// then shown one by one (see [_buildSsoStep]).
   Future<void> _startSso(String rawUrl) async {
@@ -245,7 +311,7 @@ class LoginPageState extends State<LoginPage> {
     _sessionEpoch++;
     setState(() {
       _loggingIn = true;
-      _ssoError = null;
+      _loginError = null;
     });
     try {
       final (sso, step) = await SsoLogin.start(url);
@@ -322,7 +388,7 @@ class LoginPageState extends State<LoginPage> {
       TimeoutException() => l10n.serverTimeout,
       _ => l10n.cannotReachServer,
     };
-    if (mounted) setState(() => _ssoError = message);
+    if (mounted) setState(() => _loginError = message);
   }
 
   /// The user's saved library if it still exists, otherwise the first book
@@ -377,6 +443,7 @@ class LoginPageState extends State<LoginPage> {
         _token = '';
         defaultLibraryId = '';
         _loggingOut = deleteDownloads;
+        _stage = _Stage.server;
       });
     }
     if (!deleteDownloads) return;
@@ -600,7 +667,16 @@ class LoginPageState extends State<LoginPage> {
     );
   }
 
-  Widget _buildLoginForm(ThemeData theme) {
+  Widget _buildLoginForm(ThemeData theme) => switch (_stage) {
+    _Stage.server => _buildServerStep(theme),
+    _Stage.choose => _buildChooseStep(theme),
+    _Stage.password => _buildPasswordStep(theme),
+  };
+
+  bool get _busy => _loggingIn || _loggingOut;
+
+  /// First screen: just the server. "Next" asks it how users log in.
+  Widget _buildServerStep(ThemeData theme) {
     return Column(
       children: [
         TextFormField(
@@ -618,6 +694,68 @@ class LoginPageState extends State<LoginPage> {
           autocorrect: false,
           keyboardType: TextInputType.visiblePassword, // Disable newline
         ),
+        const SizedBox(height: 8),
+        ElevatedButton(
+          onPressed: _busy
+              ? null
+              : () {
+                  if (serverUrlController.text.trim().isEmpty) {
+                    unawaited(_toast(l10n.fillAllFields));
+                    return;
+                  }
+                  unawaited(_next(serverUrlController.text));
+                },
+          child: _busy
+              ? _buttonSpinner()
+              : Text(l10n.next, style: theme.textTheme.bodyMedium),
+        ),
+        ..._loginErrorText(theme),
+        const SizedBox(height: 16),
+      ],
+    );
+  }
+
+  /// The server offers both: log in with a password or with SSO.
+  Widget _buildChooseStep(ThemeData theme) {
+    final server = _serverLogin;
+    return Column(
+      children: [
+        _serverLabel(theme),
+        const SizedBox(height: 8),
+        ElevatedButton(
+          onPressed: _busy
+              ? null
+              : () => setState(() {
+                  _loginError = null;
+                  _stage = _Stage.password;
+                }),
+          child: Text(l10n.passwordLogin, style: theme.textTheme.bodySmall),
+        ),
+        const SizedBox(height: 4),
+        ElevatedButton(
+          onPressed: _busy
+              ? null
+              : () => unawaited(_startSso(serverUrlController.text)),
+          child: _busy
+              ? _buttonSpinner()
+              : Text(
+                  server?.ssoButtonText ?? l10n.ssoLogin,
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodySmall,
+                ),
+        ),
+        ..._loginErrorText(theme),
+        _backButton(theme),
+        const SizedBox(height: 16),
+      ],
+    );
+  }
+
+  /// Username and password for the server itself.
+  Widget _buildPasswordStep(ThemeData theme) {
+    return Column(
+      children: [
+        _serverLabel(theme),
         TextFormField(
           style: theme.textTheme.labelSmall,
           scrollPadding: const EdgeInsets.all(8),
@@ -647,46 +785,57 @@ class LoginPageState extends State<LoginPage> {
         ),
         const SizedBox(height: 8),
         ElevatedButton(
-          onPressed: _loggingIn || _loggingOut
+          onPressed: _busy
               ? null
               : () {
-                  final serverUrl = serverUrlController.text;
                   final username = usernameController.text.trim();
                   final password = passwordController.text;
-                  if (serverUrl.isEmpty ||
-                      username.isEmpty ||
-                      password.isEmpty) {
+                  if (username.isEmpty || password.isEmpty) {
                     unawaited(_toast(l10n.fillAllFields));
                     return;
                   }
-                  unawaited(login(serverUrl, username, password));
+                  unawaited(
+                    login(serverUrlController.text, username, password),
+                  );
                 },
-          child: _loggingIn || _loggingOut
+          child: _busy
               ? _buttonSpinner()
               : Text(l10n.login, style: theme.textTheme.bodyMedium),
         ),
-        const SizedBox(height: 4),
-        OutlinedButton(
-          onPressed: _loggingIn || _loggingOut
-              ? null
-              : () => unawaited(_startSso(serverUrlController.text)),
-          child: Text(l10n.ssoLogin, style: theme.textTheme.bodySmall),
-        ),
-        if (_ssoError case final error?)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
-            child: Text(
-              error,
-              textAlign: TextAlign.center,
-              style: theme.textTheme.labelSmall!.copyWith(
-                color: theme.colorScheme.error,
-              ),
-            ),
-          ),
+        _backButton(theme),
         const SizedBox(height: 16),
       ],
     );
   }
+
+  /// The server being logged in to, above the later screens.
+  Widget _serverLabel(ThemeData theme) => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 16),
+    child: Text(
+      serverUrlController.text,
+      textAlign: TextAlign.center,
+      style: theme.textTheme.labelSmall,
+    ),
+  );
+
+  Widget _backButton(ThemeData theme) => TextButton(
+    onPressed: _busy ? null : _back,
+    child: Text(l10n.back, style: theme.textTheme.bodySmall),
+  );
+
+  List<Widget> _loginErrorText(ThemeData theme) => [
+    if (_loginError case final error?)
+      Padding(
+        padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+        child: Text(
+          error,
+          textAlign: TextAlign.center,
+          style: theme.textTheme.labelSmall!.copyWith(
+            color: theme.colorScheme.error,
+          ),
+        ),
+      ),
+  ];
 
   Widget _buttonSpinner() => SizedBox.square(
     dimension: 16,
@@ -704,6 +853,13 @@ class LoginPageState extends State<LoginPage> {
     final busy = _loggingIn;
     return Column(
       children: [
+        // Who is asking: these are the identity provider's questions.
+        if (_sso?.provider case final provider?)
+          Text(
+            provider,
+            textAlign: TextAlign.center,
+            style: small.copyWith(color: theme.colorScheme.primary),
+          ),
         if (step is SsoPrompt) ...[
           if (step.user case final user?)
             Text(
@@ -831,3 +987,5 @@ class LoginPageState extends State<LoginPage> {
     );
   }
 }
+
+enum _Stage { server, choose, password }

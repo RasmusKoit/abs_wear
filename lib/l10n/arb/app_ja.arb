@@ -75,5 +75,8 @@
     "ssoUnsupported": "このサインインはまだウォッチではできません。",
     "ssoAccessDenied": "サインインサービスがアクセスを拒否しました。",
     "ssoNoAccount": "このユーザーのAudiobookshelfアカウントがありません。",
-    "ssoFailed": "SSOログインに失敗しました。もう一度お試しください。"
+    "ssoFailed": "SSOログインに失敗しました。もう一度お試しください。",
+    "next": "次へ",
+    "passwordLogin": "パスワードでログイン",
+    "back": "戻る"
 }

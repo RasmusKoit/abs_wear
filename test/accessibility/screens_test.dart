@@ -103,20 +103,18 @@ void main() {
   }
 
   group('login', () {
-    screen('form', (tester, app) async {
+    screen('server', (tester, app) async {
       SharedPreferences.setMockInitialValues({});
       await tester.pumpWidget(app(const LoginPage()));
       await tester.pumpAndSettle();
-      expect(find.byType(TextFormField), findsNWidgets(3));
+      expect(find.byType(TextFormField), findsOneWidget);
+      expect(find.byType(ElevatedButton), findsOneWidget); // Next
       await expectAccessible(tester);
-      // The button is reachable by scrolling.
-      await tester.ensureVisible(find.byType(ElevatedButton));
-      await tester.pumpAndSettle();
       expectNoLayoutErrors(tester);
     });
 
-    /// Shows the login form at [servers]' server and taps SSO login.
-    Future<void> startSso(
+    /// Enters the server and taps "Next".
+    Future<void> next(
       WidgetTester tester,
       Widget Function(Widget home) app,
     ) async {
@@ -127,9 +125,35 @@ void main() {
       // Done typing: the keyboard closes (or the field keeps itself in view).
       FocusManager.instance.primaryFocus?.unfocus();
       await tester.pumpAndSettle();
+      await tester.tap(find.byType(ElevatedButton));
+      await tester.pumpAndSettle();
+    }
+
+    screen('choice, then the password form', (tester, app) async {
+      await http.runWithClient(() async {
+        await next(tester, app);
+        expect(find.byType(ElevatedButton), findsNWidgets(2));
+        expectNoLayoutErrors(tester);
+        await expectAccessible(tester);
+        // Password login: username and password, then Login.
+        await tester.tap(find.byType(ElevatedButton).first);
+        await tester.pumpAndSettle();
+        expect(find.byType(TextFormField), findsNWidgets(2));
+        expectNoLayoutErrors(tester);
+        await expectAccessible(tester);
+      }, () => FakeServers().client);
+    });
+
+    /// Enters the server and chooses SSO.
+    Future<void> startSso(
+      WidgetTester tester,
+      Widget Function(Widget home) app,
+    ) async {
+      await next(tester, app);
+      // The second choice is SSO.
       await tester.drag(find.byType(ListView), const Offset(0, -400));
       await tester.pumpAndSettle();
-      await tester.tap(find.byType(OutlinedButton));
+      await tester.tap(find.byType(ElevatedButton).last);
       await tester.pumpAndSettle();
     }
 

@@ -75,5 +75,8 @@
     "ssoUnsupported": "Questo accesso non è ancora possibile sull'orologio.",
     "ssoAccessDenied": "Il servizio di accesso ha negato l'accesso.",
     "ssoNoAccount": "Nessun account Audiobookshelf per questo utente.",
-    "ssoFailed": "Accesso SSO non riuscito. Riprova."
+    "ssoFailed": "Accesso SSO non riuscito. Riprova.",
+    "next": "Avanti",
+    "passwordLogin": "Accedi con password",
+    "back": "Indietro"
 }

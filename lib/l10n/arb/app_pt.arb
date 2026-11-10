@@ -75,5 +75,8 @@
     "ssoUnsupported": "Este login ainda não pode ser feito no relógio.",
     "ssoAccessDenied": "O serviço de login negou o acesso.",
     "ssoNoAccount": "Nenhuma conta do Audiobookshelf para este usuário.",
-    "ssoFailed": "Falha no login SSO. Tente novamente."
+    "ssoFailed": "Falha no login SSO. Tente novamente.",
+    "next": "Próximo",
+    "passwordLogin": "Entrar com senha",
+    "back": "Voltar"
 }

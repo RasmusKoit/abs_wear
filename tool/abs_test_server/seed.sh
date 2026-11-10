@@ -135,6 +135,18 @@ if [ -n "${AUTHENTIK_BOOTSTRAP_TOKEN:-}" ]; then
   [ -n "$pk" ] || { echo "Authentik user $ABS_TEST_USER not found (blueprint not applied?)" >&2; exit 1; }
   pw=$(python3 -c 'import sys,json;print(json.dumps({"password":sys.argv[1]}))' "$ABS_TEST_PASSWORD")
   curl -fs -X POST "$AK/api/v3/core/users/$pk/set_password/" "${akauth[@]}" -d "$pw" >/dev/null
+  # A user that exists only in Authentik: ABS creates its account on the
+  # first SSO login (auto-register below).
+  if [ -n "${ABS_SSO_ONLY_USER:-}" ]; then
+    only=$(curl -fs "$AK/api/v3/core/users/?username=$ABS_SSO_ONLY_USER" "${akauth[@]}" | j 'd["results"][0]["pk"] if d["results"] else ""')
+    if [ -z "$only" ]; then
+      only=$(python3 -c 'import sys,json;print(json.dumps({"username":sys.argv[1],"name":"SSO-only reader","is_active":True}))' "$ABS_SSO_ONLY_USER" \
+        | curl -fs -X POST "$AK/api/v3/core/users/" "${akauth[@]}" -d @- | j 'd["pk"]')
+    fi
+    pw=$(python3 -c 'import sys,json;print(json.dumps({"password":sys.argv[1]}))' "$ABS_SSO_ONLY_PASSWORD")
+    curl -fs -X POST "$AK/api/v3/core/users/$only/set_password/" "${akauth[@]}" -d "$pw" >/dev/null
+    echo "SSO-only user: $ABS_SSO_ONLY_USER (Authentik only)"
+  fi
   issuer="$AK/application/o/abs/"
   wk=$(curl -fs "${issuer}.well-known/openid-configuration")
   settings=$(printf '%s' "$wk" | python3 -c '
@@ -153,7 +165,8 @@ print(json.dumps({
   "authOpenIDTokenSigningAlgorithm": wk["id_token_signing_alg_values_supported"][0],
   "authOpenIDButtonText": "Login with Authentik",
   "authOpenIDAutoLaunch": False,
-  "authOpenIDAutoRegister": False,
+  # New SSO users get an ABS account on first login (test user: matched).
+  "authOpenIDAutoRegister": True,
   "authOpenIDMatchExistingBy": "username",
   "authOpenIDMobileRedirectURIs": ["abswear://oauth"],
   # Unset, ABS builds ".../undefined/auth/openid/..." (the web UI always sends it).

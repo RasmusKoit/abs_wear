@@ -75,5 +75,8 @@
     "ssoUnsupported": "Diese Anmeldung ist auf der Uhr noch nicht möglich.",
     "ssoAccessDenied": "Der Anmeldedienst hat den Zugriff verweigert.",
     "ssoNoAccount": "Kein Audiobookshelf-Konto für diesen Benutzer.",
-    "ssoFailed": "SSO-Anmeldung fehlgeschlagen. Erneut versuchen."
+    "ssoFailed": "SSO-Anmeldung fehlgeschlagen. Erneut versuchen.",
+    "next": "Weiter",
+    "passwordLogin": "Mit Passwort anmelden",
+    "back": "Zurück"
 }

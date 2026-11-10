@@ -82,6 +82,9 @@ class SsoException implements Exception {
 
 /// Drives one identity provider's login screens over plain HTTP.
 abstract class IdpAdapter {
+  /// The identity provider's product name, shown above its screens.
+  String get name;
+
   /// The first screen, starting from the identity provider's [page].
   Future<SsoStep> begin(Uri page);
 
@@ -136,6 +139,9 @@ class SsoLogin {
     if (next != null) return next;
     return await _finish(idp.redirect!);
   }
+
+  /// The identity provider asking the questions (once known).
+  String? get provider => _idp?.name;
 
   void close() => _http.close();
 

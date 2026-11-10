@@ -75,5 +75,8 @@
     "ssoUnsupported": "यह साइन-इन अभी घड़ी पर नहीं हो सकता।",
     "ssoAccessDenied": "साइन-इन सेवा ने पहुँच से इनकार कर दिया।",
     "ssoNoAccount": "इस उपयोगकर्ता का कोई Audiobookshelf खाता नहीं है।",
-    "ssoFailed": "SSO लॉगिन विफल रहा। फिर से कोशिश करें।"
+    "ssoFailed": "SSO लॉगिन विफल रहा। फिर से कोशिश करें।",
+    "next": "आगे",
+    "passwordLogin": "पासवर्ड से लॉगिन",
+    "back": "वापस"
 }

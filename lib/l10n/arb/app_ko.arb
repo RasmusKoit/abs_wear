@@ -75,5 +75,8 @@
     "ssoUnsupported": "이 로그인은 아직 시계에서 할 수 없습니다.",
     "ssoAccessDenied": "로그인 서비스가 액세스를 거부했습니다.",
     "ssoNoAccount": "이 사용자의 Audiobookshelf 계정이 없습니다.",
-    "ssoFailed": "SSO 로그인에 실패했습니다. 다시 시도하세요."
+    "ssoFailed": "SSO 로그인에 실패했습니다. 다시 시도하세요.",
+    "next": "다음",
+    "passwordLogin": "비밀번호로 로그인",
+    "back": "뒤로"
 }

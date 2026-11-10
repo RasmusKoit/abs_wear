@@ -369,5 +369,17 @@
     "ssoFailed": "SSO login failed. Try again.",
     "@ssoFailed": {
         "description": "SSO login failed for another reason"
+    },
+    "next": "Next",
+    "@next": {
+        "description": "Login: button after the server URL that checks how the server lets users log in"
+    },
+    "passwordLogin": "Login with password",
+    "@passwordLogin": {
+        "description": "Login: chooses logging in with the server username and password (when the server also offers SSO)"
+    },
+    "back": "Back",
+    "@back": {
+        "description": "Login: back to the previous login screen"
     }
 }

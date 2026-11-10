@@ -75,5 +75,8 @@
     "ssoUnsupported": "Seda sisselogimist ei saa veel kellas teha.",
     "ssoAccessDenied": "Sisselogimisteenus keelas ligipääsu.",
     "ssoNoAccount": "Sellel kasutajal pole Audiobookshelfi kontot.",
-    "ssoFailed": "SSO sisselogimine ebaõnnestus. Proovi uuesti."
+    "ssoFailed": "SSO sisselogimine ebaõnnestus. Proovi uuesti.",
+    "next": "Edasi",
+    "passwordLogin": "Logi sisse parooliga",
+    "back": "Tagasi"
 }
