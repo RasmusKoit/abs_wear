@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert' show jsonDecode, jsonEncode;
 
 import 'package:flutter_test/flutter_test.dart';
@@ -7,6 +8,10 @@ import 'fake_sso_servers.dart';
 
 const _interaction = 'a799eee1-3bca-48d1-9248-958d5cab5497';
 const _request = 'PAEX5F5A';
+
+/// Pocket ID's authorize page for the fake's interaction.
+const pocketIdInteractionUrl =
+    '$fakeIdpUrl/interaction?interaction=$_interaction';
 
 /// Pocket ID 2.19.2's authorize page (trimmed): a SvelteKit app whose icon
 /// comes from Pocket ID's own API.
@@ -27,8 +32,21 @@ const pocketIdInteractionHtml = '''
 </html>
 ''';
 
-/// What the exchange answers, in turn (the last one repeats).
-enum Decision { pending, approved, denied, expired, rateLimited }
+/// What the exchange answers, in turn (the last one repeats). [hang]
+/// answers "pending" only once [FakePocketId.release] completes.
+enum Decision {
+  pending,
+  approved,
+  denied,
+  expired,
+  rateLimited,
+  badGateway,
+  unavailable,
+  hang,
+}
+
+/// Pocket ID's refusal when the user isn't in the client's allowed groups.
+const pocketIdGroupRefusal = 'You are not allowed to access this service.';
 
 /// A fake Audiobookshelf + Pocket ID pair. The Pocket ID answers are trimmed
 /// copies of Pocket ID 2.19.2's (hosts replaced), recorded on a real
@@ -38,7 +56,8 @@ class FakePocketId extends FakeServers {
     this.decisions = const [Decision.pending, Decision.approved],
     this.afterAuthenticate = 'consent',
     this.firstStep = 'authenticate',
-    this.groupRestricted = false,
+    this.interactionError,
+    this.created,
   }) : super(
          authorizeUrl:
              '$fakeIdpUrl/authorize?client_id=abs&scope=openid%20profile'
@@ -52,11 +71,18 @@ class FakePocketId extends FakeServers {
   final String? afterAuthenticate;
   final String firstStep;
 
-  /// The user isn't in the client's allowed groups.
-  final bool groupRestricted;
+  /// The error Pocket ID shows instead of going back to the server, e.g.
+  /// [pocketIdGroupRefusal].
+  final String? interactionError;
+
+  /// Replaces the body of the created device login request.
+  final Object? created;
 
   int exchanges = 0;
   final steps = <String>[];
+
+  /// Lets a [Decision.hang] exchange answer.
+  final release = Completer<void>();
 
   Map<String, dynamic> _interactionJson(String step) => {
     'id': _interaction,
@@ -89,10 +115,12 @@ class FakePocketId extends FakeServers {
       case ('GET', '/authorize'):
         if (r.url.queryParameters['interaction'] == _interaction) {
           expect(steps, isNotEmpty);
-          if (groupRestricted) {
+          if (interactionError case final error?) {
             return redirect(
-              '/interaction/error?error=You+are+not+allowed+to+access+'
-              'this+service.',
+              Uri(
+                path: '/interaction/error',
+                queryParameters: {'error': error},
+              ).toString(),
             );
           }
           return http.Response(
@@ -119,17 +147,23 @@ class FakePocketId extends FakeServers {
         return json(_interactionJson(firstStep));
       case ('POST', '/api/device-login/requests'):
         return http.Response(
-          jsonEncode({
-            'id': _request,
-            'userCode': _request,
-            'verificationUri': '$fakeIdpUrl/device',
-            'verificationUriComplete': '$fakeIdpUrl/device?user_code=$_request',
-            'expiresAt': '2026-11-10T21:46:16Z',
-            'interval': 3,
-          }),
+          jsonEncode(
+            created ??
+                {
+                  'id': _request,
+                  'userCode': _request,
+                  'verificationUri': '$fakeIdpUrl/device',
+                  'verificationUriComplete':
+                      '$fakeIdpUrl/device?user_code=$_request',
+                  'expiresAt': '2026-11-10T21:46:16Z',
+                  'interval': 3,
+                },
+          ),
           201,
           headers: {
             'content-type': 'application/json; charset=utf-8',
+            // Five minutes before expiresAt, by the server's clock.
+            'date': 'Tue, 10 Nov 2026 21:41:16 GMT',
             'set-cookie':
                 'device_login_token=pVX0QsVlLjZq; '
                 'Path=/api/device-login/requests/$_request/exchange; '
@@ -140,8 +174,11 @@ class FakePocketId extends FakeServers {
         expect(cookie, contains('device_login_token=pVX0QsVlLjZq'));
         final d = decisions[exchanges.clamp(0, decisions.length - 1)];
         exchanges++;
+        if (d == Decision.hang) await release.future;
         return switch (d) {
-          Decision.pending => http.Response('', 202),
+          Decision.pending || Decision.hang => http.Response('', 202),
+          Decision.badGateway => http.Response('<html>Bad Gateway</html>', 502),
+          Decision.unavailable => http.Response('', 503),
           Decision.rateLimited => _error(
             429,
             'Too many requests',

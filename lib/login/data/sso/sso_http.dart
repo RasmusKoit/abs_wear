@@ -17,7 +17,9 @@ class SsoHttp {
 
   /// Sends one request without following redirects. JSON [body] is encoded
   /// and sent with a JSON content type. [wait] replaces [timeout] for
-  /// requests the server holds open (long polling).
+  /// requests the server holds open (long polling). It covers the whole
+  /// response, and a request that runs out of time is aborted (so the server
+  /// stops working on it) before [TimeoutException] is thrown.
   Future<http.Response> send(
     String method,
     Uri url, {
@@ -25,9 +27,11 @@ class SsoHttp {
     Map<String, String> headers = const {},
     Duration wait = timeout,
   }) async {
-    final request = http.Request(method, url)
-      ..followRedirects = false
-      ..headers.addAll({'Accept': 'application/json', ...headers});
+    final abort = Completer<void>();
+    final request =
+        http.AbortableRequest(method, url, abortTrigger: abort.future)
+          ..followRedirects = false
+          ..headers.addAll({'Accept': 'application/json', ...headers});
     final cookies = _cookies[_origin(url)];
     if (cookies != null && cookies.isNotEmpty) {
       request.headers['Cookie'] = [
@@ -39,9 +43,15 @@ class SsoHttp {
         ..headers['Content-Type'] = 'application/json'
         ..body = jsonEncode(body);
     }
-    final response = await http.Response.fromStream(
-      await _client.send(request).timeout(wait),
-    ).timeout(wait);
+    Future<http.Response> exchange() async =>
+        await http.Response.fromStream(await _client.send(request));
+    final http.Response response;
+    try {
+      response = await exchange().timeout(wait);
+    } on TimeoutException {
+      abort.complete();
+      rethrow;
+    }
     _store(url, response);
     return response;
   }
