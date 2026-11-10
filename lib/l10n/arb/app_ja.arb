@@ -63,5 +63,17 @@
     "minutesCount": "{count, plural, other{{count}分}}",
     "secondsCount": "{count, plural, other{{count}秒}}",
     "loading": "読み込み中",
-    "volumeLevel": "音量 {percent}%"
+    "volumeLevel": "音量 {percent}%",
+    "ssoLogin": "SSOでログイン",
+    "ssoContinue": "続ける",
+    "ssoCodeLabel": "コード",
+    "ssoWrongCode": "コードが違います。",
+    "ssoConsent": "{app} にアカウントの使用を許可しますか？",
+    "ssoAllow": "許可",
+    "ssoNotEnabled": "このサーバーにはSSOログインがありません。",
+    "ssoRedirectNotAllowed": "サーバー管理者に Allowed Mobile Redirect URIs で {uri} を許可するよう依頼してください。",
+    "ssoUnsupported": "このサインインはまだウォッチではできません。",
+    "ssoAccessDenied": "サインインサービスがアクセスを拒否しました。",
+    "ssoNoAccount": "このユーザーのAudiobookshelfアカウントがありません。",
+    "ssoFailed": "SSOログインに失敗しました。もう一度お試しください。"
 }

@@ -63,5 +63,17 @@
     "minutesCount": "{count, plural, zero{{count} دقيقة} one{دقيقة واحدة} two{دقيقتان} few{{count} دقائق} many{{count} دقيقة} other{{count} دقيقة}}",
     "secondsCount": "{count, plural, zero{{count} ثانية} one{ثانية واحدة} two{ثانيتان} few{{count} ثوانٍ} many{{count} ثانية} other{{count} ثانية}}",
     "loading": "جارٍ التحميل",
-    "volumeLevel": "مستوى الصوت {percent}%"
+    "volumeLevel": "مستوى الصوت {percent}%",
+    "ssoLogin": "تسجيل الدخول عبر SSO",
+    "ssoContinue": "متابعة",
+    "ssoCodeLabel": "الرمز",
+    "ssoWrongCode": "رمز خاطئ.",
+    "ssoConsent": "السماح لـ {app} باستخدام حسابك؟",
+    "ssoAllow": "سماح",
+    "ssoNotEnabled": "لا يدعم هذا الخادم تسجيل الدخول عبر SSO.",
+    "ssoRedirectNotAllowed": "اطلب من مسؤول الخادم السماح بـ {uri} ضمن Allowed Mobile Redirect URIs.",
+    "ssoUnsupported": "لا يمكن إتمام تسجيل الدخول هذا على الساعة بعد.",
+    "ssoAccessDenied": "رفضت خدمة تسجيل الدخول الوصول.",
+    "ssoNoAccount": "لا يوجد حساب Audiobookshelf لهذا المستخدم.",
+    "ssoFailed": "فشل تسجيل الدخول عبر SSO. حاول مرة أخرى."
 }

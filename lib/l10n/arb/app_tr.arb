@@ -63,5 +63,17 @@
     "minutesCount": "{count, plural, other{{count} dakika}}",
     "secondsCount": "{count, plural, other{{count} saniye}}",
     "loading": "Yükleniyor",
-    "volumeLevel": "Ses düzeyi %{percent}"
+    "volumeLevel": "Ses düzeyi %{percent}",
+    "ssoLogin": "SSO ile giriş",
+    "ssoContinue": "Devam",
+    "ssoCodeLabel": "Kod",
+    "ssoWrongCode": "Yanlış kod.",
+    "ssoConsent": "{app} hesabınızı kullanabilsin mi?",
+    "ssoAllow": "İzin ver",
+    "ssoNotEnabled": "Bu sunucuda SSO girişi yok.",
+    "ssoRedirectNotAllowed": "Sunucu yöneticisinden Allowed Mobile Redirect URIs altında {uri} için izin vermesini isteyin.",
+    "ssoUnsupported": "Bu giriş henüz saatte yapılamıyor.",
+    "ssoAccessDenied": "Giriş hizmeti erişimi reddetti.",
+    "ssoNoAccount": "Bu kullanıcının Audiobookshelf hesabı yok.",
+    "ssoFailed": "SSO girişi başarısız. Tekrar deneyin."
 }

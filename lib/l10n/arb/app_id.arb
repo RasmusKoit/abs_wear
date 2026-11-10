@@ -63,5 +63,17 @@
     "minutesCount": "{count, plural, other{{count} menit}}",
     "secondsCount": "{count, plural, other{{count} detik}}",
     "loading": "Memuat",
-    "volumeLevel": "Volume {percent}%"
+    "volumeLevel": "Volume {percent}%",
+    "ssoLogin": "Masuk dengan SSO",
+    "ssoContinue": "Lanjutkan",
+    "ssoCodeLabel": "Kode",
+    "ssoWrongCode": "Kode salah.",
+    "ssoConsent": "Izinkan {app} menggunakan akun Anda?",
+    "ssoAllow": "Izinkan",
+    "ssoNotEnabled": "Server ini tidak memiliki login SSO.",
+    "ssoRedirectNotAllowed": "Minta admin server mengizinkan {uri} di Allowed Mobile Redirect URIs.",
+    "ssoUnsupported": "Login ini belum bisa dilakukan di jam tangan.",
+    "ssoAccessDenied": "Layanan login menolak akses.",
+    "ssoNoAccount": "Tidak ada akun Audiobookshelf untuk pengguna ini.",
+    "ssoFailed": "Login SSO gagal. Coba lagi."
 }

@@ -24,9 +24,9 @@ void main() {
   // Identical to the English on purpose: the same word, or a loanword the
   // language uses as is. Anything else identical is an untranslated string.
   const sameAsEnglish = {
-    'de': {'pause', 'downloads'},
+    'de': {'pause', 'downloads', 'ssoCodeLabel'},
     'es': {'podcastCount'},
-    'fr': {'pause'},
+    'fr': {'pause', 'ssoCodeLabel'},
     'id': {'volumeLevel'},
     'it': {'passwordLabel', 'sleepTimerOff'},
     'pt': {'downloads'},

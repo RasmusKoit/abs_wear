@@ -63,5 +63,17 @@
     "minutesCount": "{count, plural, other{{count} منٹ}}",
     "secondsCount": "{count, plural, other{{count} سیکنڈ}}",
     "loading": "لوڈ ہو رہا ہے",
-    "volumeLevel": "والیوم {percent}%"
+    "volumeLevel": "والیوم {percent}%",
+    "ssoLogin": "SSO سے لاگ ان",
+    "ssoContinue": "جاری رکھیں",
+    "ssoCodeLabel": "کوڈ",
+    "ssoWrongCode": "غلط کوڈ۔",
+    "ssoConsent": "کیا {app} کو آپ کا اکاؤنٹ استعمال کرنے دیں؟",
+    "ssoAllow": "اجازت دیں",
+    "ssoNotEnabled": "اس سرور پر SSO لاگ ان نہیں ہے۔",
+    "ssoRedirectNotAllowed": "سرور ایڈمن سے Allowed Mobile Redirect URIs میں {uri} کی اجازت دینے کو کہیں۔",
+    "ssoUnsupported": "یہ سائن ان ابھی گھڑی پر نہیں ہو سکتا۔",
+    "ssoAccessDenied": "سائن ان سروس نے رسائی سے انکار کر دیا۔",
+    "ssoNoAccount": "اس صارف کا کوئی Audiobookshelf اکاؤنٹ نہیں ہے۔",
+    "ssoFailed": "SSO لاگ ان ناکام ہو گیا۔ دوبارہ کوشش کریں۔"
 }

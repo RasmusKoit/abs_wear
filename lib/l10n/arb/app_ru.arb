@@ -63,5 +63,17 @@
     "minutesCount": "{count, plural, one{{count} минута} few{{count} минуты} many{{count} минут} other{{count} минуты}}",
     "secondsCount": "{count, plural, one{{count} секунда} few{{count} секунды} many{{count} секунд} other{{count} секунды}}",
     "loading": "Загрузка",
-    "volumeLevel": "Громкость {percent}%"
+    "volumeLevel": "Громкость {percent}%",
+    "ssoLogin": "Войти через SSO",
+    "ssoContinue": "Продолжить",
+    "ssoCodeLabel": "Код",
+    "ssoWrongCode": "Неверный код.",
+    "ssoConsent": "Разрешить {app} использовать ваш аккаунт?",
+    "ssoAllow": "Разрешить",
+    "ssoNotEnabled": "На этом сервере нет входа через SSO.",
+    "ssoRedirectNotAllowed": "Попросите администратора сервера разрешить {uri} в Allowed Mobile Redirect URIs.",
+    "ssoUnsupported": "Этот вход пока нельзя выполнить на часах.",
+    "ssoAccessDenied": "Служба входа отказала в доступе.",
+    "ssoNoAccount": "Для этого пользователя нет аккаунта Audiobookshelf.",
+    "ssoFailed": "Не удалось войти через SSO. Попробуйте снова."
 }

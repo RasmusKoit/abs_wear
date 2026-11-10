@@ -63,5 +63,17 @@
     "minutesCount": "{count, plural, other{{count} মিনিট}}",
     "secondsCount": "{count, plural, other{{count} সেকেন্ড}}",
     "loading": "লোড হচ্ছে",
-    "volumeLevel": "ভলিউম {percent}%"
+    "volumeLevel": "ভলিউম {percent}%",
+    "ssoLogin": "SSO দিয়ে লগইন",
+    "ssoContinue": "চালিয়ে যান",
+    "ssoCodeLabel": "কোড",
+    "ssoWrongCode": "ভুল কোড।",
+    "ssoConsent": "{app}-কে আপনার অ্যাকাউন্ট ব্যবহার করতে দেবেন?",
+    "ssoAllow": "অনুমতি দিন",
+    "ssoNotEnabled": "এই সার্ভারে SSO লগইন নেই।",
+    "ssoRedirectNotAllowed": "সার্ভার অ্যাডমিনকে Allowed Mobile Redirect URIs-এ {uri} অনুমতি দিতে বলুন।",
+    "ssoUnsupported": "এই সাইন-ইন এখনও ঘড়িতে করা যায় না।",
+    "ssoAccessDenied": "সাইন-ইন পরিষেবা অ্যাক্সেস প্রত্যাখ্যান করেছে।",
+    "ssoNoAccount": "এই ব্যবহারকারীর কোনো Audiobookshelf অ্যাকাউন্ট নেই।",
+    "ssoFailed": "SSO লগইন ব্যর্থ হয়েছে। আবার চেষ্টা করুন।"
 }

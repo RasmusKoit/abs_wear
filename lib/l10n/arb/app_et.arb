@@ -63,5 +63,17 @@
     "minutesCount": "{count, plural, =1{1 minut} other{{count} minutit}}",
     "secondsCount": "{count, plural, =1{1 sekund} other{{count} sekundit}}",
     "loading": "Laadimine",
-    "volumeLevel": "Helitugevus {percent}%"
+    "volumeLevel": "Helitugevus {percent}%",
+    "ssoLogin": "Logi sisse SSO-ga",
+    "ssoContinue": "Jätka",
+    "ssoCodeLabel": "Kood",
+    "ssoWrongCode": "Vale kood.",
+    "ssoConsent": "Kas lubada {app} sinu kontot kasutada?",
+    "ssoAllow": "Luba",
+    "ssoNotEnabled": "Sellel serveril pole SSO sisselogimist.",
+    "ssoRedirectNotAllowed": "Palu serveri adminil lubada {uri} jaotises Allowed Mobile Redirect URIs.",
+    "ssoUnsupported": "Seda sisselogimist ei saa veel kellas teha.",
+    "ssoAccessDenied": "Sisselogimisteenus keelas ligipääsu.",
+    "ssoNoAccount": "Sellel kasutajal pole Audiobookshelfi kontot.",
+    "ssoFailed": "SSO sisselogimine ebaõnnestus. Proovi uuesti."
 }

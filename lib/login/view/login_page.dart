@@ -8,6 +8,7 @@ import 'package:abs_wear/app/view/crown_scrollbar.dart';
 import 'package:abs_wear/l10n/l10n.dart';
 import 'package:abs_wear/library/data/json_cache.dart';
 import 'package:abs_wear/library/view/library_page.dart';
+import 'package:abs_wear/login/data/sso/sso_login.dart';
 import 'package:abs_wear/player/player.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -41,6 +42,16 @@ class LoginPageState extends State<LoginPage> {
   /// True until saved credentials have been read, so a logged-in user
   /// doesn't see the login form flash on every start.
   bool _checking = true;
+
+  /// The SSO login in progress and the screen it shows, or null.
+  SsoLogin? _sso;
+  SsoStep? _ssoStep;
+
+  /// Why the last SSO login failed, shown under the SSO button.
+  String? _ssoError;
+  final Map<SsoField, TextEditingController> _ssoInputs = {
+    for (final field in SsoField.values) field: TextEditingController(),
+  };
   late AppLocalizations l10n;
 
   @override
@@ -55,6 +66,10 @@ class LoginPageState extends State<LoginPage> {
     usernameController.dispose();
     passwordController.dispose();
     _scrollController.dispose();
+    _sso?.close();
+    for (final input in _ssoInputs.values) {
+      input.dispose();
+    }
     super.dispose();
   }
 
@@ -112,7 +127,9 @@ class LoginPageState extends State<LoginPage> {
 
   Future<void> _toast(String msg) => showToast(msg, long: true);
 
-  Future<void> login(String rawUrl, String username, String password) async {
+  /// [rawUrl] without trailing slashes, or null (after saying so) when it
+  /// isn't an http(s) URL.
+  Future<String?> _serverUrl(String rawUrl) async {
     // "https://abs.example.com/" and "https://abs.example.com" both work.
     final url = rawUrl.trim().replaceAll(RegExp(r'/+$'), '');
     final uri = Uri.tryParse(url);
@@ -120,8 +137,14 @@ class LoginPageState extends State<LoginPage> {
         !(uri.scheme == 'http' || uri.scheme == 'https') ||
         uri.host.isEmpty) {
       await _toast(l10n.invalidUrl);
-      return;
+      return null;
     }
+    return url;
+  }
+
+  Future<void> login(String rawUrl, String username, String password) async {
+    final url = await _serverUrl(rawUrl);
+    if (url == null) return;
     _sessionEpoch++;
     setState(() => _loggingIn = true);
     try {
@@ -142,52 +165,7 @@ class LoginPageState extends State<LoginPage> {
         return;
       }
       final data = jsonDecode(response.body) as Map<String, dynamic>;
-      final user = data['user'] as Map<String, dynamic>;
-      final token = user['token'] as String;
-      // The library last picked on the watch by this user, else theirs
-      // from the server.
-      final picked = (await SharedPreferences.getInstance())
-          .getString('pickedLibrary')
-          ?.split('\n');
-      final libraryId = await _pickLibraryId(
-        url,
-        token,
-        preferred: [
-          if (picked != null &&
-              picked.length == 3 &&
-              picked[0] == url &&
-              picked[1] == username)
-            picked[2],
-          data['userDefaultLibraryId'] as String?,
-        ],
-      );
-      if (libraryId == null) {
-        await _toast(l10n.noLibraries);
-        return;
-      }
-
-      final prefs = await SharedPreferences.getInstance();
-      // Some servers hand out the same token on every login: drop a leftover
-      // logout of it before saving it, so a kill in between can't make the
-      // next start take this new session for that unfinished logout.
-      if (prefs.getStringList(_pendingLogoutKey)?.last == token) {
-        await prefs.remove(_pendingLogoutKey);
-      }
-      await prefs.setString('serverUrl', url);
-      await prefs.setString('username', username);
-      await prefs.setString('token', token);
-      await prefs.setString('defaultLibraryId', libraryId);
-      // Don't keep the password in memory once it has done its job.
-      passwordController.clear();
-      if (!mounted) return;
-      setState(() {
-        _token = token;
-        defaultLibraryId = libraryId;
-        serverUrlController.text = url;
-        // The field may still hold "alice "; the identity (local progress,
-        // caches) must be the trimmed name that was sent and saved.
-        usernameController.text = username;
-      });
+      await _completeLogin(url, data, username: username);
     } on TimeoutException {
       await _toast(l10n.serverTimeout);
     } on Object catch (e) {
@@ -198,6 +176,153 @@ class LoginPageState extends State<LoginPage> {
     } finally {
       if (mounted) setState(() => _loggingIn = false);
     }
+  }
+
+  /// Saves a login ([data] is the server's login response, from password or
+  /// SSO login) and shows the logged-in view. Throws on a malformed [data].
+  Future<void> _completeLogin(
+    String url,
+    Map<String, dynamic> data, {
+    required String username,
+  }) async {
+    final user = data['user'] as Map<String, dynamic>;
+    // The legacy token: it doesn't expire, unlike user.accessToken.
+    final token = user['token'] as String;
+    // The library last picked on the watch by this user, else theirs
+    // from the server.
+    final picked = (await SharedPreferences.getInstance())
+        .getString('pickedLibrary')
+        ?.split('\n');
+    final libraryId = await _pickLibraryId(
+      url,
+      token,
+      preferred: [
+        if (picked != null &&
+            picked.length == 3 &&
+            picked[0] == url &&
+            picked[1] == username)
+          picked[2],
+        data['userDefaultLibraryId'] as String?,
+      ],
+    );
+    if (libraryId == null) {
+      await _toast(l10n.noLibraries);
+      return;
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    // Some servers hand out the same token on every login: drop a leftover
+    // logout of it before saving it, so a kill in between can't make the
+    // next start take this new session for that unfinished logout.
+    if (prefs.getStringList(_pendingLogoutKey)?.last == token) {
+      await prefs.remove(_pendingLogoutKey);
+    }
+    await prefs.setString('serverUrl', url);
+    await prefs.setString('username', username);
+    await prefs.setString('token', token);
+    await prefs.setString('defaultLibraryId', libraryId);
+    // Don't keep passwords in memory once they have done their job.
+    passwordController.clear();
+    for (final input in _ssoInputs.values) {
+      input.clear();
+    }
+    if (!mounted) return;
+    setState(() {
+      _token = token;
+      defaultLibraryId = libraryId;
+      serverUrlController.text = url;
+      // The field may still hold "alice "; the identity (local progress,
+      // caches) must be the trimmed name that was sent and saved.
+      usernameController.text = username;
+    });
+  }
+
+  /// Starts an SSO login at [rawUrl]: the identity provider's screens are
+  /// then shown one by one (see [_buildSsoStep]).
+  Future<void> _startSso(String rawUrl) async {
+    final url = await _serverUrl(rawUrl);
+    if (url == null) return;
+    _sessionEpoch++;
+    setState(() {
+      _loggingIn = true;
+      _ssoError = null;
+    });
+    try {
+      final (sso, step) = await SsoLogin.start(url);
+      if (!mounted) {
+        sso.close();
+        return;
+      }
+      _sso = sso;
+      await _showSsoStep(step);
+    } on Object catch (e) {
+      _ssoFailed(e);
+    } finally {
+      if (mounted) setState(() => _loggingIn = false);
+    }
+  }
+
+  Future<void> _submitSso(Map<SsoField, String> answer) async {
+    final sso = _sso;
+    if (sso == null) return;
+    setState(() => _loggingIn = true);
+    try {
+      await _showSsoStep(await sso.submit(answer));
+    } on Object catch (e) {
+      _ssoFailed(e);
+    } finally {
+      if (mounted) setState(() => _loggingIn = false);
+    }
+  }
+
+  Future<void> _showSsoStep(SsoStep step) async {
+    if (step is SsoDone) {
+      final user = step.data['user'] as Map<String, dynamic>;
+      await _completeLogin(
+        _sso!.serverUrl,
+        step.data,
+        username: user['username'] as String,
+      );
+      _endSso();
+      return;
+    }
+    if (!mounted) return;
+    setState(() {
+      _ssoStep = step;
+      // A retry keeps the username; passwords and codes are typed again.
+      _ssoInputs[SsoField.password]!.clear();
+      _ssoInputs[SsoField.code]!.clear();
+    });
+  }
+
+  /// Ends (or cancels) the SSO login and goes back to the login form.
+  void _endSso() {
+    _sso?.close();
+    _sso = null;
+    for (final input in _ssoInputs.values) {
+      input.clear();
+    }
+    if (mounted) setState(() => _ssoStep = null);
+  }
+
+  void _ssoFailed(Object error) {
+    debugPrint('SSO login failed: $error');
+    _endSso();
+    final message = switch (error) {
+      SsoException(error: SsoError.notEnabled) => l10n.ssoNotEnabled,
+      SsoException(error: SsoError.redirectNotAllowed) =>
+        l10n.ssoRedirectNotAllowed(ssoRedirectUri),
+      SsoException(
+        error: SsoError.unsupportedProvider || SsoError.unsupportedStep,
+      ) =>
+        l10n.ssoUnsupported,
+      SsoException(error: SsoError.accessDenied) => l10n.ssoAccessDenied,
+      SsoException(error: SsoError.noAccount) => l10n.ssoNoAccount,
+      SsoException() => l10n.ssoFailed,
+      TimeoutException() => l10n.serverTimeout,
+      _ => l10n.cannotReachServer,
+    };
+    if (mounted) setState(() => _ssoError = message);
   }
 
   /// The user's saved library if it still exists, otherwise the first book
@@ -463,6 +588,8 @@ class LoginPageState extends State<LoginPage> {
                   ),
                 ),
               )
+            else if (_token == '' && _ssoStep != null)
+              _buildSsoStep(theme)
             else if (_token == '')
               _buildLoginForm(theme)
             else
@@ -535,14 +662,124 @@ class LoginPageState extends State<LoginPage> {
                   unawaited(login(serverUrl, username, password));
                 },
           child: _loggingIn || _loggingOut
-              ? SizedBox.square(
-                  dimension: 16,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    semanticsLabel: l10n.loading,
-                  ),
-                )
+              ? _buttonSpinner()
               : Text(l10n.login, style: theme.textTheme.bodyMedium),
+        ),
+        const SizedBox(height: 4),
+        OutlinedButton(
+          onPressed: _loggingIn || _loggingOut
+              ? null
+              : () => unawaited(_startSso(serverUrlController.text)),
+          child: Text(l10n.ssoLogin, style: theme.textTheme.bodySmall),
+        ),
+        if (_ssoError case final error?)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+            child: Text(
+              error,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.labelSmall!.copyWith(
+                color: theme.colorScheme.error,
+              ),
+            ),
+          ),
+        const SizedBox(height: 16),
+      ],
+    );
+  }
+
+  Widget _buttonSpinner() => SizedBox.square(
+    dimension: 16,
+    child: CircularProgressIndicator(
+      strokeWidth: 2,
+      semanticsLabel: l10n.loading,
+    ),
+  );
+
+  /// One screen of an SSO login: the identity provider's fields, or its
+  /// consent question.
+  Widget _buildSsoStep(ThemeData theme) {
+    final step = _ssoStep!;
+    final small = theme.textTheme.labelSmall!;
+    final busy = _loggingIn;
+    return Column(
+      children: [
+        if (step is SsoPrompt) ...[
+          if (step.user case final user?)
+            Text(
+              user,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyMedium,
+            ),
+          if (step.retry)
+            Text(
+              step.fields.contains(SsoField.code)
+                  ? l10n.ssoWrongCode
+                  : l10n.wrongCredentials,
+              textAlign: TextAlign.center,
+              style: small.copyWith(color: theme.colorScheme.error),
+            ),
+          for (final field in step.fields)
+            TextFormField(
+              style: small,
+              scrollPadding: const EdgeInsets.all(8),
+              strutStyle: StrutStyle.fromTextStyle(small),
+              controller: _ssoInputs[field],
+              decoration: InputDecoration(
+                labelText: switch (field) {
+                  SsoField.username => l10n.usernameLabel,
+                  SsoField.password => l10n.passwordLabel,
+                  SsoField.code => l10n.ssoCodeLabel,
+                },
+                labelStyle: small,
+              ),
+              obscureText: field == SsoField.password,
+              autocorrect: false,
+              enableSuggestions: false,
+              keyboardType: field == SsoField.code
+                  ? TextInputType.number
+                  : TextInputType.visiblePassword, // Disable newline
+            ),
+          const SizedBox(height: 8),
+          ElevatedButton(
+            onPressed: busy
+                ? null
+                : () {
+                    final answer = {
+                      for (final field in step.fields)
+                        field: field == SsoField.password
+                            ? _ssoInputs[field]!.text
+                            : _ssoInputs[field]!.text.trim(),
+                    };
+                    if (answer.values.any((v) => v.isEmpty)) {
+                      unawaited(_toast(l10n.fillAllFields));
+                      return;
+                    }
+                    unawaited(_submitSso(answer));
+                  },
+            child: busy
+                ? _buttonSpinner()
+                : Text(l10n.ssoContinue, style: theme.textTheme.bodyMedium),
+          ),
+        ] else if (step is SsoConsent) ...[
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            child: Text(
+              l10n.ssoConsent(step.app),
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodySmall,
+            ),
+          ),
+          ElevatedButton(
+            onPressed: busy ? null : () => unawaited(_submitSso(const {})),
+            child: busy
+                ? _buttonSpinner()
+                : Text(l10n.ssoAllow, style: theme.textTheme.bodyMedium),
+          ),
+        ],
+        TextButton(
+          onPressed: busy ? null : _endSso,
+          child: Text(l10n.cancel, style: theme.textTheme.bodySmall),
         ),
         const SizedBox(height: 16),
       ],

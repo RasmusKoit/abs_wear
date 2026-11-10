@@ -115,6 +115,58 @@ void main() {
       expectNoLayoutErrors(tester);
     });
 
+    /// Shows the login form at [servers]' server and taps SSO login.
+    Future<void> startSso(
+      WidgetTester tester,
+      Widget Function(Widget home) app,
+    ) async {
+      SharedPreferences.setMockInitialValues({});
+      await tester.pumpWidget(app(const LoginPage()));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextFormField).first, fakeAbsUrl);
+      // Done typing: the keyboard closes (or the field keeps itself in view).
+      FocusManager.instance.primaryFocus?.unfocus();
+      await tester.pumpAndSettle();
+      await tester.drag(find.byType(ListView), const Offset(0, -400));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(OutlinedButton));
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> submit(WidgetTester tester, String text) async {
+      await tester.enterText(find.byType(TextFormField).first, text);
+      FocusManager.instance.primaryFocus?.unfocus();
+      await tester.pumpAndSettle();
+      await tester.drag(find.byType(ListView), const Offset(0, -400));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(ElevatedButton));
+      await tester.pumpAndSettle();
+    }
+
+    screen('SSO password and consent', (tester, app) async {
+      await http.runWithClient(() async {
+        await startSso(tester, app);
+        await submit(tester, 'wear');
+        await submit(tester, 'nope'); // Wrong: says so above the field.
+        expectNoLayoutErrors(tester);
+        await expectAccessible(tester);
+        await submit(tester, 'secret');
+        expect(find.byType(TextFormField), findsNothing); // Consent.
+        expectNoLayoutErrors(tester);
+        await expectAccessible(tester);
+      }, () => FakeServers().client);
+    });
+
+    screen('SSO error', (tester, app) async {
+      await http.runWithClient(
+        () => startSso(tester, app),
+        () => FakeServers(startStatus: 400).client,
+      );
+      expect(find.textContaining('abswear://oauth'), findsOneWidget);
+      expectNoLayoutErrors(tester);
+      await expectAccessible(tester);
+    });
+
     screen('logged in, and the logout dialog', (tester, app) async {
       SharedPreferences.setMockInitialValues({
         'serverUrl': 'https://audiobookshelf.example.com',

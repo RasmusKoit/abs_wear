@@ -63,5 +63,17 @@
     "minutesCount": "{count, plural, =1{1 minuto} other{{count} minutos}}",
     "secondsCount": "{count, plural, =1{1 segundo} other{{count} segundos}}",
     "loading": "Cargando",
-    "volumeLevel": "Volumen {percent} %"
+    "volumeLevel": "Volumen {percent} %",
+    "ssoLogin": "Iniciar sesión con SSO",
+    "ssoContinue": "Continuar",
+    "ssoCodeLabel": "Código",
+    "ssoWrongCode": "Código incorrecto.",
+    "ssoConsent": "¿Permitir que {app} use tu cuenta?",
+    "ssoAllow": "Permitir",
+    "ssoNotEnabled": "Este servidor no tiene inicio de sesión SSO.",
+    "ssoRedirectNotAllowed": "Pide al administrador del servidor que permita {uri} en Allowed Mobile Redirect URIs.",
+    "ssoUnsupported": "Este inicio de sesión aún no se puede hacer en el reloj.",
+    "ssoAccessDenied": "El servicio de inicio de sesión denegó el acceso.",
+    "ssoNoAccount": "No hay cuenta de Audiobookshelf para este usuario.",
+    "ssoFailed": "Error al iniciar sesión con SSO. Inténtalo de nuevo."
 }
