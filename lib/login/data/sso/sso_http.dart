@@ -18,16 +18,23 @@ class SsoHttp {
   /// Sends one request without following redirects. JSON [body] is encoded
   /// and sent with a JSON content type; [form] fields (in order, names may
   /// repeat) are sent form-encoded, like a browser posting an HTML form.
+  /// [wait] replaces [timeout] for requests the server holds open (long
+  /// polling). It covers the whole response, and a request that runs out of
+  /// time is aborted (so the server stops working on it) before
+  /// [TimeoutException] is thrown.
   Future<http.Response> send(
     String method,
     Uri url, {
     Object? body,
     List<(String, String)>? form,
     Map<String, String> headers = const {},
+    Duration wait = timeout,
   }) async {
-    final request = http.Request(method, url)
-      ..followRedirects = false
-      ..headers.addAll({'Accept': 'application/json', ...headers});
+    final abort = Completer<void>();
+    final request =
+        http.AbortableRequest(method, url, abortTrigger: abort.future)
+          ..followRedirects = false
+          ..headers.addAll({'Accept': 'application/json', ...headers});
     final cookies = _cookies[_origin(url)];
     if (cookies != null && cookies.isNotEmpty) {
       request.headers['Cookie'] = [
@@ -43,9 +50,15 @@ class SsoHttp {
         ..headers['Content-Type'] = 'application/x-www-form-urlencoded'
         ..body = form.map((f) => '${_encode(f.$1)}=${_encode(f.$2)}').join('&');
     }
-    final response = await http.Response.fromStream(
-      await _client.send(request).timeout(timeout),
-    ).timeout(timeout);
+    Future<http.Response> exchange() async =>
+        await http.Response.fromStream(await _client.send(request));
+    final http.Response response;
+    try {
+      response = await exchange().timeout(wait);
+    } on TimeoutException {
+      abort.complete();
+      rethrow;
+    }
     _store(url, response);
     return response;
   }

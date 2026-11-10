@@ -2,6 +2,7 @@ import 'package:abs_wear/login/data/sso/authelia_adapter.dart';
 import 'package:abs_wear/login/data/sso/authentik_adapter.dart';
 import 'package:abs_wear/login/data/sso/html_form_adapter.dart';
 import 'package:abs_wear/login/data/sso/logto_adapter.dart';
+import 'package:abs_wear/login/data/sso/pocketid_adapter.dart';
 import 'package:abs_wear/login/data/sso/sso_types.dart';
 import 'package:abs_wear/login/data/sso/tinyauth_adapter.dart';
 import 'package:abs_wear/login/data/sso/voidauth_adapter.dart';
@@ -15,6 +16,7 @@ final List<IdpAdapterFactory> idpAdapters = [
   LogtoAdapter.forPage,
   VoidAuthAdapter.forPage,
   TinyauthAdapter.forPage,
+  PocketIdAdapter.forPage,
   // Generic, so after the providers with their own adapters.
   HtmlFormAdapter.forPage,
 ];
