@@ -120,4 +120,46 @@ if [ -d data/demo/books ]; then
       done
   echo "Demo libraries: $DLIB (books), $DPLIB (podcasts)"
 fi
+# SSO: Authentik (docker-compose.yml) as the OpenID Connect provider. The
+# blueprint creates the "abs" application and the test user; here we set the
+# user's password and turn on OpenID in ABS next to password login.
+if [ -n "${AUTHENTIK_BOOTSTRAP_TOKEN:-}" ]; then
+  AK=${AUTHENTIK_URL:?set AUTHENTIK_URL in .env (as seen from the watch)}
+  akauth=(-H "Authorization: Bearer $AUTHENTIK_BOOTSTRAP_TOKEN" -H 'Content-Type: application/json')
+  echo "Waiting for Authentik at $AK ..."
+  pk=
+  for _ in $(seq 90); do
+    pk=$(curl -fs "$AK/api/v3/core/users/?username=$ABS_TEST_USER" "${akauth[@]}" 2>/dev/null | j 'd["results"][0]["pk"] if d["results"] else ""' || true)
+    [ -n "$pk" ] && break; sleep 2
+  done
+  [ -n "$pk" ] || { echo "Authentik user $ABS_TEST_USER not found (blueprint not applied?)" >&2; exit 1; }
+  pw=$(python3 -c 'import sys,json;print(json.dumps({"password":sys.argv[1]}))' "$ABS_TEST_PASSWORD")
+  curl -fs -X POST "$AK/api/v3/core/users/$pk/set_password/" "${akauth[@]}" -d "$pw" >/dev/null
+  issuer="$AK/application/o/abs/"
+  wk=$(curl -fs "${issuer}.well-known/openid-configuration")
+  settings=$(printf '%s' "$wk" | python3 -c '
+import sys, json
+wk = json.load(sys.stdin)
+print(json.dumps({
+  "authActiveAuthMethods": ["local", "openid"],
+  "authOpenIDIssuerURL": wk["issuer"],
+  "authOpenIDAuthorizationURL": wk["authorization_endpoint"],
+  "authOpenIDTokenURL": wk["token_endpoint"],
+  "authOpenIDUserInfoURL": wk["userinfo_endpoint"],
+  "authOpenIDJwksURL": wk["jwks_uri"],
+  "authOpenIDLogoutURL": wk.get("end_session_endpoint"),
+  "authOpenIDClientID": "abs",
+  "authOpenIDClientSecret": sys.argv[1],
+  "authOpenIDTokenSigningAlgorithm": wk["id_token_signing_alg_values_supported"][0],
+  "authOpenIDButtonText": "Login with Authentik",
+  "authOpenIDAutoLaunch": False,
+  "authOpenIDAutoRegister": False,
+  "authOpenIDMatchExistingBy": "username",
+  "authOpenIDMobileRedirectURIs": ["abswear://oauth"],
+  # Unset, ABS builds ".../undefined/auth/openid/..." (the web UI always sends it).
+  "authOpenIDSubfolderForRedirectURLs": "",
+}))' "$ABS_OIDC_CLIENT_SECRET")
+  curl -fs -X PATCH "$URL/api/auth-settings" "${auth[@]}" -d "$settings" >/dev/null
+  echo "SSO: ABS uses Authentik at $issuer"
+fi
 echo "Seed complete. Library id: $LIB  Podcast library id: $PLIB"

@@ -1,0 +1,63 @@
+# yaml-language-server: $schema=https://goauthentik.io/blueprints/schema.json
+# Authentik setup for ABS Wear SSO tests: an OAuth2/OpenID provider and the
+# "abs" application for the test server, plus the test user (seed.sh sets its
+# password). Applied automatically by the Authentik worker.
+version: 1
+metadata:
+  name: ABS Wear test
+entries:
+  # The default flows and scope mappings must exist before we reference them.
+  - model: authentik_blueprints.metaapplyblueprint
+    attrs:
+      identifiers:
+        path: system/providers-oauth2.yaml
+      required: true
+  - model: authentik_blueprints.metaapplyblueprint
+    attrs:
+      identifiers:
+        path: default/flow-default-provider-authorization-explicit-consent.yaml
+      required: true
+  - model: authentik_blueprints.metaapplyblueprint
+    attrs:
+      identifiers:
+        path: default/flow-default-provider-invalidation.yaml
+      required: true
+
+  - model: authentik_providers_oauth2.oauth2provider
+    id: abs-provider
+    identifiers:
+      name: abs
+    attrs:
+      authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-explicit-consent]]
+      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+      client_type: confidential
+      # Empty by default for blueprint-made providers, which rejects every grant.
+      grant_types: [authorization_code, refresh_token]
+      client_id: abs
+      client_secret: !Env ABS_OIDC_CLIENT_SECRET
+      redirect_uris:
+        - matching_mode: strict
+          url: !Format ["%s/auth/openid/callback", !Env ABS_PUBLIC_URL]
+        - matching_mode: strict
+          url: !Format ["%s/auth/openid/mobile-redirect", !Env ABS_PUBLIC_URL]
+      signing_key: !Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]
+      sub_mode: user_username
+      property_mappings:
+        - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-openid]]
+        - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-email]]
+        - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-profile]]
+
+  - model: authentik_core.application
+    identifiers:
+      slug: abs
+    attrs:
+      name: Audiobookshelf
+      provider: !KeyOf abs-provider
+
+  - model: authentik_core.user
+    identifiers:
+      username: !Env ABS_TEST_USER
+    attrs:
+      name: ABS Wear test user
+      email: wear@abs-wear.test
+      is_active: true
