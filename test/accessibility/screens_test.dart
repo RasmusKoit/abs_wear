@@ -159,7 +159,10 @@ void main() {
     ) async {
       await next(tester, app);
       // The second choice is SSO.
-      await tester.drag(find.byType(SingleChildScrollView), const Offset(0, -400));
+      await tester.drag(
+        find.byType(SingleChildScrollView),
+        const Offset(0, -400),
+      );
       await tester.pumpAndSettle();
       await tester.tap(find.byType(ElevatedButton).last);
       await tester.pumpAndSettle();
@@ -169,7 +172,10 @@ void main() {
       await tester.enterText(find.byType(TextFormField).first, text);
       FocusManager.instance.primaryFocus?.unfocus();
       await tester.pumpAndSettle();
-      await tester.drag(find.byType(SingleChildScrollView), const Offset(0, -400));
+      await tester.drag(
+        find.byType(SingleChildScrollView),
+        const Offset(0, -400),
+      );
       await tester.pumpAndSettle();
       await tester.tap(find.byType(ElevatedButton));
       await tester.pumpAndSettle();
@@ -195,6 +201,12 @@ void main() {
         () => FakeServers(startStatus: 400).client,
       );
       expect(find.textContaining('abswear://oauth'), findsOneWidget);
+      // From the top: a button half scrolled off would fail the size check.
+      await tester.drag(
+        find.byType(SingleChildScrollView),
+        const Offset(0, 400),
+      );
+      await tester.pumpAndSettle();
       expectNoLayoutErrors(tester);
       await expectAccessible(tester);
     });
