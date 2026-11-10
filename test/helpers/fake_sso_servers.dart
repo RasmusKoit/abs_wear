@@ -16,6 +16,7 @@ class FakeServers {
   FakeServers({
     this.openid = true,
     this.password = true,
+    this.passwordOnFirstPage = false,
     this.startStatus = 302,
     this.webauthnOnly = false,
     this.otp = false,
@@ -29,6 +30,9 @@ class FakeServers {
 
   /// The server also offers password login.
   final bool password;
+
+  /// Authentik asks for the username and password on one page.
+  final bool passwordOnFirstPage;
   final int startStatus;
   final bool webauthnOnly;
   final bool otp;
@@ -168,7 +172,7 @@ class FakeServers {
                 ? {
                     'component': 'ak-stage-identification',
                     'application_pre': 'Audiobookshelf',
-                    'password_fields': false,
+                    'password_fields': passwordOnFirstPage,
                     'captcha_stage': null,
                   }
                 : {'component': 'ak-stage-consent', 'token': 'consent-token'},
@@ -176,6 +180,18 @@ class FakeServers {
         }
         final body = jsonDecode(r.body) as Map<String, dynamic>;
         final next = switch (body['component']) {
+          'ak-stage-identification' when passwordOnFirstPage =>
+            body['password'] == 'secret'
+                ? afterPassword
+                : {
+                    'component': 'ak-stage-identification',
+                    'password_fields': true,
+                    'response_errors': {
+                      'non_field_errors': [
+                        {'string': 'Invalid credentials', 'code': 'invalid'},
+                      ],
+                    },
+                  },
           'ak-stage-identification' => {
             'component': 'ak-stage-password',
             'pending_user': body['uid_field'],

@@ -129,16 +129,24 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    screen('choice, then the password form', (tester, app) async {
+    screen('choice, then username and password', (tester, app) async {
       await http.runWithClient(() async {
         await next(tester, app);
         expect(find.byType(ElevatedButton), findsNWidgets(2));
         expectNoLayoutErrors(tester);
         await expectAccessible(tester);
-        // Password login: username and password, then Login.
+        // Password login: the username screen, then the password screen.
         await tester.tap(find.byType(ElevatedButton).first);
         await tester.pumpAndSettle();
-        expect(find.byType(TextFormField), findsNWidgets(2));
+        expect(find.byType(TextFormField), findsOneWidget);
+        expectNoLayoutErrors(tester);
+        await expectAccessible(tester);
+        await tester.enterText(find.byType(TextFormField), 'alice');
+        FocusManager.instance.primaryFocus?.unfocus();
+        await tester.pumpAndSettle();
+        await tester.tap(find.byType(ElevatedButton));
+        await tester.pumpAndSettle();
+        expect(find.text('alice'), findsOneWidget);
         expectNoLayoutErrors(tester);
         await expectAccessible(tester);
       }, () => FakeServers().client);

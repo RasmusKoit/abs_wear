@@ -63,6 +63,22 @@ void main() {
     expect(prefs.getString('defaultLibraryId'), 'lib1');
   });
 
+  testWidgets('a provider asking both at once still gets one per screen', (
+    tester,
+  ) async {
+    final servers = FakeServers(passwordOnFirstPage: true);
+    await http.runWithClient(() async {
+      await startSso(tester);
+      expect(find.byType(TextFormField), findsOneWidget);
+      await fill(tester, 'Username', 'wear');
+      // The password on its own screen, under the username just typed.
+      expect(find.byType(TextFormField), findsOneWidget);
+      expect(find.text('wear'), findsOneWidget);
+      await fill(tester, 'Password', 'secret');
+      expect(find.text('Allow Audiobookshelf to use your account?'), findsOne);
+    }, () => servers.client);
+  });
+
   testWidgets('says why SSO cannot start, under the button', (tester) async {
     final servers = FakeServers(startStatus: 400);
     await http.runWithClient(() => startSso(tester), () => servers.client);
@@ -109,13 +125,21 @@ void main() {
   testWidgets('a password-only server asks for the password', (tester) async {
     final servers = FakeServers(openid: false);
     await http.runWithClient(() => next(tester), () => servers.client);
+    // One field per screen: the username, then the password.
+    expect(find.byType(TextFormField), findsOneWidget);
     expect(find.widgetWithText(TextFormField, 'Username'), findsOneWidget);
-    expect(find.widgetWithText(TextFormField, 'Password'), findsOneWidget);
     expect(find.text('Login with SSO'), findsNothing);
-    // Back to the server.
-    await tester.ensureVisible(find.text('Back'));
-    await tester.tap(find.text('Back'));
+    await tester.enterText(find.byType(TextFormField), 'alice');
+    await tester.tap(find.text('Next'));
     await tester.pumpAndSettle();
-    expect(find.text('Next'), findsOneWidget);
+    expect(find.widgetWithText(TextFormField, 'Password'), findsOneWidget);
+    expect(find.text('alice'), findsOneWidget);
+    // Back, back: the username again, then the server.
+    for (final field in ['Username', 'Server URL']) {
+      await tester.ensureVisible(find.text('Back'));
+      await tester.tap(find.text('Back'));
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(TextFormField, field), findsOneWidget);
+    }
   });
 }

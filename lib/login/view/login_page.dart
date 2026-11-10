@@ -55,6 +55,9 @@ class LoginPageState extends State<LoginPage> {
   SsoLogin? _sso;
   SsoStep? _ssoStep;
 
+  /// Which of the current SSO screen's fields is shown.
+  int _ssoFieldIndex = 0;
+
   /// Why the server check or the last SSO login failed, shown under the
   /// buttons.
   String? _loginError;
@@ -284,7 +287,7 @@ class LoginPageState extends State<LoginPage> {
       _serverLogin = login;
       // SSO started from here comes back to this screen when cancelled.
       _stage = !login.sso
-          ? _Stage.password
+          ? _Stage.username
           : login.password
           ? _Stage.choose
           : _Stage.server;
@@ -294,13 +297,15 @@ class LoginPageState extends State<LoginPage> {
     }
   }
 
-  /// Back from the password form or the choice.
+  /// One login screen back.
   void _back() => setState(() {
     _loginError = null;
     passwordController.clear();
-    _stage = _stage == _Stage.password && (_serverLogin?.sso ?? false)
-        ? _Stage.choose
-        : _Stage.server;
+    _stage = switch (_stage) {
+      _Stage.password => _Stage.username,
+      _Stage.username when _serverLogin?.sso ?? false => _Stage.choose,
+      _ => _Stage.server,
+    };
   });
 
   /// Starts an SSO login at [rawUrl]: the identity provider's screens are
@@ -355,6 +360,7 @@ class LoginPageState extends State<LoginPage> {
     if (!mounted) return;
     setState(() {
       _ssoStep = step;
+      _ssoFieldIndex = 0;
       // A retry keeps the username; passwords and codes are typed again.
       _ssoInputs[SsoField.password]!.clear();
       _ssoInputs[SsoField.code]!.clear();
@@ -670,6 +676,7 @@ class LoginPageState extends State<LoginPage> {
   Widget _buildLoginForm(ThemeData theme) => switch (_stage) {
     _Stage.server => _buildServerStep(theme),
     _Stage.choose => _buildChooseStep(theme),
+    _Stage.username => _buildUsernameStep(theme),
     _Stage.password => _buildPasswordStep(theme),
   };
 
@@ -727,7 +734,7 @@ class LoginPageState extends State<LoginPage> {
               ? null
               : () => setState(() {
                   _loginError = null;
-                  _stage = _Stage.password;
+                  _stage = _Stage.username;
                 }),
           child: Text(l10n.passwordLogin, style: theme.textTheme.bodySmall),
         ),
@@ -751,8 +758,8 @@ class LoginPageState extends State<LoginPage> {
     );
   }
 
-  /// Username and password for the server itself.
-  Widget _buildPasswordStep(ThemeData theme) {
+  /// Password login, first screen: the username.
+  Widget _buildUsernameStep(ThemeData theme) {
     return Column(
       children: [
         _serverLabel(theme),
@@ -769,6 +776,35 @@ class LoginPageState extends State<LoginPage> {
           minLines: 1,
           autocorrect: false,
           keyboardType: TextInputType.visiblePassword, // Disable newline
+        ),
+        const SizedBox(height: 8),
+        ElevatedButton(
+          onPressed: _busy
+              ? null
+              : () {
+                  if (usernameController.text.trim().isEmpty) {
+                    unawaited(_toast(l10n.fillAllFields));
+                    return;
+                  }
+                  setState(() => _stage = _Stage.password);
+                },
+          child: Text(l10n.next, style: theme.textTheme.bodyMedium),
+        ),
+        _backButton(theme),
+        const SizedBox(height: 16),
+      ],
+    );
+  }
+
+  /// Password login, second screen: the password for that username.
+  Widget _buildPasswordStep(ThemeData theme) {
+    final username = usernameController.text.trim();
+    return Column(
+      children: [
+        Text(
+          username,
+          textAlign: TextAlign.center,
+          style: theme.textTheme.bodyMedium,
         ),
         TextFormField(
           style: theme.textTheme.labelSmall,
@@ -788,9 +824,8 @@ class LoginPageState extends State<LoginPage> {
           onPressed: _busy
               ? null
               : () {
-                  final username = usernameController.text.trim();
                   final password = passwordController.text;
-                  if (username.isEmpty || password.isEmpty) {
+                  if (password.isEmpty) {
                     unawaited(_toast(l10n.fillAllFields));
                     return;
                   }
@@ -851,6 +886,7 @@ class LoginPageState extends State<LoginPage> {
     final step = _ssoStep!;
     final small = theme.textTheme.labelSmall!;
     final busy = _loggingIn;
+    final field = step is SsoPrompt ? step.fields[_ssoFieldIndex] : null;
     return Column(
       children: [
         // Who is asking: these are the identity provider's questions.
@@ -861,13 +897,19 @@ class LoginPageState extends State<LoginPage> {
             style: small.copyWith(color: theme.colorScheme.primary),
           ),
         if (step is SsoPrompt) ...[
-          if (step.user case final user?)
+          // The account being logged in: from the provider, or as typed on
+          // the screen before.
+          if (step.user ??
+                  (_ssoFieldIndex > 0
+                      ? _ssoInputs[SsoField.username]!.text.trim()
+                      : null)
+              case final user?)
             Text(
               user,
               textAlign: TextAlign.center,
               style: theme.textTheme.bodyMedium,
             ),
-          if (step.retry)
+          if (step.retry && _ssoFieldIndex == 0)
             Text(
               step.fields.contains(SsoField.code)
                   ? l10n.ssoWrongCode
@@ -875,43 +917,48 @@ class LoginPageState extends State<LoginPage> {
               textAlign: TextAlign.center,
               style: small.copyWith(color: theme.colorScheme.error),
             ),
-          for (final field in step.fields)
-            TextFormField(
-              style: small,
-              scrollPadding: const EdgeInsets.all(8),
-              strutStyle: StrutStyle.fromTextStyle(small),
-              controller: _ssoInputs[field],
-              decoration: InputDecoration(
-                labelText: switch (field) {
-                  SsoField.username => l10n.usernameLabel,
-                  SsoField.password => l10n.passwordLabel,
-                  SsoField.code => l10n.ssoCodeLabel,
-                },
-                labelStyle: small,
-              ),
-              obscureText: field == SsoField.password,
-              autocorrect: false,
-              enableSuggestions: false,
-              keyboardType: field == SsoField.code
-                  ? TextInputType.number
-                  : TextInputType.visiblePassword, // Disable newline
+          // One field per screen, like password login: the earlier ones
+          // are kept until the last is filled in, then all are sent.
+          TextFormField(
+            key: ValueKey(field),
+            style: small,
+            scrollPadding: const EdgeInsets.all(8),
+            strutStyle: StrutStyle.fromTextStyle(small),
+            controller: _ssoInputs[field],
+            decoration: InputDecoration(
+              labelText: switch (field!) {
+                SsoField.username => l10n.usernameLabel,
+                SsoField.password => l10n.passwordLabel,
+                SsoField.code => l10n.ssoCodeLabel,
+              },
+              labelStyle: small,
             ),
+            obscureText: field == SsoField.password,
+            autocorrect: false,
+            enableSuggestions: false,
+            keyboardType: field == SsoField.code
+                ? TextInputType.number
+                : TextInputType.visiblePassword, // Disable newline
+          ),
           const SizedBox(height: 8),
           ElevatedButton(
             onPressed: busy
                 ? null
                 : () {
-                    final answer = {
-                      for (final field in step.fields)
-                        field: field == SsoField.password
-                            ? _ssoInputs[field]!.text
-                            : _ssoInputs[field]!.text.trim(),
-                    };
-                    if (answer.values.any((v) => v.isEmpty)) {
+                    String value(SsoField f) => f == SsoField.password
+                        ? _ssoInputs[f]!.text
+                        : _ssoInputs[f]!.text.trim();
+                    if (value(field).isEmpty) {
                       unawaited(_toast(l10n.fillAllFields));
                       return;
                     }
-                    unawaited(_submitSso(answer));
+                    if (_ssoFieldIndex < step.fields.length - 1) {
+                      setState(() => _ssoFieldIndex++);
+                      return;
+                    }
+                    unawaited(
+                      _submitSso({for (final f in step.fields) f: value(f)}),
+                    );
                   },
             child: busy
                 ? _buttonSpinner()
@@ -988,4 +1035,5 @@ class LoginPageState extends State<LoginPage> {
   }
 }
 
-enum _Stage { server, choose, password }
+/// The logged-out screens, one question each.
+enum _Stage { server, choose, username, password }

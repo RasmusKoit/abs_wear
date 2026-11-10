@@ -78,9 +78,11 @@ void main() {
       await tester.enterText(find.byType(TextFormField).at(0), _server);
       await tester.tap(find.text('Next'));
       await tester.pumpAndSettle();
-      // Password-only server: straight to username and password.
+      // Password-only server: the username, then the password.
       await tester.enterText(find.byType(TextFormField).at(0), 'alice ');
-      await tester.enterText(find.byType(TextFormField).at(1), 'pw');
+      await tester.tap(find.text('Next'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextFormField).at(0), 'pw');
       await tester.tap(find.text('Login'));
       await tester.pumpAndSettle();
     }, () => client);

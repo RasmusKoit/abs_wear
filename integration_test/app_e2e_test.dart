@@ -315,11 +315,14 @@ Future<void> logInAndOpenLibrary(WidgetTester tester) async {
   // The test server offers passwords and SSO.
   await pumpUntil(tester, find.text('Login with password'));
   await scrollAndTap(tester, find.text('Login with password'));
-  await pumpUntil(tester, find.widgetWithText(TextFormField, 'Password'));
+  // One question per screen: the username, then the password.
+  await pumpUntil(tester, find.widgetWithText(TextFormField, 'Username'));
   await tester.enterText(
     find.widgetWithText(TextFormField, 'Username'),
     absUser,
   );
+  await scrollAndTap(tester, find.text('Next'));
+  await pumpUntil(tester, find.widgetWithText(TextFormField, 'Password'));
   await tester.enterText(
     find.widgetWithText(TextFormField, 'Password'),
     absPassword,
