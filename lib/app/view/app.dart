@@ -19,17 +19,41 @@ ThemeData appTheme({bool ambient = false}) => ThemeData(
           surface: Colors.black,
           onSurface: Colors.white60,
         )
-      : const ColorScheme.dark(primary: Color(0xFF00B5FF)),
+      // The logo's colours, kept dark: a true black background (unlit on
+      // OLED), cream text, its sage for small accents.
+      : const ColorScheme.dark(
+          primary: LogoColors.sage,
+          onPrimary: LogoColors.navy,
+          secondary: LogoColors.sage,
+          onSecondary: LogoColors.navy,
+          surface: Colors.black,
+          onSurface: LogoColors.cream,
+          // Destructive buttons (Logout): a dark red with cream text.
+          errorContainer: LogoColors.danger,
+          onErrorContainer: LogoColors.cream,
+        ),
   // The one main action on a screen: filled, so it reads as a button on
   // the black background (text buttons are the secondary actions).
   elevatedButtonTheme: ElevatedButtonThemeData(
     style: ElevatedButton.styleFrom(
-      backgroundColor: ambient ? Colors.white60 : const Color(0xFF00B5FF),
-      foregroundColor: Colors.black,
+      backgroundColor: ambient ? Colors.white24 : LogoColors.slate,
+      foregroundColor: ambient ? Colors.white60 : LogoColors.cream,
       textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
     ),
   ),
 );
+
+/// The colours of the app's logo.
+abstract final class LogoColors {
+  static const cream = Color(0xFFF7F1D9);
+  static const navy = Color(0xFF032436);
+  static const slate = Color(0xFF4B6772);
+  static const sage = Color(0xFF7D9E94);
+
+  /// Not in the logo: a dark red for destructive buttons, muted to sit
+  /// with the slate and navy.
+  static const danger = Color(0xFF7A2C2C);
+}
 
 /// The largest text scale the layouts are made for; larger system font
 /// sizes are clamped to it.
