@@ -11,6 +11,7 @@ import 'package:abs_wear/library/view/library_page.dart';
 import 'package:abs_wear/login/data/server_login.dart';
 import 'package:abs_wear/login/data/sso/sso_login.dart';
 import 'package:abs_wear/player/player.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
@@ -384,11 +385,36 @@ class LoginPageState extends State<LoginPage> {
         final next = await sso.submit(const {});
         // Back was tapped meanwhile.
         if (!identical(_sso, sso)) return;
+        // Approved: nothing may be tapped while the login completes.
+        if (next is! SsoWait && mounted) setState(() => _loggingIn = true);
         await _showSsoStep(next);
       } on Object catch (e) {
         if (identical(_sso, sso)) _ssoFailed(e);
+      } finally {
+        if (mounted && _loggingIn) setState(() => _loggingIn = false);
       }
     });
+  }
+
+  /// The username or email typed on an earlier screen of [step], once the
+  /// user has moved past it; null when there is none.
+  String? _typedIdentifier(SsoPrompt step) {
+    for (final field in step.fields.take(_ssoFieldIndex)) {
+      if (field != SsoField.username && field != SsoField.email) continue;
+      final typed = _ssoInputs[field]!.text.trim();
+      if (typed.isNotEmpty) return typed;
+    }
+    return null;
+  }
+
+  /// Back on an SSO screen: the previous field of a multi-field prompt, or
+  /// out of the SSO login.
+  void _ssoBack() {
+    if (_ssoStep is SsoPrompt && _ssoFieldIndex > 0) {
+      setState(() => _ssoFieldIndex--);
+    } else {
+      _endSso();
+    }
   }
 
   /// Ends (or cancels) the SSO login and goes back to the login form.
@@ -403,7 +429,8 @@ class LoginPageState extends State<LoginPage> {
   }
 
   void _ssoFailed(Object error) {
-    debugPrint('SSO login failed: $error');
+    // The details can hold sign-in URLs (codes, states): debug builds only.
+    if (kDebugMode) debugPrint('SSO login failed: $error');
     _endSso();
     final message = switch (error) {
       SsoException(error: SsoError.notEnabled) => l10n.ssoNotEnabled,
@@ -416,6 +443,8 @@ class LoginPageState extends State<LoginPage> {
       SsoException(error: SsoError.accessDenied) => l10n.ssoAccessDenied,
       SsoException(error: SsoError.noAccount) => l10n.ssoNoAccount,
       SsoException() => l10n.ssoFailed,
+      // A response the adapter didn't expect, not a network problem.
+      TypeError() || FormatException() => l10n.ssoFailed,
       TimeoutException() => l10n.serverTimeout,
       _ => l10n.cannotReachServer,
     };
@@ -655,49 +684,64 @@ class LoginPageState extends State<LoginPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return CrownScrollbar(
-      controller: _scrollController,
-      child: Scaffold(
-        appBar: PreferredSize(
-          preferredSize: const ui.Size.fromHeight(40),
-          child: AppBar(
-            title: Center(
-              child: Image.asset(
-                'assets/static/logo.png',
-                // Fits the 40 dp bar, clear of the round screen's edge.
-                height: 34,
-                cacheHeight: (34 * MediaQuery.devicePixelRatioOf(context))
-                    .round(),
-                semanticLabel: 'ABS Wear',
+    // Swiping back (or the back button) steps back one login screen; on
+    // the first screen, and once logged in, it leaves the app as before.
+    final canLeave =
+        _token != '' || (_stage == _Stage.server && _ssoStep == null);
+    return PopScope(
+      canPop: canLeave,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop || _busy) return;
+        if (_ssoStep != null) {
+          _ssoBack();
+        } else {
+          _back();
+        }
+      },
+      child: CrownScrollbar(
+        controller: _scrollController,
+        child: Scaffold(
+          appBar: PreferredSize(
+            preferredSize: const ui.Size.fromHeight(40),
+            child: AppBar(
+              title: Center(
+                child: Image.asset(
+                  'assets/static/logo.png',
+                  // Fits the 40 dp bar, clear of the round screen's edge.
+                  height: 34,
+                  cacheHeight: (34 * MediaQuery.devicePixelRatioOf(context))
+                      .round(),
+                  semanticLabel: 'ABS Wear',
+                ),
               ),
             ),
           ),
-        ),
-        // Centred on the round screen, where it is widest; scrolls when
-        // large text makes it taller than the screen.
-        body: LayoutBuilder(
-          builder: (context, constraints) => SingleChildScrollView(
-            controller: _scrollController,
-            // A little room below, so a long screen's last button scrolls
-            // clear of the round edge. Short screens fit without scrolling.
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                minHeight: constraints.maxHeight - 20,
-              ),
-              child: Center(
-                child: _checking
-                    ? Padding(
-                        padding: const EdgeInsets.all(24),
-                        child: CircularProgressIndicator(
-                          semanticsLabel: l10n.loading,
-                        ),
-                      )
-                    : _token == '' && _ssoStep != null
-                    ? _buildSsoStep(theme)
-                    : _token == ''
-                    ? _buildLoginForm(theme)
-                    : _buildLoggedInState(theme),
+          // Centred on the round screen, where it is widest; scrolls when
+          // large text makes it taller than the screen.
+          body: LayoutBuilder(
+            builder: (context, constraints) => SingleChildScrollView(
+              controller: _scrollController,
+              // A little room below, so a long screen's last button scrolls
+              // clear of the round edge. Short screens fit without scrolling.
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  minHeight: constraints.maxHeight - 20,
+                ),
+                child: Center(
+                  child: _checking
+                      ? Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: CircularProgressIndicator(
+                            semanticsLabel: l10n.loading,
+                          ),
+                        )
+                      : _token == '' && _ssoStep != null
+                      ? _buildSsoStep(theme)
+                      : _token == ''
+                      ? _buildLoginForm(theme)
+                      : _buildLoggedInState(theme),
+                ),
               ),
             ),
           ),
@@ -926,11 +970,7 @@ class LoginPageState extends State<LoginPage> {
         if (step is SsoPrompt) ...[
           // The account being logged in: from the provider, or as typed on
           // the screen before.
-          if (step.user ??
-                  (_ssoFieldIndex > 0
-                      ? _ssoInputs[SsoField.username]!.text.trim()
-                      : null)
-              case final user?)
+          if (step.user ?? _typedIdentifier(step) case final user?)
             Text(
               user,
               textAlign: TextAlign.center,
@@ -964,9 +1004,8 @@ class LoginPageState extends State<LoginPage> {
             obscureText: field == SsoField.password,
             autocorrect: false,
             enableSuggestions: false,
-            keyboardType: field == SsoField.code
-                ? TextInputType.number
-                : TextInputType.visiblePassword, // Disable newline
+            // Also for codes: recovery codes can have letters. No newline.
+            keyboardType: TextInputType.visiblePassword,
           ),
           const SizedBox(height: 8),
           ElevatedButton(
@@ -1033,7 +1072,7 @@ class LoginPageState extends State<LoginPage> {
           ),
         ],
         TextButton(
-          onPressed: busy ? null : _endSso,
+          onPressed: busy ? null : _ssoBack,
           child: Text(l10n.back, style: theme.textTheme.bodySmall),
         ),
       ],

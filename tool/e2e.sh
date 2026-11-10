@@ -4,6 +4,9 @@
 #   tool/e2e.sh [device-id]        # default: first connected device
 # The server URL as seen from the device comes from E2E_ABS_URL, falling back
 # to ABS_E2E_URL in tool/abs_test_server/.env.
+# The SSO tests need the device's server URL to equal ABS_E2E_URL: Authentik
+# only allows redirect URIs built from ABS_E2E_URL, so an E2E_ABS_URL
+# override must match it.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 . tool/abs_test_server/env.sh

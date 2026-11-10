@@ -104,7 +104,11 @@ class SsoLogin {
     }
     final idp = _adapterFor(page!);
     if (idp == null) {
-      throw SsoException(SsoError.unsupportedProvider, page.url.toString());
+      // Origin and path only: the query holds the login's state.
+      throw SsoException(
+        SsoError.unsupportedProvider,
+        page.url.replace(query: '').toString(),
+      );
     }
     _idp = idp;
     return await idp.begin(page);

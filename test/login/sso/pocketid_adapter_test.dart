@@ -266,6 +266,43 @@ void main() {
       );
     });
 
+    test('a brief network drop keeps waiting until approved', () async {
+      final servers = FakePocketId(
+        decisions: [Decision.offline, Decision.approved],
+        afterAuthenticate: null,
+      );
+      final (login, first) = await start(servers);
+      expect(await login.submit({}), same(first));
+      expect(await login.submit({}), isA<SsoDone>());
+      expect(servers.exchanges, 2);
+      login.close();
+    });
+
+    test(
+      'a network that never comes back: stops once the code expires',
+      () async {
+        var now = DateTime.utc(2026, 11, 11, 12);
+        final servers = FakePocketId(decisions: [Decision.offline]);
+        final adapter = PocketIdAdapter(
+          IdpContext(SsoHttp(servers.client), (_) async => (null, null)),
+          now: () => now,
+        );
+        final first = await adapter.begin(page);
+        now = now.add(const Duration(minutes: 5));
+        expect(await adapter.submit({}), same(first));
+        now = now.add(const Duration(seconds: 31));
+        await expectLater(
+          adapter.submit({}),
+          throwsA(
+            _error(
+              SsoError.failed,
+            ).having((e) => e.detail, 'detail', 'device login expired'),
+          ),
+        );
+        expect(servers.exchanges, 2);
+      },
+    );
+
     test('no expiry from Pocket ID: its default 5 minutes', () async {
       var now = DateTime.utc(2026, 11, 11, 12);
       final servers = FakePocketId(

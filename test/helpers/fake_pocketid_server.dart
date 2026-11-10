@@ -33,7 +33,8 @@ const pocketIdInteractionHtml = '''
 ''';
 
 /// What the exchange answers, in turn (the last one repeats). [hang]
-/// answers "pending" only once [FakePocketId.release] completes.
+/// answers "pending" only once [FakePocketId.release] completes. [offline]
+/// never answers: the request fails as if the network dropped.
 enum Decision {
   pending,
   approved,
@@ -43,6 +44,7 @@ enum Decision {
   badGateway,
   unavailable,
   hang,
+  offline,
 }
 
 /// Pocket ID's refusal when the user isn't in the client's allowed groups.
@@ -177,6 +179,10 @@ class FakePocketId extends FakeServers {
         if (d == Decision.hang) await release.future;
         return switch (d) {
           Decision.pending || Decision.hang => http.Response('', 202),
+          Decision.offline => throw http.ClientException(
+            'SocketException: Network is unreachable',
+            r.url,
+          ),
           Decision.badGateway => http.Response('<html>Bad Gateway</html>', 502),
           Decision.unavailable => http.Response('', 503),
           Decision.rateLimited => _error(

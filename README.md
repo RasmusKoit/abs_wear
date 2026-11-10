@@ -26,7 +26,7 @@
 - **Plays in the background** with media controls, also with the screen off.
 - **Downloads** keep going over Wi-Fi with the screen off, with a progress notification you can cancel.
 - **Made for the watch**: rotary crown scrolling, ambient mode, large text and screen reader support.
-- **Password or SSO login**, right on the watch: no phone needed.
+- **Password or SSO login**, right on the watch: no phone needed (except Pocket ID, which you approve from another device).
 - **18 languages**.
 
 Needs Wear OS 3 or newer and your own [Audiobookshelf][abs_github_link] server.
@@ -43,17 +43,19 @@ Enter your server's address and tap **Next**. The watch asks the server how you 
 
 ### With SSO (OpenID Connect)
 
-If your server has [OpenID Connect][abs_oidc_docs] set up, tap its SSO button (for example "Login with Authentik"). The watch signs you in with your identity provider itself, over Wi-Fi or LTE, without a browser or a phone: you get the provider's own questions (username, password, a code from your authenticator app, allow access) as watch screens. With SSO only, the watch goes straight there.
+If your server has [OpenID Connect][abs_oidc_docs] set up, tap its SSO button (for example "Login with Authentik"). The watch signs you in with your identity provider itself, over Wi-Fi or LTE, without a browser or a phone (except Pocket ID, see below): you get the provider's own questions (username, password, a code from your authenticator app, allow access) as watch screens. With SSO only, the watch goes straight there.
 
 For the server admin:
 
 1. Set up OpenID Connect in Audiobookshelf (**Settings → Authentication**).
-2. Add `abswear://oauth` to **Allowed Mobile Redirect URIs**. The identity provider itself needs no change for ABS Wear.
+2. Add `abswear://oauth` to **Allowed Mobile Redirect URIs**.
+3. At the identity provider, the Audiobookshelf client must allow both `https://<your-server>/auth/openid/callback` and `https://<your-server>/auth/openid/mobile-redirect`. The second one is the same one the official Audiobookshelf phone app uses. So if that app already logs in with SSO, nothing changes.
 
 Identity providers the watch can sign in to by itself:
 
 - Authentik, Authelia, Logto, VoidAuth and tinyauth
-- Keycloak and Gitea, plus Forgejo, Dex, Kanidm, Zitadel (V1 login) and Nextcloud through their sign-in forms
+- Keycloak and Gitea through their sign-in forms
+- Forgejo, Dex, Kanidm and Zitadel (V1 login) through their sign-in forms too, but not yet tested against a live server
 - Pocket ID: the watch shows a code to approve with "sign in with another device" on a phone or computer where you're signed in
 
 Passkeys, captchas and setting up a new second factor need a browser, so they can't be done on the watch. Other providers are tracked in [issue #80][sso_providers_issue].

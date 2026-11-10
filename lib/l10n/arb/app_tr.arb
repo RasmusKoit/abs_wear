@@ -76,7 +76,7 @@
     "ssoNoAccount": "Bu kullanıcının Audiobookshelf hesabı yok.",
     "ssoFailed": "SSO girişi başarısız. Tekrar deneyin.",
     "next": "İleri",
-    "passwordLogin": "Parola ile giriş",
+    "passwordLogin": "Şifre ile giriş",
     "back": "Geri",
     "emailLabel": "E-posta",
     "ssoWaitApprove": "Girişi diğer cihazınızda onaylayın.",

@@ -22,6 +22,7 @@ import 'package:http/testing.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../helpers/fake_pocketid_server.dart';
 import '../helpers/helpers.dart';
 
 const _server = 'http://abs.test';
@@ -152,11 +153,13 @@ void main() {
       }, () => FakeServers().client);
     });
 
-    /// Enters the server and chooses SSO.
+    /// Enters the server and chooses SSO. Without [settle], doesn't wait for
+    /// spinners to stop (a screen waiting for approval spins until then).
     Future<void> startSso(
       WidgetTester tester,
-      Widget Function(Widget home) app,
-    ) async {
+      Widget Function(Widget home) app, {
+      bool settle = true,
+    }) async {
       await next(tester, app);
       // The second choice is SSO.
       await tester.drag(
@@ -165,7 +168,13 @@ void main() {
       );
       await tester.pumpAndSettle();
       await tester.tap(find.byType(ElevatedButton).last);
-      await tester.pumpAndSettle();
+      if (settle) {
+        await tester.pumpAndSettle();
+      } else {
+        for (var i = 0; i < 10; i++) {
+          await tester.pump(const Duration(milliseconds: 10));
+        }
+      }
     }
 
     Future<void> submit(WidgetTester tester, String text) async {
@@ -207,6 +216,33 @@ void main() {
         const Offset(0, 400),
       );
       await tester.pumpAndSettle();
+      expectNoLayoutErrors(tester);
+      await expectAccessible(tester);
+    });
+
+    screen('SSO wait', (tester, app) async {
+      // Never approved: the screen keeps waiting.
+      final servers = FakePocketId(decisions: [Decision.pending]);
+      await http.runWithClient(
+        () => startSso(tester, app, settle: false),
+        () => servers.client,
+      );
+      // The code is the same in every language; a spinner, no fields.
+      expect(find.textContaining('PAEX5F5A'), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(find.byType(TextFormField), findsNothing);
+      expect(find.byType(TextButton), findsOneWidget); // Back
+      // From the top: a button half scrolled off would fail the size check.
+      tester
+          .state<ScrollableState>(
+            find.descendant(
+              of: find.byType(SingleChildScrollView),
+              matching: find.byType(Scrollable),
+            ),
+          )
+          .position
+          .jumpTo(0);
+      await tester.pump();
       expectNoLayoutErrors(tester);
       await expectAccessible(tester);
     });

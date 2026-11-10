@@ -141,6 +141,10 @@ class PocketIdAdapter implements IdpAdapter {
       );
     } on TimeoutException {
       return _keepWaiting();
+    } on http.ClientException {
+      // The network dropped for a moment (e.g. a SocketException): try
+      // again on the next poll, until the request has surely expired.
+      return _keepWaiting();
     }
     switch (response.statusCode) {
       case 200:

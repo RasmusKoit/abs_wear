@@ -26,9 +26,19 @@ class FakeServers {
     this.idpPagePath = '/if/flow/default-authentication-flow/',
     this.authorizePath = '/application/o/authorize/',
     this.idpAuthorizeUrl,
+    this.buttonText,
+    this.autoLaunch = false,
   });
 
   final bool openid;
+
+  /// The admin's label for the SSO button (`authOpenIDButtonText`), sent in
+  /// `/status` when set.
+  final String? buttonText;
+
+  /// The admin's "auto launch" setting (`authOpenIDAutoLaunch`), sent in
+  /// `/status` when set.
+  final bool autoLaunch;
 
   /// The server also offers password login.
   final bool password;
@@ -103,6 +113,12 @@ class FakeServers {
           return json({
             'serverVersion': '2.37.2',
             'authMethods': [if (password) 'local', if (openid) 'openid'],
+            if (buttonText != null || autoLaunch)
+              'authFormData': {
+                'authLoginCustomMessage': null,
+                if (buttonText != null) 'authOpenIDButtonText': buttonText,
+                if (autoLaunch) 'authOpenIDAutoLaunch': true,
+              },
           });
         case '/auth/openid':
           final q = r.url.queryParameters;
