@@ -25,6 +25,7 @@ class FakeServers {
     this.badState = false,
     this.idpPagePath = '/if/flow/default-authentication-flow/',
     this.authorizePath = '/application/o/authorize/',
+    this.idpAuthorizeUrl,
   });
 
   final bool openid;
@@ -44,6 +45,10 @@ class FakeServers {
 
   /// Where the server sends the user to log in at the identity provider.
   final String authorizePath;
+
+  /// A whole authorize URL instead (another host or query); overrides
+  /// [authorizePath].
+  final String? idpAuthorizeUrl;
 
   String? state;
   String? challenge;
@@ -110,7 +115,7 @@ class FakeServers {
             return http.Response('Invalid redirect_uri', 400);
           }
           return redirect(
-            '$fakeIdpUrl$authorizePath?client_id=abs',
+            idpAuthorizeUrl ?? '$fakeIdpUrl$authorizePath?client_id=abs',
             headers: {
               // Joined the way dart:io joins repeated headers.
               'set-cookie':
