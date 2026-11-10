@@ -99,6 +99,7 @@ class FakeServers {
               // Joined the way dart:io joins repeated headers.
               'set-cookie':
                   'auth_method=openid-mobile; Max-Age=315360000; Path=/; '
+                  // No space after the comma, like dart:io joins headers.
                   // ignore: missing_whitespace_between_adjacent_strings
                   'Expires=Thu, 08 Nov 2036 10:00:00 GMT; HttpOnly,'
                   'connect.sid=s%3Aabc.def; Path=/; HttpOnly',
