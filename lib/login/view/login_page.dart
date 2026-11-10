@@ -1018,14 +1018,14 @@ class LoginPageState extends State<LoginPage> {
         Center(
           child: ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: theme.colorScheme.errorContainer,
+              backgroundColor: theme.colorScheme.error,
             ),
             onPressed: () => unawaited(_confirmLogout()),
-            // The theme's destructive colours (dark red, cream text).
+            // Dark text: white on the error red is too faint to read.
             child: Text(
               l10n.logout,
               style: theme.textTheme.bodyMedium!.copyWith(
-                color: theme.colorScheme.onErrorContainer,
+                color: theme.colorScheme.onError,
               ),
             ),
           ),
