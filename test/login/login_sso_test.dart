@@ -366,6 +366,27 @@ void main() {
       expect(find.text('Login with password'), findsOneWidget);
     });
 
+    testWidgets('gives up after the time limit', (tester) async {
+      final phone = FakePhoneAuth(hang: true);
+      LoginPageState.phoneAuth = phone;
+      final servers = unknownProvider();
+      await http.runWithClient(() async {
+        await startSso(tester);
+        await tapContinueOnPhone(tester);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(find.text('Finish signing in on your phone.'), findsOneWidget);
+        await tester.pump(LoginPageState.phoneSignInLimit);
+        await tester.pump();
+      }, () => servers.client);
+      expect(phone.cancels, 1);
+      expect(
+        find.text("Sign-in on the phone didn't finish. Try again."),
+        findsOneWidget,
+      );
+      expect(find.text('Finish signing in on your phone.'), findsNothing);
+    });
+
     testWidgets('Back while waiting stops it', (tester) async {
       final phone = FakePhoneAuth(hang: true);
       LoginPageState.phoneAuth = phone;

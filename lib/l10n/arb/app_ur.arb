@@ -83,5 +83,6 @@
     "ssoWaitCode": "کسی دوسرے آلے پر یہ کوڈ درج کریں: {code}",
     "ssoContinueOnPhone": "فون پر جاری رکھیں",
     "ssoPhoneWaiting": "اپنے فون پر سائن ان مکمل کریں۔",
-    "ssoPhoneUnavailable": "جاری رکھنے کے لیے کوئی فون نہیں۔ Android فون جوڑیں یا پاس ورڈ سے لاگ ان کریں۔"
+    "ssoPhoneUnavailable": "جاری رکھنے کے لیے کوئی فون نہیں۔ Android فون جوڑیں یا پاس ورڈ سے لاگ ان کریں۔",
+    "ssoPhoneTimedOut": "فون پر سائن ان مکمل نہیں ہوا۔ دوبارہ کوشش کریں۔"
 }

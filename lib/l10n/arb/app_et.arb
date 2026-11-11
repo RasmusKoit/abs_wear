@@ -83,5 +83,6 @@
     "ssoWaitCode": "Sisesta see kood teises seadmes: {code}",
     "ssoContinueOnPhone": "Jätka telefonis",
     "ssoPhoneWaiting": "Lõpeta sisselogimine oma telefonis.",
-    "ssoPhoneUnavailable": "Pole telefoni, kus jätkata. Seo Android-telefon või logi sisse parooliga."
+    "ssoPhoneUnavailable": "Pole telefoni, kus jätkata. Seo Android-telefon või logi sisse parooliga.",
+    "ssoPhoneTimedOut": "Telefonis sisselogimine ei lõppenud. Proovi uuesti."
 }

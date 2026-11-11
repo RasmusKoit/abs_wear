@@ -83,5 +83,6 @@
     "ssoWaitCode": "على جهاز آخر، أدخل هذا الرمز: {code}",
     "ssoContinueOnPhone": "المتابعة على الهاتف",
     "ssoPhoneWaiting": "أكمل تسجيل الدخول على هاتفك.",
-    "ssoPhoneUnavailable": "لا يوجد هاتف للمتابعة عليه. اربط هاتف Android أو سجّل الدخول بكلمة المرور."
+    "ssoPhoneUnavailable": "لا يوجد هاتف للمتابعة عليه. اربط هاتف Android أو سجّل الدخول بكلمة المرور.",
+    "ssoPhoneTimedOut": "لم يكتمل تسجيل الدخول على الهاتف. حاول مرة أخرى."
 }

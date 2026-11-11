@@ -67,6 +67,9 @@ class LoginPageState extends State<LoginPage> {
   @visibleForTesting
   static PhoneAuth phoneAuth = const PhoneAuth();
 
+  /// How long the watch waits for a sign-in on the phone.
+  static const phoneSignInLimit = Duration(minutes: 3);
+
   /// The SSO login being finished on the phone, while waiting for it.
   SsoLogin? _phoneSso;
   bool _phoneWaiting = false;
@@ -500,8 +503,9 @@ class LoginPageState extends State<LoginPage> {
       _phoneSso = login;
       final response = await phoneAuth
           .authorize(start)
-          // The server forgets the login after 10 minutes anyway.
-          .timeout(const Duration(minutes: 10));
+          // The watch can't tell a sign-in still going from one that got
+          // stuck on the phone, so it stops waiting after a while.
+          .timeout(phoneSignInLimit);
       if (!identical(_phoneSso, login)) return; // Cancelled.
       setState(() => _loggingIn = true);
       final done = await login.finishOnPhone(response);
@@ -557,7 +561,7 @@ class LoginPageState extends State<LoginPage> {
       SsoException(error: SsoError.notEnabled) => l10n.ssoNotEnabled,
       SsoException(error: SsoError.noAccount) => l10n.ssoNoAccount,
       SsoException() || TypeError() || FormatException() => l10n.ssoFailed,
-      TimeoutException() => l10n.ssoFailed,
+      TimeoutException() => l10n.ssoPhoneTimedOut,
       _ => l10n.cannotReachServer,
     };
     if (mounted) setState(() => _loginError = message);

@@ -407,5 +407,9 @@
     "ssoPhoneUnavailable": "No phone to continue on. Pair an Android phone, or log in with a password.",
     "@ssoPhoneUnavailable": {
         "description": "SSO login: no paired (Android) phone is available to continue on"
+    },
+    "ssoPhoneTimedOut": "Sign-in on the phone didn't finish. Try again.",
+    "@ssoPhoneTimedOut": {
+        "description": "SSO login: the watch stopped waiting for the sign-in on the phone"
     }
 }

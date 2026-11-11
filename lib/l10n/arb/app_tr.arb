@@ -83,5 +83,6 @@
     "ssoWaitCode": "Başka bir cihazda bu kodu girin: {code}",
     "ssoContinueOnPhone": "Telefonda devam et",
     "ssoPhoneWaiting": "Girişi telefonunuzda tamamlayın.",
-    "ssoPhoneUnavailable": "Devam edilecek telefon yok. Bir Android telefon eşleyin veya şifre ile giriş yapın."
+    "ssoPhoneUnavailable": "Devam edilecek telefon yok. Bir Android telefon eşleyin veya şifre ile giriş yapın.",
+    "ssoPhoneTimedOut": "Telefonda giriş tamamlanmadı. Tekrar deneyin."
 }

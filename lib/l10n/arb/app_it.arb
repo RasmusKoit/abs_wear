@@ -83,5 +83,6 @@
     "ssoWaitCode": "Su un altro dispositivo, inserisci questo codice: {code}",
     "ssoContinueOnPhone": "Continua sul telefono",
     "ssoPhoneWaiting": "Completa l'accesso sul telefono.",
-    "ssoPhoneUnavailable": "Nessun telefono su cui continuare. Associa un telefono Android o accedi con la password."
+    "ssoPhoneUnavailable": "Nessun telefono su cui continuare. Associa un telefono Android o accedi con la password.",
+    "ssoPhoneTimedOut": "L'accesso sul telefono non è stato completato. Riprova."
 }

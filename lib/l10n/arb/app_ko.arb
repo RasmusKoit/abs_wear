@@ -83,5 +83,6 @@
     "ssoWaitCode": "다른 기기에서 이 코드를 입력하세요: {code}",
     "ssoContinueOnPhone": "휴대전화에서 계속",
     "ssoPhoneWaiting": "휴대전화에서 로그인을 완료하세요.",
-    "ssoPhoneUnavailable": "계속할 휴대전화가 없습니다. Android 휴대전화를 연결하거나 비밀번호로 로그인하세요."
+    "ssoPhoneUnavailable": "계속할 휴대전화가 없습니다. Android 휴대전화를 연결하거나 비밀번호로 로그인하세요.",
+    "ssoPhoneTimedOut": "휴대전화에서 로그인이 완료되지 않았습니다. 다시 시도하세요."
 }

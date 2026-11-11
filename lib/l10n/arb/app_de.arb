@@ -83,5 +83,6 @@
     "ssoWaitCode": "Auf einem anderen Gerät diesen Code eingeben: {code}",
     "ssoContinueOnPhone": "Auf dem Handy fortfahren",
     "ssoPhoneWaiting": "Die Anmeldung auf dem Handy abschließen.",
-    "ssoPhoneUnavailable": "Kein Handy zum Fortfahren. Ein Android-Handy koppeln oder mit Passwort anmelden."
+    "ssoPhoneUnavailable": "Kein Handy zum Fortfahren. Ein Android-Handy koppeln oder mit Passwort anmelden.",
+    "ssoPhoneTimedOut": "Die Anmeldung auf dem Handy wurde nicht abgeschlossen. Erneut versuchen."
 }

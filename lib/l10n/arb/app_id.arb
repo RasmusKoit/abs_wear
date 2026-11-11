@@ -83,5 +83,6 @@
     "ssoWaitCode": "Di perangkat lain, masukkan kode ini: {code}",
     "ssoContinueOnPhone": "Lanjutkan di ponsel",
     "ssoPhoneWaiting": "Selesaikan login di ponsel Anda.",
-    "ssoPhoneUnavailable": "Tidak ada ponsel untuk melanjutkan. Pasangkan ponsel Android atau masuk dengan kata sandi."
+    "ssoPhoneUnavailable": "Tidak ada ponsel untuk melanjutkan. Pasangkan ponsel Android atau masuk dengan kata sandi.",
+    "ssoPhoneTimedOut": "Login di ponsel tidak selesai. Coba lagi."
 }
