@@ -9,6 +9,7 @@ import 'package:abs_wear/l10n/l10n.dart';
 import 'package:abs_wear/library/data/json_cache.dart';
 import 'package:abs_wear/library/view/library_page.dart';
 import 'package:abs_wear/login/data/server_login.dart';
+import 'package:abs_wear/login/data/sso/phone_auth.dart';
 import 'package:abs_wear/login/data/sso/sso_login.dart';
 import 'package:abs_wear/player/player.dart';
 import 'package:flutter/foundation.dart';
@@ -61,6 +62,25 @@ class LoginPageState extends State<LoginPage> {
 
   /// The next check while an [SsoWait] is shown.
   Timer? _ssoPoll;
+
+  /// Opens sign-ins on the paired phone (for tests: a fake).
+  @visibleForTesting
+  static PhoneAuth phoneAuth = const PhoneAuth();
+
+  /// How long the watch waits for a sign-in on the phone.
+  static const phoneSignInLimit = Duration(minutes: 3);
+
+  /// The SSO login being finished on the phone, while waiting for it.
+  SsoLogin? _phoneSso;
+
+  /// Numbers phone sign-in attempts, so a cancelled one can't touch a newer
+  /// one.
+  int _phoneAttempt = 0;
+  bool _phoneWaiting = false;
+
+  /// The last SSO login stopped at something the watch can't do, so the
+  /// phone is offered.
+  bool _offerPhone = false;
 
   /// Why the server check or the last SSO login failed, shown under the
   /// buttons.
@@ -307,6 +327,7 @@ class LoginPageState extends State<LoginPage> {
   /// One login screen back.
   void _back() => setState(() {
     _loginError = null;
+    _offerPhone = false;
     passwordController.clear();
     _stage = switch (_stage) {
       _Stage.password => _Stage.username,
@@ -324,6 +345,7 @@ class LoginPageState extends State<LoginPage> {
     setState(() {
       _loggingIn = true;
       _loginError = null;
+      _offerPhone = false;
     });
     try {
       final (sso, step) = await SsoLogin.start(url);
@@ -450,7 +472,163 @@ class LoginPageState extends State<LoginPage> {
       TimeoutException() => l10n.serverTimeout,
       _ => l10n.cannotReachServer,
     };
-    if (mounted) setState(() => _loginError = message);
+    final offerPhone =
+        error is SsoException &&
+        (error.error == SsoError.unsupportedProvider ||
+            error.error == SsoError.unsupportedStep) &&
+        !_phoneCantCarry(error);
+    if (mounted) {
+      setState(() {
+        _loginError = message;
+        _offerPhone = offerPhone;
+      });
+    }
+  }
+
+  /// Microsoft's codes (about 2 KB) don't fit through Google's relay for
+  /// watches, which cuts addresses after 2046 characters (#82): offering
+  /// the phone would only end in a 3-minute wait. Unless the experiment
+  /// sends the sign-in straight to the companion app instead.
+  bool _phoneCantCarry(SsoException error) {
+    if (phoneAuth.redirectBase.isNotEmpty) return false;
+    final host = Uri.tryParse(error.detail ?? '')?.host ?? '';
+    return const {
+      'login.microsoftonline.com',
+      'login.microsoft.com',
+      'login.live.com',
+    }.contains(host);
+  }
+
+  /// "Continue on phone": the same SSO login, finished in the paired
+  /// phone's browser. The watch makes the server call first (and keeps its
+  /// session), the phone opens the identical link, and its answer comes
+  /// back here for the code exchange.
+  Future<void> _continueOnPhone() async {
+    final url = await _serverUrl(serverUrlController.text);
+    if (url == null || !mounted) return;
+    _sessionEpoch++;
+    // Back (or a newer attempt) bumps this: an older attempt still waiting
+    // for the server or the phone then gives up without touching anything.
+    final attempt = ++_phoneAttempt;
+    bool current() => mounted && attempt == _phoneAttempt;
+    setState(() {
+      _loginError = null;
+      _offerPhone = false;
+      _phoneWaiting = true;
+    });
+    SsoLogin? sso;
+    var redirect = '';
+    try {
+      redirect = await phoneAuth.redirectUri();
+      if (!current()) return;
+      final (login, start) = await SsoLogin.startOnPhone(
+        url,
+        redirectUri: redirect,
+      );
+      sso = login;
+      if (!current()) return;
+      _phoneSso = login;
+      final response = await phoneAuth
+          .authorize(start)
+          // The watch can't tell a sign-in still going from one that got
+          // stuck on the phone, so it stops waiting after a while.
+          .timeout(
+            phoneSignInLimit,
+            onTimeout: () => throw const _PhoneTimedOut(),
+          );
+      if (!current()) return;
+      setState(() => _loggingIn = true);
+      final done = await login.finishOnPhone(response);
+      if (!current() || done is! SsoDone) return;
+      final user = done.data['user'] as Map<String, dynamic>;
+      await _completeLogin(
+        url,
+        done.data,
+        username: user['username'] as String,
+      );
+    } on Object catch (e) {
+      if (current()) {
+        if (e is _PhoneTimedOut) unawaited(_cancelPhoneRequest());
+        _phoneFailed(e, redirect);
+      }
+    } finally {
+      sso?.close();
+      if (current()) {
+        _phoneSso = null;
+        setState(() {
+          _phoneWaiting = false;
+          _loggingIn = false;
+        });
+      }
+    }
+  }
+
+  /// Back while waiting for the phone.
+  void _cancelPhone() {
+    _phoneAttempt++;
+    _phoneSso?.close();
+    _phoneSso = null;
+    unawaited(_cancelPhoneRequest());
+    setState(() {
+      _phoneWaiting = false;
+      _loggingIn = false;
+      // Back where it was offered, ready to try again.
+      _offerPhone = true;
+    });
+  }
+
+  Future<void> _cancelPhoneRequest() async {
+    try {
+      await phoneAuth.cancel();
+    } on Object catch (e) {
+      if (kDebugMode) debugPrint('Could not cancel the phone sign-in: $e');
+    }
+  }
+
+  void _phoneFailed(Object error, String redirect) {
+    if (kDebugMode) debugPrint('Phone sign-in failed: $error');
+    final noPassword = !(_serverLogin?.password ?? true);
+    final message = switch (error) {
+      PhoneAuthException(error: PhoneAuthError.cancelled) => null,
+      PhoneAuthException(error: PhoneAuthError.unsupported) =>
+        l10n.ssoPhoneUnsupported,
+      PhoneAuthException(error: PhoneAuthError.phoneUnavailable) =>
+        noPassword
+            ? l10n.ssoPhoneUnavailableNoPassword
+            : l10n.ssoPhoneUnavailable,
+      PhoneAuthException() => l10n.ssoFailed,
+      _PhoneTimedOut() => l10n.ssoPhoneTimedOut,
+      SsoException(error: SsoError.redirectNotAllowed) =>
+        l10n.ssoRedirectNotAllowed(redirect),
+      SsoException(error: SsoError.notEnabled) => l10n.ssoNotEnabled,
+      SsoException(error: SsoError.noAccount) => l10n.ssoNoAccount,
+      SsoException() || TypeError() || FormatException() => l10n.ssoFailed,
+      TimeoutException() => l10n.serverTimeout,
+      _ => l10n.cannotReachServer,
+    };
+    // Worth another go: the phone timed out or was cancelled there, or
+    // something went wrong on the way. Not when it can't work at all.
+    final retry = switch (error) {
+      _PhoneTimedOut() => true,
+      PhoneAuthException(
+        error: PhoneAuthError.cancelled || PhoneAuthError.failed,
+      ) =>
+        true,
+      PhoneAuthException() => false,
+      SsoException(
+        error: SsoError.redirectNotAllowed ||
+            SsoError.notEnabled ||
+            SsoError.noAccount,
+      ) =>
+        false,
+      _ => true,
+    };
+    if (mounted) {
+      setState(() {
+        _loginError = message;
+        _offerPhone = retry;
+      });
+    }
   }
 
   /// The user's saved library if it still exists, otherwise the first book
@@ -689,12 +867,15 @@ class LoginPageState extends State<LoginPage> {
     // Swiping back (or the back button) steps back one login screen; on
     // the first screen, and once logged in, it leaves the app as before.
     final canLeave =
-        _token != '' || (_stage == _Stage.server && _ssoStep == null);
+        _token != '' ||
+        (_stage == _Stage.server && _ssoStep == null && !_phoneWaiting);
     return PopScope(
       canPop: canLeave,
       onPopInvokedWithResult: (didPop, _) {
         if (didPop || _busy) return;
-        if (_ssoStep != null) {
+        if (_phoneWaiting) {
+          _cancelPhone();
+        } else if (_ssoStep != null) {
           _ssoBack();
         } else {
           _back();
@@ -738,6 +919,8 @@ class LoginPageState extends State<LoginPage> {
                             semanticsLabel: l10n.loading,
                           ),
                         )
+                      : _token == '' && _phoneWaiting
+                      ? _buildPhoneWait(theme)
                       : _token == '' && _ssoStep != null
                       ? _buildSsoStep(theme)
                       : _token == ''
@@ -794,6 +977,7 @@ class LoginPageState extends State<LoginPage> {
           child: _busy ? _buttonSpinner() : Text(l10n.next),
         ),
         ..._loginErrorText(theme),
+        ..._phoneOffer(theme),
       ],
     );
   }
@@ -827,6 +1011,7 @@ class LoginPageState extends State<LoginPage> {
                 ),
         ),
         ..._loginErrorText(theme),
+        ..._phoneOffer(theme),
         _backButton(theme),
       ],
     );
@@ -930,6 +1115,45 @@ class LoginPageState extends State<LoginPage> {
     onPressed: _busy ? null : _back,
     child: Text(l10n.back, style: theme.textTheme.bodySmall),
   );
+
+  /// "Continue on phone" under an SSO error the watch can't get past.
+  List<Widget> _phoneOffer(ThemeData theme) => [
+    if (_offerPhone) ...[
+      const SizedBox(height: 4),
+      ElevatedButton(
+        onPressed: _busy ? null : () => unawaited(_continueOnPhone()),
+        child: Text(l10n.ssoContinueOnPhone, textAlign: TextAlign.center),
+      ),
+    ],
+  ];
+
+  /// While the sign-in is finished on the phone.
+  Widget _buildPhoneWait(ThemeData theme) {
+    return Column(
+      children: [
+        const Icon(Icons.phone_android_rounded, size: 32),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+          child: Text(
+            l10n.ssoPhoneWaiting,
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodySmall,
+          ),
+        ),
+        SizedBox.square(
+          dimension: 24,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            semanticsLabel: l10n.loading,
+          ),
+        ),
+        TextButton(
+          onPressed: _loggingIn ? null : _cancelPhone,
+          child: Text(l10n.back, style: theme.textTheme.bodySmall),
+        ),
+      ],
+    );
+  }
 
   List<Widget> _loginErrorText(ThemeData theme) => [
     if (_loginError case final error?)
@@ -1129,3 +1353,9 @@ class LoginPageState extends State<LoginPage> {
 
 /// The logged-out screens, one question each.
 enum _Stage { server, choose, username, password }
+
+/// The watch stopped waiting for the sign-in on the phone
+/// ([LoginPageState.phoneSignInLimit]).
+class _PhoneTimedOut implements Exception {
+  const _PhoneTimedOut();
+}

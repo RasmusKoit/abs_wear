@@ -6,6 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
+import 'fake_phone_auth.dart';
+
 const fakeAbsUrl = 'http://abs.test';
 const fakeIdpUrl = 'http://idp.test';
 
@@ -17,6 +19,7 @@ class FakeServers {
     this.openid = true,
     this.password = true,
     this.passwordOnFirstPage = false,
+    this.holdStart,
     this.startStatus = 302,
     this.webauthnOnly = false,
     this.otp = false,
@@ -45,6 +48,10 @@ class FakeServers {
 
   /// Authentik asks for the username and password on one page.
   final bool passwordOnFirstPage;
+
+  /// While set and not completed, `/auth/openid` doesn't answer yet (a slow
+  /// server).
+  Future<void>? holdStart;
   final int startStatus;
   final bool webauthnOnly;
   final bool otp;
@@ -59,6 +66,10 @@ class FakeServers {
   /// A whole authorize URL instead (another host or query); overrides
   /// [authorizePath].
   final String? idpAuthorizeUrl;
+
+  /// The redirect URI the login asked for: the watch's own, or the Wear OS
+  /// relay for phone sign-in.
+  String redirectUri = ssoRedirectUri;
 
   String? state;
   String? challenge;
@@ -121,8 +132,10 @@ class FakeServers {
               },
           });
         case '/auth/openid':
+          if (holdStart case final hold?) await hold;
           final q = r.url.queryParameters;
-          expect(q['redirect_uri'], ssoRedirectUri);
+          expect(q['redirect_uri'], anyOf(ssoRedirectUri, fakeRelayUri));
+          redirectUri = q['redirect_uri']!;
           expect(q['code_challenge_method'], 'S256');
           expect(q['response_type'], 'code');
           state = q['state'];
@@ -151,7 +164,7 @@ class FakeServers {
         case '/auth/openid/mobile-redirect':
           final q = r.url.queryParameters;
           return redirect(
-            '$ssoRedirectUri?code=${q['code']}'
+            '$redirectUri?code=${q['code']}'
             '&state=${badState ? 'other' : q['state']}',
           );
         case '/auth/openid/callback':
@@ -174,6 +187,13 @@ class FakeServers {
             'userDefaultLibraryId': 'lib1',
           });
       }
+    }
+    // An identity provider elsewhere ([idpAuthorizeUrl]): just its login
+    // page, which no adapter knows.
+    if (idpAuthorizeUrl case final other?
+        when !other.startsWith(fakeIdpUrl) &&
+            r.url.host == Uri.parse(other).host) {
+      return http.Response('<html>sign in</html>', 200);
     }
     if (url.startsWith(fakeIdpUrl)) {
       if (path == '/application/o/authorize/') {

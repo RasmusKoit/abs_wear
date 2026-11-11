@@ -10,6 +10,7 @@ import 'package:abs_wear/library/view/downloads_page.dart';
 import 'package:abs_wear/library/view/episodes_page.dart';
 import 'package:abs_wear/library/view/libraries_page.dart';
 import 'package:abs_wear/library/view/library_page.dart';
+import 'package:abs_wear/login/data/sso/phone_auth.dart';
 import 'package:abs_wear/login/view/login_page.dart';
 import 'package:abs_wear/player/darts/audio_player.dart';
 import 'package:abs_wear/player/view/controls_view.dart';
@@ -218,6 +219,39 @@ void main() {
       await tester.pumpAndSettle();
       expectNoLayoutErrors(tester);
       await expectAccessible(tester);
+    });
+
+    screen('SSO on the phone', (tester, app) async {
+      final phone = FakePhoneAuth(hang: true);
+      LoginPageState.phoneAuth = phone;
+      addTearDown(() => LoginPageState.phoneAuth = const PhoneAuth());
+      await http.runWithClient(() async {
+        // A provider the watch can't drive: the error and the phone offer.
+        await startSso(tester, app);
+        expect(find.byType(ElevatedButton), findsNWidgets(3));
+        await tester.drag(
+          find.byType(SingleChildScrollView),
+          const Offset(0, 400),
+        );
+        await tester.pumpAndSettle();
+        expectNoLayoutErrors(tester);
+        await expectAccessible(tester);
+        // Waiting for the phone (its spinner never settles).
+        await tester.drag(
+          find.byType(SingleChildScrollView),
+          const Offset(0, -400),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byType(ElevatedButton).last);
+        for (var i = 0; i < 10; i++) {
+          await tester.pump(const Duration(milliseconds: 10));
+        }
+        expect(find.byIcon(Icons.phone_android_rounded), findsOneWidget);
+        expectNoLayoutErrors(tester);
+        await expectAccessible(tester);
+        await tester.tap(find.byType(TextButton));
+        await tester.pump();
+      }, () => FakeServers(idpPagePath: '/realms/x/protocol/login').client);
     });
 
     screen('SSO wait', (tester, app) async {

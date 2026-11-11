@@ -1,5 +1,6 @@
 export 'fake_crown.dart';
 export 'fake_path_provider.dart';
+export 'fake_phone_auth.dart';
 export 'fake_sso_servers.dart';
 export 'pump_app.dart';
 export 'real_zone.dart';

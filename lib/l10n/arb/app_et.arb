@@ -80,5 +80,11 @@
     "back": "Tagasi",
     "emailLabel": "E-post",
     "ssoWaitApprove": "Kinnita sisselogimine oma teises seadmes.",
-    "ssoWaitCode": "Sisesta see kood teises seadmes: {code}"
+    "ssoWaitCode": "Sisesta see kood teises seadmes: {code}",
+    "ssoContinueOnPhone": "Jätka telefonis",
+    "ssoPhoneWaiting": "Lõpeta sisselogimine oma telefonis.",
+    "ssoPhoneUnavailable": "Pole telefoni, kus jätkata. Seo Android-telefon või logi sisse parooliga.",
+    "ssoPhoneTimedOut": "Telefonis sisselogimine ei lõppenud. Proovi uuesti.",
+    "ssoPhoneUnsupported": "See kell ei saa sisselogimist telefonis jätkata.",
+    "ssoPhoneUnavailableNoPassword": "Pole telefoni, kus jätkata. Seo Android-telefon."
 }

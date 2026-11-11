@@ -80,5 +80,11 @@
     "back": "ফিরে যান",
     "emailLabel": "ইমেল",
     "ssoWaitApprove": "আপনার অন্য ডিভাইসে সাইন-ইন অনুমোদন করুন।",
-    "ssoWaitCode": "অন্য ডিভাইসে এই কোডটি লিখুন: {code}"
+    "ssoWaitCode": "অন্য ডিভাইসে এই কোডটি লিখুন: {code}",
+    "ssoContinueOnPhone": "ফোনে চালিয়ে যান",
+    "ssoPhoneWaiting": "আপনার ফোনে সাইন-ইন শেষ করুন।",
+    "ssoPhoneUnavailable": "চালিয়ে যাওয়ার মতো কোনো ফোন নেই। একটি Android ফোন যুক্ত করুন বা পাসওয়ার্ড দিয়ে লগ ইন করুন।",
+    "ssoPhoneTimedOut": "ফোনে সাইন-ইন শেষ হয়নি। আবার চেষ্টা করুন।",
+    "ssoPhoneUnsupported": "এই ঘড়ি ফোনে সাইন-ইন চালিয়ে যেতে পারে না।",
+    "ssoPhoneUnavailableNoPassword": "চালিয়ে যাওয়ার মতো কোনো ফোন নেই। একটি Android ফোন যুক্ত করুন।"
 }

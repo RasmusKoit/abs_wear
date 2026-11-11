@@ -15,13 +15,17 @@ export 'sso_types.dart';
 /// Call [start], show each returned [SsoStep] and pass the answers to
 /// [submit] until it returns [SsoDone]. [close] when finished or cancelled.
 class SsoLogin {
-  SsoLogin._(this.serverUrl, this._http);
+  SsoLogin._(this.serverUrl, this._http, [this._redirectUri = ssoRedirectUri]);
 
   /// [serverUrl] without a trailing slash, as for password login.
   final String serverUrl;
   final SsoHttp _http;
   late final String _state = _random(24);
   late final String _verifier = _random(48);
+
+  /// Where the identity provider's answer goes: [ssoRedirectUri] when the
+  /// watch drives the login, the Wear OS relay when the phone does.
+  final String _redirectUri;
   IdpAdapter? _idp;
 
   static const _maxRedirects = 30;
@@ -42,6 +46,39 @@ class SsoLogin {
       rethrow;
     }
   }
+
+  /// Starts an SSO login to finish in the paired phone's browser: checks
+  /// the server and makes the watch's own `/auth/openid` call with
+  /// [redirectUri] (the Wear OS relay), so the server's session cookie
+  /// stays here. Returns the identical URL for the phone to open; pass
+  /// the phone's answer to [finishOnPhone].
+  static Future<(SsoLogin, Uri)> startOnPhone(
+    String serverUrl, {
+    required String redirectUri,
+    http.Client? client,
+  }) async {
+    final login = SsoLogin._(serverUrl, SsoHttp(client), redirectUri);
+    try {
+      await login._checkServer();
+      final start = login._startUrl();
+      await login._start(start);
+      return (login, start);
+    } on Object {
+      login.close();
+      rethrow;
+    }
+  }
+
+  /// Finishes a login from [startOnPhone] with the phone's [responseUrl]
+  /// (the relay URL carrying the code and state).
+  ///
+  /// The URL is whatever the phone's companion app hands back: the relay
+  /// address, the companion's own (e.g.
+  /// `com.heytap.health.international:/3p_auth/<package>?code=…`), or
+  /// Google's page form (`…/app.html?full_suffix_from_redirect=<package>?…`).
+  /// It is only read, never opened.
+  Future<SsoStep> finishOnPhone(Uri responseUrl) =>
+      _exchange(_answerQuery(responseUrl));
 
   /// Answers the current screen. A [SsoConsent] takes an empty answer.
   Future<SsoStep> submit(Map<SsoField, String> answer) async {
@@ -70,32 +107,7 @@ class SsoLogin {
   }
 
   Future<SsoStep> _begin() async {
-    final challenge = base64Url
-        .encode(sha256.convert(utf8.encode(_verifier)).bytes)
-        .replaceAll('=', '');
-    final start = Uri.parse('$serverUrl/auth/openid').replace(
-      queryParameters: {
-        'response_type': 'code',
-        'redirect_uri': ssoRedirectUri,
-        'code_challenge': challenge,
-        'code_challenge_method': 'S256',
-        'state': _state,
-        'client_id': 'abs-wear',
-      },
-    );
-    final response = await _http.send('GET', start);
-    final target = SsoHttp.redirectTarget(start, response);
-    if (target == null) {
-      final text = response.body;
-      if (response.statusCode == 400 && text.contains('redirect_uri')) {
-        throw const SsoException(SsoError.redirectNotAllowed);
-      }
-      if (response.statusCode == 400 || response.statusCode == 500) {
-        // "OpenID Connect settings are not valid", or SSO turned off.
-        throw SsoException(SsoError.notEnabled, text);
-      }
-      throw SsoException(SsoError.failed, 'start ${response.statusCode}');
-    }
+    final target = await _start(_startUrl());
     // Into the identity provider, up to its first login page.
     final (page, back) = await _follow(target);
     if (back != null) {
@@ -112,6 +124,40 @@ class SsoLogin {
     }
     _idp = idp;
     return await idp.begin(page);
+  }
+
+  /// The server's `/auth/openid` URL for this login.
+  Uri _startUrl() {
+    final challenge = base64Url
+        .encode(sha256.convert(utf8.encode(_verifier)).bytes)
+        .replaceAll('=', '');
+    return Uri.parse('$serverUrl/auth/openid').replace(
+      queryParameters: {
+        'response_type': 'code',
+        'redirect_uri': _redirectUri,
+        'code_challenge': challenge,
+        'code_challenge_method': 'S256',
+        'state': _state,
+        'client_id': 'abs-wear',
+      },
+    );
+  }
+
+  /// Calls [start] (keeping the server's session cookie) and returns where
+  /// the server sends the browser: the identity provider.
+  Future<Uri> _start(Uri start) async {
+    final response = await _http.send('GET', start);
+    final target = SsoHttp.redirectTarget(start, response);
+    if (target != null) return target;
+    final text = response.body;
+    if (response.statusCode == 400 && text.contains('redirect_uri')) {
+      throw const SsoException(SsoError.redirectNotAllowed);
+    }
+    if (response.statusCode == 400 || response.statusCode == 500) {
+      // "OpenID Connect settings are not valid", or SSO turned off.
+      throw SsoException(SsoError.notEnabled, text);
+    }
+    throw SsoException(SsoError.failed, 'start ${response.statusCode}');
   }
 
   /// Follows redirects from [url] until a page (returned first) or the
@@ -157,9 +203,27 @@ class SsoLogin {
       // A page instead of the redirect back, e.g. an error page.
       throw SsoException(SsoError.failed, 'stopped at ${page?.url.path}');
     }
-    final query = back.queryParameters;
+    return await _exchange(back.queryParameters);
+  }
+
+  /// The query of a phone answer: after its last `?`, so Google's page form
+  /// (which nests the redirect's own query in a parameter) reads the same
+  /// as a plain one.
+  static Map<String, String> _answerQuery(Uri answer) {
+    final text = answer.toString();
+    final start = text.lastIndexOf('?');
+    if (start < 0) return const {};
+    final end = text.indexOf('#', start);
+    return Uri.splitQueryString(
+      text.substring(start + 1, end < 0 ? null : end),
+    );
+  }
+
+  /// Checks the redirect back's [query] (state, code) and exchanges the code
+  /// at the server's callback.
+  Future<SsoStep> _exchange(Map<String, String> query) async {
     final code = query['code'];
-    if (query['state'] != _state) {
+    if (!_isOurState(query['state'])) {
       throw const SsoException(SsoError.failed, 'state mismatch');
     }
     // The server forwards "undefined" when the identity provider sent an
@@ -190,8 +254,14 @@ class SsoLogin {
     );
   }
 
-  static bool _isRedirectUri(Uri url) =>
-      url.toString().startsWith(ssoRedirectUri);
+  bool _isRedirectUri(Uri url) => url.toString().startsWith(_redirectUri);
+
+  /// Whether [state] is this login's. On the phone, a companion app (e.g.
+  /// OHealth) appends `_sch_` and its own address to the state; Google's
+  /// relay page strips that again, but a redirect straight to the companion
+  /// brings it back here. The random part must still match exactly.
+  bool _isOurState(String? state) =>
+      state == _state || (state?.startsWith('${_state}_sch_') ?? false);
 
   static String _random(int bytes) {
     final random = Random.secure();

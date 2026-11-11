@@ -38,8 +38,9 @@ Enter your server address and tap **Next**. The watch shows the login options yo
 
 - **Password**: your Audiobookshelf username and password.
 - **SSO ([OpenID Connect][abs_oidc_docs])**: sign in with your identity provider right on the watch, over Wi-Fi or LTE. Works with Authentik, Authelia, Logto, VoidAuth, tinyauth, Keycloak, Gitea and Pocket ID (approve on another device). Forgejo, Dex, Kanidm and Zitadel should work but are untested. Passkeys and captchas aren't supported. More providers: [#80][sso_providers_issue].
+- **Continue on phone**: when the watch can't sign in by itself (for example Google or a passkey), the sign-in opens on your paired Android phone. Nothing extra to install. Microsoft Entra ID doesn't work this way yet ([#82][ms_phone_issue]).
 
-**SSO setup for the server admin:** in Audiobookshelf, **Settings → Authentication → Allowed Mobile Redirect URIs**, add `abswear://oauth`. The identity provider needs the same redirect URIs as for the official Audiobookshelf app (`/auth/openid/callback` and `/auth/openid/mobile-redirect`).
+**SSO setup for the server admin:** in Audiobookshelf, **Settings → Authentication → Allowed Mobile Redirect URIs**, add `abswear://oauth`, and for Continue on phone also `https://wear.googleapis.com/3p_auth/dev.koit.abs_wear`. The identity provider needs the same redirect URIs as for the official Audiobookshelf app (`/auth/openid/callback` and `/auth/openid/mobile-redirect`).
 
 After login the watch only talks to Audiobookshelf. To cut off a user's access, disable them there, not in the identity provider.
 
@@ -111,5 +112,6 @@ ABS Wear is a third-party app and isn't affiliated with the Audiobookshelf proje
 [play_store_link]: https://play.google.com/store/apps/details?id=dev.koit.abs_wear
 [releases_page]: https://github.com/RasmusKoit/abs_wear/releases/latest
 [sso_providers_issue]: https://github.com/RasmusKoit/abs_wear/issues/80
+[ms_phone_issue]: https://github.com/RasmusKoit/abs_wear/issues/82
 [very_good_analysis_badge]: https://img.shields.io/badge/style-very_good_analysis-B22C89.svg
 [very_good_analysis_link]: https://pub.dev/packages/very_good_analysis

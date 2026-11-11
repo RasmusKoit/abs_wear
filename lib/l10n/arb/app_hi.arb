@@ -80,5 +80,11 @@
     "back": "वापस",
     "emailLabel": "ईमेल",
     "ssoWaitApprove": "अपने दूसरे डिवाइस पर साइन-इन को मंज़ूरी दें।",
-    "ssoWaitCode": "किसी दूसरे डिवाइस पर यह कोड डालें: {code}"
+    "ssoWaitCode": "किसी दूसरे डिवाइस पर यह कोड डालें: {code}",
+    "ssoContinueOnPhone": "फ़ोन पर जारी रखें",
+    "ssoPhoneWaiting": "अपने फ़ोन पर साइन-इन पूरा करें।",
+    "ssoPhoneUnavailable": "जारी रखने के लिए कोई फ़ोन नहीं है। Android फ़ोन जोड़ें या पासवर्ड से लॉग इन करें।",
+    "ssoPhoneTimedOut": "फ़ोन पर साइन-इन पूरा नहीं हुआ। फिर से कोशिश करें।",
+    "ssoPhoneUnsupported": "यह घड़ी फ़ोन पर साइन-इन जारी नहीं रख सकती।",
+    "ssoPhoneUnavailableNoPassword": "जारी रखने के लिए कोई फ़ोन नहीं है। Android फ़ोन जोड़ें।"
 }

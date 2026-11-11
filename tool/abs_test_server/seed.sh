@@ -168,7 +168,14 @@ print(json.dumps({
   # New SSO users get an ABS account on first login (test user: matched).
   "authOpenIDAutoRegister": True,
   "authOpenIDMatchExistingBy": "username",
-  "authOpenIDMobileRedirectURIs": ["abswear://oauth"],
+  # For the watch itself, and the Wear OS relay of "Continue on phone"
+  # (one per app flavor: the package name differs).
+  "authOpenIDMobileRedirectURIs": [
+    "abswear://oauth",
+    "https://wear.googleapis.com/3p_auth/dev.koit.abs_wear",
+    "https://wear.googleapis.com/3p_auth/dev.koit.abs_wear.dev",
+    "https://wear.googleapis.com/3p_auth/dev.koit.abs_wear.stg",
+  ],
   # Unset, ABS builds ".../undefined/auth/openid/..." (the web UI always sends it).
   "authOpenIDSubfolderForRedirectURLs": "",
 }))' "$ABS_OIDC_CLIENT_SECRET")

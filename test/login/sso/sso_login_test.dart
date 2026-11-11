@@ -1,6 +1,7 @@
 import 'package:abs_wear/login/data/sso/sso_login.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import '../../helpers/fake_phone_auth.dart';
 import '../../helpers/fake_sso_servers.dart';
 
 Future<SsoStep> _expectPrompt(
@@ -114,6 +115,122 @@ void main() {
 
   test('an identity provider error (code "undefined") fails', () async {
     await loginExpecting(FakeServers(code: 'undefined'), SsoError.failed);
+  });
+  group('finished on the phone', () {
+    Uri relayAnswer(Uri start, {String? state}) =>
+        Uri.parse(fakeRelayUri).replace(
+          queryParameters: {
+            'code': 'the-code',
+            'state': state ?? start.queryParameters['state']!,
+          },
+        );
+
+    test('the watch starts, the phone signs in, the watch finishes', () async {
+      final servers = FakeServers();
+      final (login, start) = await SsoLogin.startOnPhone(
+        fakeAbsUrl,
+        redirectUri: fakeRelayUri,
+        client: servers.client,
+      );
+      // The phone gets the same server link the watch already called, so
+      // the server's session (its cookie) stays on the watch.
+      expect(start.path, '/auth/openid');
+      expect(start.queryParameters['redirect_uri'], fakeRelayUri);
+      expect(
+        servers.requests.where((r) => r.url.path == '/auth/openid'),
+        hasLength(1),
+      );
+      final done = await login.finishOnPhone(relayAnswer(start));
+      expect(done, isA<SsoDone>());
+      login.close();
+    });
+
+    test("a companion's marker on the state is accepted", () async {
+      final servers = FakeServers();
+      final (login, start) = await SsoLogin.startOnPhone(
+        fakeAbsUrl,
+        redirectUri: fakeRelayUri,
+        client: servers.client,
+      );
+      // OHealth appends _sch_ and its address; straight from the companion
+      // (without Google's relay page) it comes back unchanged.
+      final state = '${start.queryParameters['state']}_sch_Y29tLmhleXRhcA';
+      final done = await login.finishOnPhone(relayAnswer(start, state: state));
+      expect(done, isA<SsoDone>());
+    });
+
+    test('a marked state with another random part is refused', () async {
+      final servers = FakeServers();
+      final (login, start) = await SsoLogin.startOnPhone(
+        fakeAbsUrl,
+        redirectUri: fakeRelayUri,
+        client: servers.client,
+      );
+      await expectLater(
+        login.finishOnPhone(relayAnswer(start, state: 'other_sch_Y29t')),
+        throwsA(_error(SsoError.failed)),
+      );
+    });
+
+    for (final (name, answer) in [
+      (
+        "the companion app's own address",
+        (String state) => Uri.parse(
+          'com.heytap.health.international:/3p_auth/dev.koit.abs_wear'
+          '?code=the-code&state=$state',
+        ),
+      ),
+      (
+        "Google's page form",
+        (String state) => Uri.parse(
+          'com.google.android.wear:/3p_auth/app.html?full_suffix_from_redirect='
+          'dev.koit.abs_wear?code=the-code&state=$state',
+        ),
+      ),
+    ]) {
+      test('reads the answer in $name without opening it', () async {
+        final servers = FakeServers();
+        final (login, start) = await SsoLogin.startOnPhone(
+          fakeAbsUrl,
+          redirectUri: fakeRelayUri,
+          client: servers.client,
+        );
+        final requests = servers.requests.length;
+        final done = await login.finishOnPhone(
+          answer(start.queryParameters['state']!),
+        );
+        expect(done, isA<SsoDone>());
+        // Only the code exchange at the server: the answer isn't fetched.
+        expect(servers.requests.skip(requests).map((r) => r.url.path), [
+          '/auth/openid/callback',
+        ]);
+      });
+    }
+
+    test('an answer for another login is refused', () async {
+      final servers = FakeServers();
+      final (login, start) = await SsoLogin.startOnPhone(
+        fakeAbsUrl,
+        redirectUri: fakeRelayUri,
+        client: servers.client,
+      );
+      await expectLater(
+        login.finishOnPhone(relayAnswer(start, state: 'other')),
+        throwsA(_error(SsoError.failed)),
+      );
+    });
+
+    test('a server that does not allow the relay yet', () async {
+      final servers = FakeServers(startStatus: 400);
+      await expectLater(
+        SsoLogin.startOnPhone(
+          fakeAbsUrl,
+          redirectUri: fakeRelayUri,
+          client: servers.client,
+        ),
+        throwsA(_error(SsoError.redirectNotAllowed)),
+      );
+    });
   });
 }
 
