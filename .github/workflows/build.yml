@@ -13,6 +13,16 @@ on:
         description: 'Build number; empty = from pubspec.yaml'
         required: false
         default: ''
+      play_track:
+        description: 'Google Play track to upload the bundle to'
+        type: choice
+        default: none
+        options: [none, 'wear:internal', 'wear:production']
+      play_status:
+        description: 'Play release: draft (finish in Play Console) or completed (send for review)'
+        type: choice
+        default: draft
+        options: [draft, completed]
 
 jobs:
   build:
@@ -91,9 +101,21 @@ jobs:
             build/app/outputs/flutter-apk/*.apk
             build/app/outputs/bundle/productionRelease/*.aab
 
+      - name: Upload to Google Play
+        if: inputs.play_track != 'none'
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: dev.koit.abs_wear
+          releaseFiles: build/app/outputs/bundle/productionRelease/*.aab
+          releaseName: ${{ env.BUILD_NAME }} (${{ env.BUILD_NUMBER }})
+          track: ${{ inputs.play_track }}
+          status: ${{ inputs.play_status }}
+
       - name: Create release
         uses: ncipollo/release-action@v1
         with:
           tag: v${{ env.BUILD_NAME }}+${{ env.BUILD_NUMBER }}
           commit: ${{ github.sha }}
           artifacts: "build/app/outputs/flutter-apk/*.apk,build/app/outputs/bundle/productionRelease/*.aab"
+          generateReleaseNotes: true
