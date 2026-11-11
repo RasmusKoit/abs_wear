@@ -13,6 +13,11 @@
     <!-- Download notification on Android 13+ (the media one is exempt);
          asked for at the first download, in MainActivity -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- "Continue on phone" binds the Wear OS companion's auth service (RemoteAuth).
+         It is force-queryable on current builds; this keeps it visible regardless. -->
+    <queries>
+        <package android:name="com.google.android.wearable.app" />
+    </queries>
     <application
         android:label="${appName}"
         android:name="${applicationName}"

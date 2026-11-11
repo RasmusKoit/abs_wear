@@ -1,12 +1,21 @@
 package dev.koit.abs_wear
 
+import android.annotation.SuppressLint
+import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
+import android.content.ServiceConnection
 import android.net.Uri
+import android.os.Bundle
+import android.os.Handler
+import android.os.IBinder
+import android.os.Looper
+import android.support.wearable.authentication.IAuthenticationRequestCallback
+import android.support.wearable.authentication.IAuthenticationRequestService
 import android.util.Log
 import androidx.wear.phone.interactions.authentication.CodeChallenge
 import androidx.wear.phone.interactions.authentication.CodeVerifier
 import androidx.wear.phone.interactions.authentication.OAuthRequest
-import androidx.wear.phone.interactions.authentication.OAuthResponse
 import androidx.wear.phone.interactions.authentication.RemoteAuthClient
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -14,8 +23,8 @@ import java.lang.ref.WeakReference
 
 /**
  * "Continue on phone" sign-in: opens an OAuth authorization URL on the
- * paired phone through the Wear OS companion ([RemoteAuthClient]) and hands
- * the redirect (with code and state) back to Dart.
+ * paired phone through the Wear OS companion's auth service and hands the
+ * redirect (with code and state) back to Dart.
  *
  * Channel `remote_auth`:
  * - `redirectUri` -> the redirect URL the companion requires for this app
@@ -26,19 +35,44 @@ import java.lang.ref.WeakReference
  *   (cancel, or a newer authorize), failed.
  * - `cancel` -> null; ends the pending authorize with `cancelled`.
  *
+ * The request is built and checked with [OAuthRequest], but sent by binding
+ * the companion's service directly instead of through [RemoteAuthClient]:
+ * the client calls the service from its own ServiceConnection and rethrows
+ * anything that fails there on the main looper, which would crash the app.
+ * The binding, bundle keys and result parsing mirror RemoteAuthClient 1.1.1.
+ *
  * A singleton: audio_service's cached engine outlives the activity, and the
  * user may leave the watch app while signing in on the phone. Everything runs
- * on the main thread (channel handlers and the client's callbacks).
+ * on the main thread (channel handlers, ServiceConnection callbacks, and the
+ * companion's result, which is posted there from a binder thread).
  */
+// The AIDL interfaces are library-restricted; RemoteAuthClient talks to the
+// companion through the same ones.
+@SuppressLint("RestrictedApi")
 object RemoteAuth {
     private const val TAG = "RemoteAuth"
+
+    // From RemoteAuthClient 1.1.1 (ACTION_AUTH, WEARABLE_PACKAGE_NAME,
+    // KEY_*, NO_ERROR); its constants for these are not public API.
+    private const val ACTION_AUTH = "android.support.wearable.authentication.action.OAUTH"
+    private const val COMPANION_PACKAGE = "com.google.android.wearable.app"
+    private const val KEY_REQUEST_URL = "requestUrl"
+    private const val KEY_PACKAGE_NAME = "packageName"
+    private const val KEY_RESPONSE_URL = "responseUrl"
+    private const val KEY_ERROR_CODE = "errorCode"
+    private const val NO_ERROR = -1
+
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     private var engine: WeakReference<FlutterEngine>? = null
 
     /** Bumped whenever an attempt ends, so its late callbacks are ignored. */
     private var attempt = 0
-    private var client: RemoteAuthClient? = null
     private var pending: MethodChannel.Result? = null
+
+    /** The current attempt's binding, unbound when the attempt ends. */
+    private var connection: ServiceConnection? = null
+    private var boundContext: Context? = null
 
     fun register(flutterEngine: FlutterEngine, context: Context) {
         val appContext = context.applicationContext
@@ -113,65 +147,131 @@ object RemoteAuth {
             result.error("badRequest", e.message, null)
             return
         }
-        val newClient = RemoteAuthClient.create(context)
-        client = newClient
-        pending = result
-        try {
-            newClient.sendAuthorizationRequest(
-                request,
-                context.mainExecutor,
-                object : RemoteAuthClient.Callback() {
-                    override fun onAuthorizationResponse(
-                        request: OAuthRequest,
-                        response: OAuthResponse,
-                    ) {
-                        if (id != attempt) return
-                        val responseUrl = response.responseUrl
-                        end {
-                            if (responseUrl == null) {
-                                it.error("failed", "The phone sent no response URL", null)
-                            } else {
-                                it.success(responseUrl.toString())
-                            }
-                        }
-                    }
+        // OAuthRequest.toBundle() is internal to the library; same keys.
+        val requestBundle = Bundle().apply {
+            putParcelable(KEY_REQUEST_URL, request.requestUrl)
+            putString(KEY_PACKAGE_NAME, request.packageName)
+        }
 
-                    override fun onAuthorizationError(request: OAuthRequest, errorCode: Int) {
-                        if (id != attempt) return
-                        Log.w(TAG, "Sign-in on the phone failed: $errorCode")
-                        end {
-                            when (errorCode) {
-                                RemoteAuthClient.ERROR_UNSUPPORTED ->
-                                    it.error("unsupported", "Phone sign-in is not supported", null)
-                                RemoteAuthClient.ERROR_PHONE_UNAVAILABLE ->
-                                    it.error("phoneUnavailable", "The phone is not connected", null)
-                                else -> it.error("failed", "Error code $errorCode", errorCode)
-                            }
-                        }
-                    }
-                },
-            )
+        val intent = Intent(ACTION_AUTH).setPackage(COMPANION_PACKAGE)
+        if (context.packageManager.resolveService(intent, 0) == null) {
+            result.error("unsupported", "No Wear OS companion auth service", null)
+            return
+        }
+
+        val newConnection = object : ServiceConnection {
+            override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
+                if (id != attempt) return
+                if (service == null) {
+                    end { it.error("failed", "The companion's auth service gave no binder", null) }
+                    return
+                }
+                send(id, service, requestBundle)
+            }
+
+            override fun onServiceDisconnected(name: ComponentName?) {
+                if (id != attempt) return
+                Log.w(TAG, "The companion's auth service disconnected")
+                end { it.error("failed", "The companion's auth service disconnected", null) }
+            }
+
+            override fun onBindingDied(name: ComponentName?) {
+                if (id != attempt) return
+                Log.w(TAG, "The companion's auth service binding died")
+                end { it.error("failed", "The companion's auth service stopped", null) }
+            }
+
+            override fun onNullBinding(name: ComponentName?) {
+                if (id != attempt) return
+                Log.w(TAG, "The companion's auth service returned no binder")
+                end { it.error("failed", "The companion's auth service gave no binder", null) }
+            }
+        }
+        // Stored before binding, so end() unbinds it whatever happens next.
+        pending = result
+        connection = newConnection
+        boundContext = context
+        val bound = try {
+            context.bindService(intent, newConnection, Context.BIND_AUTO_CREATE)
         } catch (e: RuntimeException) {
-            // E.g. the companion's auth service could not be bound.
+            // SecurityException: not allowed to bind.
+            Log.w(TAG, "Could not bind the companion's auth service", e)
+            false
+        }
+        if (!bound && id == attempt) {
+            end { it.error("unsupported", "Could not reach the companion's auth service", null) }
+        }
+    }
+
+    /** Hands the request to the bound service; its answer comes to [deliver]. */
+    private fun send(id: Int, binder: IBinder, requestBundle: Bundle) {
+        val callback = object : IAuthenticationRequestCallback.Stub() {
+            // On a binder thread.
+            override fun onResult(data: Bundle?) {
+                mainHandler.post { if (id == attempt) deliver(data) }
+            }
+
+            // What RemoteAuthClient's callback reports.
+            override fun getApiVersion(): Int = IAuthenticationRequestCallback.API_VERSION
+        }
+        try {
+            IAuthenticationRequestService.Stub.asInterface(binder).openUrl(requestBundle, callback)
+        } catch (e: Exception) {
+            // RemoteException (DeadObjectException), or e.g. a SecurityException
+            // or IllegalArgumentException thrown by the companion across Binder.
             Log.w(TAG, "Could not send the sign-in request", e)
-            if (id == attempt) end { it.error("failed", e.message, null) }
+            if (id == attempt) end { it.error("failed", e.message ?: e.toString(), null) }
+        }
+    }
+
+    /** Parses the companion's result as RemoteAuthClient does. */
+    private fun deliver(data: Bundle?) {
+        val (errorCode, responseUrl) = try {
+            val code = data?.getInt(KEY_ERROR_CODE, NO_ERROR) ?: NO_ERROR
+            @Suppress("DEPRECATION")
+            code to (data?.getParcelable<Uri>(KEY_RESPONSE_URL))
+        } catch (e: RuntimeException) {
+            // A malformed bundle (BadParcelableException, ClassCastException).
+            Log.w(TAG, "Could not read the phone's answer", e)
+            end { it.error("failed", "Could not read the phone's answer", null) }
+            return
+        }
+        if (errorCode != NO_ERROR) Log.w(TAG, "Sign-in on the phone failed: $errorCode")
+        end {
+            when (errorCode) {
+                NO_ERROR ->
+                    if (responseUrl == null) {
+                        it.error("failed", "The phone sent no response URL", null)
+                    } else {
+                        it.success(responseUrl.toString())
+                    }
+                RemoteAuthClient.ERROR_UNSUPPORTED ->
+                    it.error("unsupported", "Phone sign-in is not supported", null)
+                RemoteAuthClient.ERROR_PHONE_UNAVAILABLE ->
+                    it.error("phoneUnavailable", "The phone is not connected", null)
+                else -> it.error("failed", "Error code $errorCode", errorCode)
+            }
         }
     }
 
     /**
-     * Ends the current attempt, if any: closes its client and replies once
+     * Ends the current attempt, if any: unbinds its service and replies once
      * through [reply] (null: don't reply).
      */
     private fun end(reply: ((MethodChannel.Result) -> Unit)?) {
         attempt++
         val result = pending
         pending = null
-        client?.let {
-            client = null
+        val conn = connection
+        val context = boundContext
+        connection = null
+        boundContext = null
+        if (conn != null && context != null) {
             try {
-                it.close()
+                context.unbindService(conn)
             } catch (e: RuntimeException) {
-                Log.w(TAG, "Could not close the auth client", e)
+                // IllegalArgumentException: never registered (bind threw).
+                Log.w(TAG, "Could not unbind the companion's auth service", e)
             }
         }
         if (result != null) reply?.invoke(result)
