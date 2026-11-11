@@ -53,26 +53,34 @@ u = sys.argv[1]
 print(json.dumps({"username": u, "email": u + "@abs-wear.test", "emailVerified": True,
   "firstName": "Wear", "lastName": "Tester", "displayName": "Wear Tester", "isAdmin": False}))' "$ABS_TEST_USER")" >/dev/null
 fi
-if ! curl -fs "$PID_LOCAL/api/oidc/clients/abs" "${api[@]}" >/dev/null 2>&1; then
-  echo "Creating OIDC client abs"
-  curl -fs -X POST "$PID_LOCAL/api/oidc/clients" "${api[@]}" -d "$(python3 -c '
+client=$(python3 -c '
 import sys, json
 abs = sys.argv[1]
 print(json.dumps({"id": "abs", "name": "Audiobookshelf", "isPublic": False,
   "pkceEnabled": False, "skipConsent": False,
-  "callbackURLs": [abs + "/auth/openid/callback", abs + "/auth/openid/mobile-redirect"]}))' "$URL")" >/dev/null
+  "callbackURLs": [abs + "/auth/openid/callback", abs + "/auth/openid/mobile-redirect"]}))' "$URL")
+if ! curl -fs "$PID_LOCAL/api/oidc/clients/abs" "${api[@]}" >/dev/null 2>&1; then
+  echo "Creating OIDC client abs"
+  curl -fs -X POST "$PID_LOCAL/api/oidc/clients" "${api[@]}" -d "$client" >/dev/null
+else
+  # Again on every run, so a changed ABS address gets its callbacks too.
+  curl -fs -X PUT "$PID_LOCAL/api/oidc/clients/abs" "${api[@]}" -d "$client" >/dev/null
 fi
-# Creating the client generates a secret; ours replaces it (matched by the
-# first characters Pocket ID shows).
-others=$(curl -fs "$PID_LOCAL/api/oidc/clients/abs/secrets" "${api[@]}" | j "' '.join(s['id'] for s in d if s['prefix'] != '${ABS_OIDC_CLIENT_SECRET:0:4}')")
-if [ "$(curl -fs "$PID_LOCAL/api/oidc/clients/abs/secrets" "${api[@]}" | j "sum(s['prefix'] == '${ABS_OIDC_CLIENT_SECRET:0:4}' for s in d)")" = "0" ]; then
+# Our secret replaces the generated one. Pocket ID only shows a secret's
+# first characters, so the hash of the one we installed is kept in data/
+# and a changed secret is always installed (and the old ones removed).
+mkdir -p data
+want=$(printf '%s' "$ABS_OIDC_CLIENT_SECRET" | sha256sum | cut -d' ' -f1)
+if [ "$(cat data/client_secret.sha256 2>/dev/null)" != "$want" ]; then
   echo "Setting the client secret"
+  old=$(curl -fs "$PID_LOCAL/api/oidc/clients/abs/secrets" "${api[@]}" | j "' '.join(s['id'] for s in d)")
   curl -fs -X POST "$PID_LOCAL/api/oidc/clients/abs/secrets" "${api[@]}" \
     -d "{\"secret\":\"$ABS_OIDC_CLIENT_SECRET\"}" >/dev/null
+  for id in $old; do
+    curl -fs -X DELETE "$PID_LOCAL/api/oidc/clients/abs/secrets/$id" "${api[@]}" >/dev/null
+  done
+  echo "$want" > data/client_secret.sha256
 fi
-for id in $others; do
-  curl -fs -X DELETE "$PID_LOCAL/api/oidc/clients/abs/secrets/$id" "${api[@]}" >/dev/null
-done
 
 # --- A passkey for the user, to approve sign-ins from "another device" ---
 [ -f data/passkey.json ] || python3 ./passkey.py enroll
