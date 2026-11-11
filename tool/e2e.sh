@@ -16,16 +16,16 @@ URL=${E2E_ABS_URL:-${ABS_E2E_URL:-}}
 DEVICE=${1:-$(adb devices | awk 'NR>1 && $2=="device" {print $1; exit}')}
 [ -n "$DEVICE" ] || { echo "No device connected (start an emulator or adb connect the watch)"; exit 1; }
 echo "Device: $DEVICE   Server: $URL"
-# The first download asks for POST_NOTIFICATIONS (API 33+), and the dialog
-# would stall the download tests. flutter test installs the app fresh, so
-# grant it as soon as the package shows up.
+# Grant POST_NOTIFICATIONS all run long: its dialog stalls the download tests,
+# and flutter test reinstalls the app, dropping a grant made before.
 PERM=android.permission.POST_NOTIFICATIONS
-(until adb -s "$DEVICE" shell pm grant dev.koit.abs_wear.dev $PERM >/dev/null 2>&1; do
+(while true; do
+  adb -s "$DEVICE" shell pm grant dev.koit.abs_wear.dev $PERM >/dev/null 2>&1 || true
   sleep 1
 done) &
 GRANT=$!
 trap 'kill $GRANT 2>/dev/null || true' EXIT
-"${FLUTTER:-flutter}" test integration_test \
+"${FLUTTER:-flutter}" test integration_test/app_e2e_test.dart \
   -d "$DEVICE" \
   --flavor development \
   --dart-define=ABS_URL="$URL" \

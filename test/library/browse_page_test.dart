@@ -71,6 +71,8 @@ void main() {
       requests = [];
       total = 45;
       client = MockClient((request) async {
+        // Covers: none, so only list pages are counted.
+        if (request.url.path.endsWith('/cover')) return http.Response('', 404);
         requests.add(request.url);
         final query = request.url.queryParameters;
         final limit = int.parse(query['limit']!);

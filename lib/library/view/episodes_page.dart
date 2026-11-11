@@ -9,7 +9,6 @@ import 'package:abs_wear/library/data/library_api.dart';
 import 'package:abs_wear/player/player.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 
 /// A podcast episode as listed on [EpisodesPage].
 @immutable
@@ -113,12 +112,7 @@ class _EpisodesPageState extends State<EpisodesPage> {
     try {
       // /api/me holds progress for everything the account ever played, so
       // it is decoded and filtered off the UI isolate.
-      final response = await http
-          .get(
-            Uri.parse('${widget.serverUrl}/api/me'),
-            headers: {'Authorization': 'Bearer ${widget.token}'},
-          )
-          .timeout(const Duration(seconds: 20));
+      final response = await apiGet('${widget.serverUrl}/api/me', widget.token);
       if (response.statusCode != 200) return;
       final body = response.body;
       // A top-level function: a closure here would capture this State,
