@@ -25,7 +25,7 @@ class BookCover extends StatelessWidget {
       child: Image.network(
         '$serverUrl/api/items/$bookId/cover?width=$pixels',
         // Token in a header, not the URL (URLs end up in logs).
-        headers: {'Authorization': 'Bearer $token'},
+        headers: {'Authorization': 'Bearer $token', 'Accept': 'image/webp'},
         width: size,
         height: size,
         cacheWidth: pixels,
