@@ -198,7 +198,7 @@ class SsoLogin {
     }
     final query = back.queryParameters;
     final code = query['code'];
-    if (query['state'] != _state) {
+    if (!_isOurState(query['state'])) {
       throw const SsoException(SsoError.failed, 'state mismatch');
     }
     // The server forwards "undefined" when the identity provider sent an
@@ -230,6 +230,13 @@ class SsoLogin {
   }
 
   bool _isRedirectUri(Uri url) => url.toString().startsWith(_redirectUri);
+
+  /// Whether [state] is this login's. On the phone, a companion app (e.g.
+  /// OHealth) appends `_sch_` and its own address to the state; Google's
+  /// relay page strips that again, but a redirect straight to the companion
+  /// brings it back here. The random part must still match exactly.
+  bool _isOurState(String? state) =>
+      state == _state || (state?.startsWith('${_state}_sch_') ?? false);
 
   static String _random(int bytes) {
     final random = Random.secure();

@@ -145,6 +145,33 @@ void main() {
       login.close();
     });
 
+    test("a companion's marker on the state is accepted", () async {
+      final servers = FakeServers();
+      final (login, start) = await SsoLogin.startOnPhone(
+        fakeAbsUrl,
+        redirectUri: fakeRelayUri,
+        client: servers.client,
+      );
+      // OHealth appends _sch_ and its address; straight from the companion
+      // (without Google's relay page) it comes back unchanged.
+      final state = '${start.queryParameters['state']}_sch_Y29tLmhleXRhcA';
+      final done = await login.finishOnPhone(relayAnswer(start, state: state));
+      expect(done, isA<SsoDone>());
+    });
+
+    test('a marked state with another random part is refused', () async {
+      final servers = FakeServers();
+      final (login, start) = await SsoLogin.startOnPhone(
+        fakeAbsUrl,
+        redirectUri: fakeRelayUri,
+        client: servers.client,
+      );
+      await expectLater(
+        login.finishOnPhone(relayAnswer(start, state: 'other_sch_Y29t')),
+        throwsA(_error(SsoError.failed)),
+      );
+    });
+
     test('an answer for another login is refused', () async {
       final servers = FakeServers();
       final (login, start) = await SsoLogin.startOnPhone(

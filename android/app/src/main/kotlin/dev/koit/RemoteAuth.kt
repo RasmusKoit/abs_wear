@@ -45,8 +45,14 @@ object RemoteAuth {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "remote_auth")
             .setMethodCallHandler { call, result ->
                 when (call.method) {
-                    "redirectUri" -> result.success(redirectUri(appContext))
-                    "authorize" -> authorize(appContext, call.argument<String>("url"), result)
+                    "redirectUri" ->
+                        result.success(redirectUri(appContext, call.argument<String>("base")))
+                    "authorize" -> authorize(
+                        appContext,
+                        call.argument<String>("url"),
+                        call.argument<String>("base"),
+                        result,
+                    )
                     "cancel" -> {
                         end { it.error("cancelled", "Sign-in on the phone was cancelled", null) }
                         result.success(null)
@@ -69,15 +75,25 @@ object RemoteAuth {
      * Taken from the library rather than hard-coded, so it follows the
      * China-build host and any future change.
      */
-    private fun redirectUri(context: Context): String =
+    private fun redirectUri(context: Context, base: String?): String =
         OAuthRequest.Builder(context)
             .setAuthProviderUrl(Uri.parse("https://example.invalid/auth"))
+            .apply { if (base != null) setRedirectUrl(Uri.parse(base)) }
             .setClientId("x")
             .setCodeChallenge(CodeChallenge(CodeVerifier()))
             .build()
             .redirectUrl
 
-    private fun authorize(context: Context, url: String?, result: MethodChannel.Result) {
+    /**
+     * [base] replaces Google's relay as the redirect (the package is still
+     * appended), e.g. a companion app's own registered address.
+     */
+    private fun authorize(
+        context: Context,
+        url: String?,
+        base: String?,
+        result: MethodChannel.Result,
+    ) {
         end { it.error("cancelled", "A newer sign-in started", null) }
         val id = attempt
         // With only the provider URL set, build() appends just redirect_uri
@@ -85,7 +101,10 @@ object RemoteAuth {
         // URL carries client_id, response_type=code and an S256 challenge.
         val request = try {
             requireNotNull(url) { "No url" }
-            OAuthRequest.Builder(context).setAuthProviderUrl(Uri.parse(url)).build()
+            OAuthRequest.Builder(context)
+                .setAuthProviderUrl(Uri.parse(url))
+                .apply { if (base != null) setRedirectUrl(Uri.parse(base)) }
+                .build()
         } catch (e: IllegalArgumentException) {
             result.error("badRequest", e.message, null)
             return
