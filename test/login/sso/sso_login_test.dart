@@ -172,6 +172,41 @@ void main() {
       );
     });
 
+    for (final (name, answer) in [
+      (
+        "the companion app's own address",
+        (String state) => Uri.parse(
+          'com.heytap.health.international:/3p_auth/dev.koit.abs_wear'
+          '?code=the-code&state=$state',
+        ),
+      ),
+      (
+        "Google's page form",
+        (String state) => Uri.parse(
+          'com.google.android.wear:/3p_auth/app.html?full_suffix_from_redirect='
+          'dev.koit.abs_wear?code=the-code&state=$state',
+        ),
+      ),
+    ]) {
+      test('reads the answer in $name without opening it', () async {
+        final servers = FakeServers();
+        final (login, start) = await SsoLogin.startOnPhone(
+          fakeAbsUrl,
+          redirectUri: fakeRelayUri,
+          client: servers.client,
+        );
+        final requests = servers.requests.length;
+        final done = await login.finishOnPhone(
+          answer(start.queryParameters['state']!),
+        );
+        expect(done, isA<SsoDone>());
+        // Only the code exchange at the server: the answer isn't fetched.
+        expect(servers.requests.skip(requests).map((r) => r.url.path), [
+          '/auth/openid/callback',
+        ]);
+      });
+    }
+
     test('an answer for another login is refused', () async {
       final servers = FakeServers();
       final (login, start) = await SsoLogin.startOnPhone(

@@ -71,7 +71,14 @@ class SsoLogin {
 
   /// Finishes a login from [startOnPhone] with the phone's [responseUrl]
   /// (the relay URL carrying the code and state).
-  Future<SsoStep> finishOnPhone(Uri responseUrl) => _finish(responseUrl);
+  ///
+  /// The URL is whatever the phone's companion app hands back: the relay
+  /// address, the companion's own (e.g.
+  /// `com.heytap.health.international:/3p_auth/<package>?code=…`), or
+  /// Google's page form (`…/app.html?full_suffix_from_redirect=<package>?…`).
+  /// It is only read, never opened.
+  Future<SsoStep> finishOnPhone(Uri responseUrl) =>
+      _exchange(_answerQuery(responseUrl));
 
   /// Answers the current screen. A [SsoConsent] takes an empty answer.
   Future<SsoStep> submit(Map<SsoField, String> answer) async {
@@ -196,7 +203,25 @@ class SsoLogin {
       // A page instead of the redirect back, e.g. an error page.
       throw SsoException(SsoError.failed, 'stopped at ${page?.url.path}');
     }
-    final query = back.queryParameters;
+    return await _exchange(back.queryParameters);
+  }
+
+  /// The query of a phone answer: after its last `?`, so Google's page form
+  /// (which nests the redirect's own query in a parameter) reads the same
+  /// as a plain one.
+  static Map<String, String> _answerQuery(Uri answer) {
+    final text = answer.toString();
+    final start = text.lastIndexOf('?');
+    if (start < 0) return const {};
+    final end = text.indexOf('#', start);
+    return Uri.splitQueryString(
+      text.substring(start + 1, end < 0 ? null : end),
+    );
+  }
+
+  /// Checks the redirect back's [query] (state, code) and exchanges the code
+  /// at the server's callback.
+  Future<SsoStep> _exchange(Map<String, String> query) async {
     final code = query['code'];
     if (!_isOurState(query['state'])) {
       throw const SsoException(SsoError.failed, 'state mismatch');
