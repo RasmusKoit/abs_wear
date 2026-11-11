@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:abs_wear/login/data/sso/phone_auth.dart';
@@ -364,6 +365,44 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('Login with password'), findsOneWidget);
+    });
+
+    testWidgets('a cancelled attempt that finishes late leaves the new one', (
+      tester,
+    ) async {
+      final phone = FakePhoneAuth(hang: true);
+      LoginPageState.phoneAuth = phone;
+      final servers = unknownProvider();
+      await http.runWithClient(() async {
+        await startSso(tester);
+        // The server is slow to start the first phone attempt.
+        final slow = Completer<void>();
+        servers.holdStart = slow.future;
+        await tapContinueOnPhone(tester);
+        await tester.pump();
+        expect(find.text('Finish signing in on your phone.'), findsOneWidget);
+        await tester.tap(find.text('Back'));
+        await tester.pump();
+        // Again, now with the server quick: the second attempt waits for the
+        // phone.
+        servers.holdStart = null;
+        await tester.ensureVisible(find.text('Continue on phone'));
+        await tester.tap(find.text('Continue on phone'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(phone.opened, hasLength(1));
+        // The first attempt's server call finally answers.
+        slow.complete();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        // It neither opened the phone again nor cancelled or hid the new one.
+        expect(phone.opened, hasLength(1));
+        expect(phone.cancels, 1);
+        expect(find.text('Finish signing in on your phone.'), findsOneWidget);
+        // Done: stop the second attempt (and its time limit).
+        await tester.tap(find.text('Back'));
+        await tester.pump();
+      }, () => servers.client);
     });
 
     testWidgets('gives up after the time limit', (tester) async {

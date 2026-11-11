@@ -19,6 +19,7 @@ class FakeServers {
     this.openid = true,
     this.password = true,
     this.passwordOnFirstPage = false,
+    this.holdStart,
     this.startStatus = 302,
     this.webauthnOnly = false,
     this.otp = false,
@@ -47,6 +48,10 @@ class FakeServers {
 
   /// Authentik asks for the username and password on one page.
   final bool passwordOnFirstPage;
+
+  /// While set and not completed, `/auth/openid` doesn't answer yet (a slow
+  /// server).
+  Future<void>? holdStart;
   final int startStatus;
   final bool webauthnOnly;
   final bool otp;
@@ -127,6 +132,7 @@ class FakeServers {
               },
           });
         case '/auth/openid':
+          if (holdStart case final hold?) await hold;
           final q = r.url.queryParameters;
           expect(q['redirect_uri'], anyOf(ssoRedirectUri, fakeRelayUri));
           redirectUri = q['redirect_uri']!;

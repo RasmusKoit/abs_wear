@@ -72,6 +72,10 @@ class LoginPageState extends State<LoginPage> {
 
   /// The SSO login being finished on the phone, while waiting for it.
   SsoLogin? _phoneSso;
+
+  /// Numbers phone sign-in attempts, so a cancelled one can't touch a newer
+  /// one.
+  int _phoneAttempt = 0;
   bool _phoneWaiting = false;
 
   /// The last SSO login stopped at something the watch can't do, so the
@@ -485,6 +489,10 @@ class LoginPageState extends State<LoginPage> {
   Future<void> _continueOnPhone() async {
     final url = serverUrlController.text;
     _sessionEpoch++;
+    // Back (or a newer attempt) bumps this: an older attempt still waiting
+    // for the server or the phone then gives up without touching anything.
+    final attempt = ++_phoneAttempt;
+    bool current() => mounted && attempt == _phoneAttempt;
     setState(() {
       _loginError = null;
       _offerPhone = false;
@@ -494,22 +502,23 @@ class LoginPageState extends State<LoginPage> {
     var redirect = '';
     try {
       redirect = await phoneAuth.redirectUri();
+      if (!current()) return;
       final (login, start) = await SsoLogin.startOnPhone(
         url,
         redirectUri: redirect,
       );
       sso = login;
-      if (!_phoneWaiting) return; // Back was tapped meanwhile.
+      if (!current()) return;
       _phoneSso = login;
       final response = await phoneAuth
           .authorize(start)
           // The watch can't tell a sign-in still going from one that got
           // stuck on the phone, so it stops waiting after a while.
           .timeout(phoneSignInLimit);
-      if (!identical(_phoneSso, login)) return; // Cancelled.
+      if (!current()) return;
       setState(() => _loggingIn = true);
       final done = await login.finishOnPhone(response);
-      if (!identical(_phoneSso, login) || done is! SsoDone) return;
+      if (!current() || done is! SsoDone) return;
       final user = done.data['user'] as Map<String, dynamic>;
       await _completeLogin(
         url,
@@ -517,12 +526,14 @@ class LoginPageState extends State<LoginPage> {
         username: user['username'] as String,
       );
     } on Object catch (e) {
-      if (e is TimeoutException) unawaited(_cancelPhoneRequest());
-      if (sso == null || identical(_phoneSso, sso)) _phoneFailed(e, redirect);
+      if (current()) {
+        if (e is TimeoutException) unawaited(_cancelPhoneRequest());
+        _phoneFailed(e, redirect);
+      }
     } finally {
       sso?.close();
-      if (identical(_phoneSso, sso)) _phoneSso = null;
-      if (mounted) {
+      if (current()) {
+        _phoneSso = null;
         setState(() {
           _phoneWaiting = false;
           _loggingIn = false;
@@ -533,10 +544,16 @@ class LoginPageState extends State<LoginPage> {
 
   /// Back while waiting for the phone.
   void _cancelPhone() {
+    _phoneAttempt++;
     _phoneSso?.close();
     _phoneSso = null;
     unawaited(_cancelPhoneRequest());
-    setState(() => _phoneWaiting = false);
+    setState(() {
+      _phoneWaiting = false;
+      _loggingIn = false;
+      // Back where it was offered, ready to try again.
+      _offerPhone = true;
+    });
   }
 
   Future<void> _cancelPhoneRequest() async {
