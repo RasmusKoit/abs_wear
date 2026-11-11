@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:abs_wear/login/data/sso/phone_auth.dart';
 import 'package:abs_wear/login/view/login_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -310,5 +311,82 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.widgetWithText(TextFormField, 'Server URL'), findsOneWidget);
     }, () => servers.client);
+  });
+
+  group('Continue on phone', () {
+    tearDown(() => LoginPageState.phoneAuth = const PhoneAuth());
+
+    // An identity provider the watch can't drive.
+    FakeServers unknownProvider() =>
+        FakeServers(idpPagePath: '/realms/x/protocol/login');
+
+    Future<void> tapContinueOnPhone(WidgetTester tester) async {
+      expect(
+        find.text("This sign-in can't be done on the watch yet."),
+        findsOneWidget,
+      );
+      await tester.ensureVisible(find.text('Continue on phone'));
+      await tester.tap(find.text('Continue on phone'));
+    }
+
+    testWidgets('offered when the watch cannot sign in, then logs in', (
+      tester,
+    ) async {
+      final phone = FakePhoneAuth();
+      LoginPageState.phoneAuth = phone;
+      final servers = unknownProvider();
+      await http.runWithClient(() async {
+        await startSso(tester);
+        await tapContinueOnPhone(tester);
+        await tester.pumpAndSettle();
+      }, () => servers.client);
+      expect(phone.opened.single.queryParameters['redirect_uri'], fakeRelayUri);
+      expect(find.text('Hello wear'), findsOneWidget);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString('token'), 'legacy-token');
+    });
+
+    testWidgets('no phone to continue on', (tester) async {
+      LoginPageState.phoneAuth = FakePhoneAuth(
+        error: PhoneAuthError.phoneUnavailable,
+      );
+      final servers = unknownProvider();
+      await http.runWithClient(() async {
+        await startSso(tester);
+        await tapContinueOnPhone(tester);
+        await tester.pumpAndSettle();
+      }, () => servers.client);
+      expect(
+        find.text(
+          'No phone to continue on. Pair an Android phone, or log in with '
+          'a password.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Login with password'), findsOneWidget);
+    });
+
+    testWidgets('Back while waiting stops it', (tester) async {
+      final phone = FakePhoneAuth(hang: true);
+      LoginPageState.phoneAuth = phone;
+      final servers = unknownProvider();
+      await http.runWithClient(() async {
+        await startSso(tester);
+        await tapContinueOnPhone(tester);
+        // Not pumpAndSettle: the spinner never settles, and settling would
+        // run the clock up to the 10-minute limit.
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(find.text('Finish signing in on your phone.'), findsOneWidget);
+        await tester.tap(find.text('Back'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+      }, () => servers.client);
+      expect(phone.cancels, 1);
+      expect(find.text('Finish signing in on your phone.'), findsNothing);
+      expect(find.text('Login with password'), findsOneWidget);
+      // Cancelling is not an error.
+      expect(find.text('SSO login failed. Try again.'), findsNothing);
+    });
   });
 }

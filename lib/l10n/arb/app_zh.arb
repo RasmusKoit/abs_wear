@@ -80,5 +80,8 @@
     "back": "返回",
     "emailLabel": "电子邮件",
     "ssoWaitApprove": "请在你的其他设备上批准登录。",
-    "ssoWaitCode": "请在另一台设备上输入此代码：{code}"
+    "ssoWaitCode": "请在另一台设备上输入此代码：{code}",
+    "ssoContinueOnPhone": "在手机上继续",
+    "ssoPhoneWaiting": "请在手机上完成登录。",
+    "ssoPhoneUnavailable": "没有可继续的手机。请配对一部 Android 手机，或使用密码登录。"
 }

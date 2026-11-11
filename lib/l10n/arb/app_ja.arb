@@ -80,5 +80,8 @@
     "back": "戻る",
     "emailLabel": "メール",
     "ssoWaitApprove": "別のデバイスでサインインを承認してください。",
-    "ssoWaitCode": "別のデバイスでこのコードを入力してください: {code}"
+    "ssoWaitCode": "別のデバイスでこのコードを入力してください: {code}",
+    "ssoContinueOnPhone": "スマホで続ける",
+    "ssoPhoneWaiting": "スマホでサインインを完了してください。",
+    "ssoPhoneUnavailable": "続けるスマホがありません。Android スマホをペアリングするか、パスワードでログインしてください。"
 }

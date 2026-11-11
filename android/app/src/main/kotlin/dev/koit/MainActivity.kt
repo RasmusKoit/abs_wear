@@ -151,6 +151,8 @@ class MainActivity : AudioServiceActivity() {
                     else -> result.notImplemented()
                 }
             }
+        // "Continue on phone" sign-in through the Wear OS companion.
+        RemoteAuth.register(flutterEngine, context)
         currentActivity = WeakReference(this)
         val downloads = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "download_keep_alive")
         DownloadService.onCancel = { downloads.invokeMethod("cancel", null) }

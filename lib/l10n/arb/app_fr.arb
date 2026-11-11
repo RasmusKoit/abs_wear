@@ -80,5 +80,8 @@
     "back": "Retour",
     "emailLabel": "E-mail",
     "ssoWaitApprove": "Approuvez la connexion sur votre autre appareil.",
-    "ssoWaitCode": "Sur un autre appareil, saisissez ce code : {code}"
+    "ssoWaitCode": "Sur un autre appareil, saisissez ce code : {code}",
+    "ssoContinueOnPhone": "Continuer sur le téléphone",
+    "ssoPhoneWaiting": "Terminez la connexion sur votre téléphone.",
+    "ssoPhoneUnavailable": "Aucun téléphone pour continuer. Associez un téléphone Android ou connectez-vous avec un mot de passe."
 }

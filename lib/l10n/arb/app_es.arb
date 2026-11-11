@@ -80,5 +80,8 @@
     "back": "Atrás",
     "emailLabel": "Correo electrónico",
     "ssoWaitApprove": "Aprueba el inicio de sesión en tu otro dispositivo.",
-    "ssoWaitCode": "En otro dispositivo, introduce este código: {code}"
+    "ssoWaitCode": "En otro dispositivo, introduce este código: {code}",
+    "ssoContinueOnPhone": "Continuar en el teléfono",
+    "ssoPhoneWaiting": "Termina de iniciar sesión en tu teléfono.",
+    "ssoPhoneUnavailable": "No hay ningún teléfono. Vincula un teléfono Android o inicia sesión con contraseña."
 }

@@ -80,5 +80,8 @@
     "back": "Voltar",
     "emailLabel": "E-mail",
     "ssoWaitApprove": "Aprove o login no seu outro dispositivo.",
-    "ssoWaitCode": "Em outro dispositivo, digite este código: {code}"
+    "ssoWaitCode": "Em outro dispositivo, digite este código: {code}",
+    "ssoContinueOnPhone": "Continuar no celular",
+    "ssoPhoneWaiting": "Termine de entrar no seu celular.",
+    "ssoPhoneUnavailable": "Nenhum celular para continuar. Pareie um celular Android ou entre com senha."
 }

@@ -80,5 +80,8 @@
     "back": "Kembali",
     "emailLabel": "Email",
     "ssoWaitApprove": "Setujui login di perangkat Anda yang lain.",
-    "ssoWaitCode": "Di perangkat lain, masukkan kode ini: {code}"
+    "ssoWaitCode": "Di perangkat lain, masukkan kode ini: {code}",
+    "ssoContinueOnPhone": "Lanjutkan di ponsel",
+    "ssoPhoneWaiting": "Selesaikan login di ponsel Anda.",
+    "ssoPhoneUnavailable": "Tidak ada ponsel untuk melanjutkan. Pasangkan ponsel Android atau masuk dengan kata sandi."
 }

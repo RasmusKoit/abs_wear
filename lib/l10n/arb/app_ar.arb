@@ -80,5 +80,8 @@
     "back": "رجوع",
     "emailLabel": "البريد الإلكتروني",
     "ssoWaitApprove": "وافق على تسجيل الدخول من جهازك الآخر.",
-    "ssoWaitCode": "على جهاز آخر، أدخل هذا الرمز: {code}"
+    "ssoWaitCode": "على جهاز آخر، أدخل هذا الرمز: {code}",
+    "ssoContinueOnPhone": "المتابعة على الهاتف",
+    "ssoPhoneWaiting": "أكمل تسجيل الدخول على هاتفك.",
+    "ssoPhoneUnavailable": "لا يوجد هاتف للمتابعة عليه. اربط هاتف Android أو سجّل الدخول بكلمة المرور."
 }

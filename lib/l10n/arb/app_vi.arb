@@ -80,5 +80,8 @@
     "back": "Quay lại",
     "emailLabel": "Email",
     "ssoWaitApprove": "Hãy duyệt đăng nhập trên thiết bị khác của bạn.",
-    "ssoWaitCode": "Trên thiết bị khác, hãy nhập mã này: {code}"
+    "ssoWaitCode": "Trên thiết bị khác, hãy nhập mã này: {code}",
+    "ssoContinueOnPhone": "Tiếp tục trên điện thoại",
+    "ssoPhoneWaiting": "Hãy hoàn tất đăng nhập trên điện thoại.",
+    "ssoPhoneUnavailable": "Không có điện thoại để tiếp tục. Hãy ghép nối điện thoại Android hoặc đăng nhập bằng mật khẩu."
 }

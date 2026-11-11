@@ -6,6 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
+import 'fake_phone_auth.dart';
+
 const fakeAbsUrl = 'http://abs.test';
 const fakeIdpUrl = 'http://idp.test';
 
@@ -59,6 +61,10 @@ class FakeServers {
   /// A whole authorize URL instead (another host or query); overrides
   /// [authorizePath].
   final String? idpAuthorizeUrl;
+
+  /// The redirect URI the login asked for: the watch's own, or the Wear OS
+  /// relay for phone sign-in.
+  String redirectUri = ssoRedirectUri;
 
   String? state;
   String? challenge;
@@ -122,7 +128,8 @@ class FakeServers {
           });
         case '/auth/openid':
           final q = r.url.queryParameters;
-          expect(q['redirect_uri'], ssoRedirectUri);
+          expect(q['redirect_uri'], anyOf(ssoRedirectUri, fakeRelayUri));
+          redirectUri = q['redirect_uri']!;
           expect(q['code_challenge_method'], 'S256');
           expect(q['response_type'], 'code');
           state = q['state'];
@@ -151,7 +158,7 @@ class FakeServers {
         case '/auth/openid/mobile-redirect':
           final q = r.url.queryParameters;
           return redirect(
-            '$ssoRedirectUri?code=${q['code']}'
+            '$redirectUri?code=${q['code']}'
             '&state=${badState ? 'other' : q['state']}',
           );
         case '/auth/openid/callback':

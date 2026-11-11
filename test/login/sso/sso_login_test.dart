@@ -1,6 +1,7 @@
 import 'package:abs_wear/login/data/sso/sso_login.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import '../../helpers/fake_phone_auth.dart';
 import '../../helpers/fake_sso_servers.dart';
 
 Future<SsoStep> _expectPrompt(
@@ -114,6 +115,60 @@ void main() {
 
   test('an identity provider error (code "undefined") fails', () async {
     await loginExpecting(FakeServers(code: 'undefined'), SsoError.failed);
+  });
+  group('finished on the phone', () {
+    Uri relayAnswer(Uri start, {String? state}) =>
+        Uri.parse(fakeRelayUri).replace(
+          queryParameters: {
+            'code': 'the-code',
+            'state': state ?? start.queryParameters['state']!,
+          },
+        );
+
+    test('the watch starts, the phone signs in, the watch finishes', () async {
+      final servers = FakeServers();
+      final (login, start) = await SsoLogin.startOnPhone(
+        fakeAbsUrl,
+        redirectUri: fakeRelayUri,
+        client: servers.client,
+      );
+      // The phone gets the same server link the watch already called, so
+      // the server's session (its cookie) stays on the watch.
+      expect(start.path, '/auth/openid');
+      expect(start.queryParameters['redirect_uri'], fakeRelayUri);
+      expect(
+        servers.requests.where((r) => r.url.path == '/auth/openid'),
+        hasLength(1),
+      );
+      final done = await login.finishOnPhone(relayAnswer(start));
+      expect(done, isA<SsoDone>());
+      login.close();
+    });
+
+    test('an answer for another login is refused', () async {
+      final servers = FakeServers();
+      final (login, start) = await SsoLogin.startOnPhone(
+        fakeAbsUrl,
+        redirectUri: fakeRelayUri,
+        client: servers.client,
+      );
+      await expectLater(
+        login.finishOnPhone(relayAnswer(start, state: 'other')),
+        throwsA(_error(SsoError.failed)),
+      );
+    });
+
+    test('a server that does not allow the relay yet', () async {
+      final servers = FakeServers(startStatus: 400);
+      await expectLater(
+        SsoLogin.startOnPhone(
+          fakeAbsUrl,
+          redirectUri: fakeRelayUri,
+          client: servers.client,
+        ),
+        throwsA(_error(SsoError.redirectNotAllowed)),
+      );
+    });
   });
 }
 

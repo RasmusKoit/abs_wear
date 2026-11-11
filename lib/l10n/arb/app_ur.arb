@@ -80,5 +80,8 @@
     "back": "واپس",
     "emailLabel": "ای میل",
     "ssoWaitApprove": "اپنے دوسرے آلے پر سائن ان کی منظوری دیں۔",
-    "ssoWaitCode": "کسی دوسرے آلے پر یہ کوڈ درج کریں: {code}"
+    "ssoWaitCode": "کسی دوسرے آلے پر یہ کوڈ درج کریں: {code}",
+    "ssoContinueOnPhone": "فون پر جاری رکھیں",
+    "ssoPhoneWaiting": "اپنے فون پر سائن ان مکمل کریں۔",
+    "ssoPhoneUnavailable": "جاری رکھنے کے لیے کوئی فون نہیں۔ Android فون جوڑیں یا پاس ورڈ سے لاگ ان کریں۔"
 }

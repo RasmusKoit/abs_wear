@@ -395,5 +395,17 @@
                 "example": "K7Q2-M9XD"
             }
         }
+    },
+    "ssoContinueOnPhone": "Continue on phone",
+    "@ssoContinueOnPhone": {
+        "description": "SSO login: button that finishes the sign-in in the paired phone's browser, shown when the watch cannot do it"
+    },
+    "ssoPhoneWaiting": "Finish signing in on your phone.",
+    "@ssoPhoneWaiting": {
+        "description": "SSO login: waiting while the user finishes signing in on the paired phone"
+    },
+    "ssoPhoneUnavailable": "No phone to continue on. Pair an Android phone, or log in with a password.",
+    "@ssoPhoneUnavailable": {
+        "description": "SSO login: no paired (Android) phone is available to continue on"
     }
 }
