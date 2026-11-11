@@ -1,4 +1,5 @@
 import 'package:abs_wear/library/data/library_api.dart';
+import 'package:abs_wear/library/view/api_image.dart';
 import 'package:flutter/material.dart';
 
 /// A small cover thumbnail. Decoded at display size, so hundreds of
@@ -22,13 +23,13 @@ class BookCover extends StatelessWidget {
     final pixels = (size * MediaQuery.devicePixelRatioOf(context)).round();
     return ClipRRect(
       borderRadius: BorderRadius.circular(4),
-      child: Image.network(
-        '$serverUrl/api/items/$bookId/cover?width=$pixels',
-        // Token in a header, not the URL (URLs end up in logs).
-        headers: {'Authorization': 'Bearer $token', 'Accept': 'image/webp'},
+      child: Image(
+        image: ResizeImage(
+          ApiImage('$serverUrl/api/items/$bookId/cover?width=$pixels', token),
+          width: pixels,
+        ),
         width: size,
         height: size,
-        cacheWidth: pixels,
         fit: BoxFit.cover,
         // Decorative: the title is read out next to every cover.
         excludeFromSemantics: true,

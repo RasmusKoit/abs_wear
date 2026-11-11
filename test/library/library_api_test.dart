@@ -200,6 +200,31 @@ void main() {
       expect(requests.single.headers['Authorization'], 'Bearer tok');
     });
 
+    test('retries once on a connection error', () async {
+      var calls = 0;
+      final json = await withServer(
+        () => getJson('$_server/api/libraries', 'tok'),
+        (_) async {
+          if (++calls == 1) throw http.ClientException('closed');
+          return ok({'libraries': <Object>[]});
+        },
+      );
+
+      expect(json, {'libraries': <Object>[]});
+      expect(requests, hasLength(2));
+    });
+
+    test('gives up after the second connection error', () async {
+      await expectLater(
+        withServer(
+          () => getJson('$_server/api/libraries', 'tok'),
+          (_) async => throw http.ClientException('down'),
+        ),
+        throwsA(isA<http.ClientException>()),
+      );
+      expect(requests, hasLength(2));
+    });
+
     test('maps 401 to an expired session and 404 to a missing library', () {
       expect(const ApiException(401).result, LibraryResult.sessionExpired);
       expect(const ApiException(404).result, LibraryResult.libraryMissing);
@@ -256,6 +281,23 @@ void main() {
       expect(error, isNull);
       await tester.pump(const Duration(seconds: 2));
       expect(error, isA<TimeoutException>());
+    });
+  });
+
+  group('apiGet', () {});
+
+  group('warmUp', () {
+    test('pings with the token and never throws', () async {
+      await withServer(() async {
+        warmUp(_server, 'tok');
+        await pumpEventQueue();
+      }, (_) async => throw http.ClientException('down'));
+
+      expect(requests, hasLength(6), reason: '3 pings, each retried once');
+      for (final request in requests) {
+        expect(request.url.toString(), '$_server/ping');
+        expect(request.headers['Authorization'], 'Bearer tok');
+      }
     });
   });
 

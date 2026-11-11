@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:abs_wear/l10n/l10n.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:http/io_client.dart';
 
 /// A book, podcast or podcast episode as shown in lists (shelves, library
 /// browser).
@@ -136,11 +138,87 @@ class ApiException implements Exception {
   String toString() => 'HTTP $statusCode';
 }
 
+/// Reuses connections. Per zone, as tests swap it with [http.runWithClient].
+final _listClients = Expando<http.Client>();
+final _coverClients = Expando<http.Client>();
+
+/// Clients made here, which a timeout may close (never a test's).
+final _owned = Expando<bool>();
+
+Expando<http.Client> _pool({required bool cover}) =>
+    cover ? _coverClients : _listClients;
+
+http.Client _client({required bool cover}) =>
+    _pool(cover: cover)[Zone.current] ??= _newClient();
+
+http.Client _newClient() {
+  final client = http.Client();
+  if (client is! IOClient) return client;
+  client.close();
+  // Requests queue on a few warm connections instead of opening new ones.
+  final owned = IOClient(
+    HttpClient()
+      ..maxConnectionsPerHost = 3
+      ..connectionTimeout = const Duration(seconds: 10),
+  );
+  _owned[owned] = true;
+  return owned;
+}
+
+/// A hung connection never frees its slot, so a timeout drops the client.
+void _discard({required bool cover}) {
+  final pool = _pool(cover: cover);
+  final client = pool[Zone.current];
+  if (client == null || _owned[client] != true) return;
+  pool[Zone.current] = null;
+  client.close();
+}
+
+/// GETs [url], retrying once on a connection error. Covers have their own
+/// connections, so lists never wait behind them.
+Future<http.Response> apiGet(
+  String url,
+  String token, {
+  String? accept,
+  bool cover = false,
+}) async {
+  Future<http.Response> get() => _client(cover: cover)
+      .get(
+        Uri.parse(url),
+        headers: {'Authorization': 'Bearer $token', 'Accept': ?accept},
+      )
+      .timeout(Duration(seconds: cover ? 60 : 20));
+  try {
+    try {
+      return await get();
+    } on http.ClientException {
+      // A reused connection may have been closed by the server.
+      return await get();
+    }
+  } on TimeoutException {
+    _discard(cover: cover);
+    rethrow;
+  }
+}
+
+/// Opens connections while the home screen shows: two for the library's
+/// parallel requests, one for covers.
+void warmUp(String serverUrl, String token) {
+  void ping({bool cover = false}) => unawaited(
+    apiGet(
+      '$serverUrl/ping',
+      token,
+      cover: cover,
+    ).then((_) {}, onError: (_) {}),
+  );
+  ping();
+  ping();
+  ping(cover: true);
+}
+
 /// GETs [url] and decodes the JSON body; throws [ApiException] on non-200.
 Future<Object> getJson(String url, String token) async {
-  final response = await http
-      .get(Uri.parse(url), headers: {'Authorization': 'Bearer $token'})
-      .timeout(const Duration(seconds: 20));
+  final response = await apiGet(url, token);
   if (response.statusCode != 200) throw ApiException(response.statusCode);
   return jsonDecode(response.body) as Object;
 }
