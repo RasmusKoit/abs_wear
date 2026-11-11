@@ -18,3 +18,71 @@ services:
       - ./data/podcasts:/podcasts:ro
       # Screenshot library from generate_demo.sh (not used by E2E).
       - ./data/demo:/demo:ro
+
+  # Authentik as the OpenID Connect provider for SSO login tests. The
+  # blueprint in ./authentik/blueprints creates the "abs" application; seed.sh
+  # sets the test user's password and points ABS at it. Secrets come from
+  # .env (alphanumeric only: Compose would expand a "$").
+  authentik-db:
+    image: docker.io/library/postgres:16-alpine
+    container_name: abs-wear-authentik-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: authentik
+      POSTGRES_USER: authentik
+      POSTGRES_PASSWORD: ${AUTHENTIK_PG_PASSWORD:?set in .env}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d authentik -U authentik"]
+      interval: 10s
+      retries: 10
+      start_period: 20s
+    volumes:
+      - authentik-db:/var/lib/postgresql/data
+
+  authentik-server:
+    image: ghcr.io/goauthentik/server:2026.8.5
+    container_name: abs-wear-authentik
+    command: server
+    restart: unless-stopped
+    depends_on:
+      authentik-db:
+        condition: service_healthy
+    environment: &authentik-env
+      AUTHENTIK_POSTGRESQL__HOST: authentik-db
+      AUTHENTIK_POSTGRESQL__NAME: authentik
+      AUTHENTIK_POSTGRESQL__USER: authentik
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_PG_PASSWORD}
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:?set in .env}
+      AUTHENTIK_BOOTSTRAP_PASSWORD: ${AUTHENTIK_BOOTSTRAP_PASSWORD:?set in .env}
+      AUTHENTIK_BOOTSTRAP_TOKEN: ${AUTHENTIK_BOOTSTRAP_TOKEN:?set in .env}
+      AUTHENTIK_BOOTSTRAP_EMAIL: admin@abs-wear.test
+      AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
+      AUTHENTIK_DISABLE_UPDATE_CHECK: "true"
+      AUTHENTIK_DISABLE_STARTUP_ANALYTICS: "true"
+      # Read by the blueprint.
+      ABS_OIDC_CLIENT_SECRET: ${ABS_OIDC_CLIENT_SECRET:?set in .env}
+      ABS_PUBLIC_URL: ${ABS_E2E_URL:?set in .env}
+      ABS_TEST_USER: ${ABS_TEST_USER:?set in .env}
+    ports:
+      - "9000:9000"
+    shm_size: 512mb
+    volumes:
+      - ./data/authentik:/data
+      - ./authentik/blueprints:/blueprints/custom:ro
+
+  authentik-worker:
+    image: ghcr.io/goauthentik/server:2026.8.5
+    container_name: abs-wear-authentik-worker
+    command: worker
+    restart: unless-stopped
+    depends_on:
+      authentik-db:
+        condition: service_healthy
+    environment: *authentik-env
+    shm_size: 512mb
+    volumes:
+      - ./data/authentik:/data
+      - ./authentik/blueprints:/blueprints/custom:ro
+
+volumes:
+  authentik-db:

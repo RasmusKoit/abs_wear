@@ -63,5 +63,22 @@
     "minutesCount": "{count, plural, =1{1 Minute} other{{count} Minuten}}",
     "secondsCount": "{count, plural, =1{1 Sekunde} other{{count} Sekunden}}",
     "loading": "Wird geladen",
-    "volumeLevel": "Lautstärke {percent} %"
+    "volumeLevel": "Lautstärke {percent} %",
+    "ssoLogin": "Mit SSO anmelden",
+    "ssoCodeLabel": "Code",
+    "ssoWrongCode": "Falscher Code.",
+    "ssoConsent": "{app} Zugriff auf das Konto erlauben?",
+    "ssoAllow": "Erlauben",
+    "ssoNotEnabled": "Dieser Server bietet keine SSO-Anmeldung.",
+    "ssoRedirectNotAllowed": "Den Server-Admin bitten, {uri} unter Allowed Mobile Redirect URIs zu erlauben.",
+    "ssoUnsupported": "Diese Anmeldung ist auf der Uhr noch nicht möglich.",
+    "ssoAccessDenied": "Der Anmeldedienst hat den Zugriff verweigert.",
+    "ssoNoAccount": "Kein Audiobookshelf-Konto für diesen Benutzer.",
+    "ssoFailed": "SSO-Anmeldung fehlgeschlagen. Erneut versuchen.",
+    "next": "Weiter",
+    "passwordLogin": "Mit Passwort anmelden",
+    "back": "Zurück",
+    "emailLabel": "E-Mail",
+    "ssoWaitApprove": "Die Anmeldung auf dem anderen Gerät bestätigen.",
+    "ssoWaitCode": "Auf einem anderen Gerät diesen Code eingeben: {code}"
 }

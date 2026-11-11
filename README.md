@@ -21,14 +21,27 @@
 ## Features
 
 - **Audiobooks and podcasts**: Continue Listening, browse your libraries, switch between them.
-- **Stream or download**: download books to the watch and listen offline. Progress syncs when you're back online, and the latest listening wins, on the watch or anywhere else.
+- **Stream or download**: listen offline; progress syncs when you're back online.
 - **Player**: chapters, 10-second skips, playback speed, sleep timer and volume.
 - **Plays in the background** with media controls, also with the screen off.
-- **Downloads** keep going over Wi-Fi with the screen off, with a progress notification you can cancel.
 - **Made for the watch**: rotary crown scrolling, ambient mode, large text and screen reader support.
+- **Password or SSO login**, right on the watch.
 - **18 languages**.
 
 Needs Wear OS 3 or newer and your own [Audiobookshelf][abs_github_link] server.
+
+---
+
+## Logging in
+
+Enter your server address and tap **Next**. The watch shows the login options your server offers, one question per screen.
+
+- **Password**: your Audiobookshelf username and password.
+- **SSO ([OpenID Connect][abs_oidc_docs])**: sign in with your identity provider right on the watch, over Wi-Fi or LTE. Works with Authentik, Authelia, Logto, VoidAuth, tinyauth, Keycloak, Gitea and Pocket ID (approve on another device). Forgejo, Dex, Kanidm and Zitadel should work but are untested. Passkeys and captchas aren't supported. More providers: [#80][sso_providers_issue].
+
+**SSO setup for the server admin:** in Audiobookshelf, **Settings → Authentication → Allowed Mobile Redirect URIs**, add `abswear://oauth`. The identity provider needs the same redirect URIs as for the official Audiobookshelf app (`/auth/openid/callback` and `/auth/openid/mobile-redirect`).
+
+After login the watch only talks to Audiobookshelf. To cut off a user's access, disable them there, not in the identity provider.
 
 ---
 
@@ -87,6 +100,7 @@ Strings live in `lib/l10n/arb/` ([flutter_localizations][flutter_localizations_l
 ABS Wear is a third-party app and isn't affiliated with the Audiobookshelf project. Screenshots show a demo library of public-domain titles.
 
 [abs_github_link]: https://github.com/advplyr/audiobookshelf
+[abs_oidc_docs]: https://www.audiobookshelf.org/docs/documentation/server-management/oidc-authentication
 [abs_wear_header]: .github/pictures/ABS_Wear_header.png
 [advplyr_github_link]: https://github.com/advplyr
 [android_platform_tools]: https://developer.android.com/tools/releases/platform-tools
@@ -96,5 +110,6 @@ ABS Wear is a third-party app and isn't affiliated with the Audiobookshelf proje
 [nyxholas_github_link]: https://github.com/nichwall
 [play_store_link]: https://play.google.com/store/apps/details?id=dev.koit.abs_wear
 [releases_page]: https://github.com/RasmusKoit/abs_wear/releases/latest
+[sso_providers_issue]: https://github.com/RasmusKoit/abs_wear/issues/80
 [very_good_analysis_badge]: https://img.shields.io/badge/style-very_good_analysis-B22C89.svg
 [very_good_analysis_link]: https://pub.dev/packages/very_good_analysis

@@ -63,5 +63,22 @@
     "minutesCount": "{count, plural, =0{0 मिनट} =1{1 मिनट} other{{count} मिनट}}",
     "secondsCount": "{count, plural, =0{0 सेकंड} =1{1 सेकंड} other{{count} सेकंड}}",
     "loading": "लोड हो रहा है",
-    "volumeLevel": "वॉल्यूम {percent}%"
+    "volumeLevel": "वॉल्यूम {percent}%",
+    "ssoLogin": "SSO से लॉग इन",
+    "ssoCodeLabel": "कोड",
+    "ssoWrongCode": "गलत कोड।",
+    "ssoConsent": "{app} को आपका खाता इस्तेमाल करने दें?",
+    "ssoAllow": "अनुमति दें",
+    "ssoNotEnabled": "इस सर्वर पर SSO लॉग इन नहीं है।",
+    "ssoRedirectNotAllowed": "सर्वर एडमिन से Allowed Mobile Redirect URIs में {uri} की अनुमति देने को कहें।",
+    "ssoUnsupported": "यह साइन-इन अभी घड़ी पर नहीं हो सकता।",
+    "ssoAccessDenied": "साइन-इन सेवा ने पहुँच से इनकार कर दिया।",
+    "ssoNoAccount": "इस उपयोगकर्ता का कोई Audiobookshelf खाता नहीं है।",
+    "ssoFailed": "SSO लॉग इन विफल रहा। फिर से कोशिश करें।",
+    "next": "आगे",
+    "passwordLogin": "पासवर्ड से लॉग इन",
+    "back": "वापस",
+    "emailLabel": "ईमेल",
+    "ssoWaitApprove": "अपने दूसरे डिवाइस पर साइन-इन को मंज़ूरी दें।",
+    "ssoWaitCode": "किसी दूसरे डिवाइस पर यह कोड डालें: {code}"
 }

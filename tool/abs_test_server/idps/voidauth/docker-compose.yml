@@ -1,0 +1,42 @@
+# Audiobookshelf + VoidAuth for testing the watch's VoidAuth SSO adapter.
+# Deployed to ~/code/abs-wear-idp-voidauth on the dev box (see README.md).
+# Secrets come from .env (alphanumeric only: Compose would expand a "$").
+name: abs-wear-idp-voidauth
+
+services:
+  audiobookshelf:
+    image: ghcr.io/advplyr/audiobookshelf:2.37.2
+    restart: unless-stopped
+    ports:
+      - "13386:80"
+    environment:
+      - TZ=Europe/Tallinn
+      - RATE_LIMIT_AUTH_MAX=10000
+    volumes:
+      - ./data/abs/config:/config
+      - ./data/abs/metadata:/metadata
+      # The main test server's books (generate_media.sh), read-only.
+      - ${AUDIOBOOKS_DIR:-../abs-wear-test/data/audiobooks}:/audiobooks:ro
+
+  voidauth:
+    image: voidauth/voidauth:1.19.0
+    restart: unless-stopped
+    ports:
+      - "9006:3000"
+    environment:
+      # As seen from the watch (and from ABS, which calls its token endpoint).
+      APP_URL: ${VOIDAUTH_URL:?set in .env}
+      DB_ADAPTER: sqlite
+      STORAGE_KEY: ${VOIDAUTH_STORAGE_KEY:?set in .env}
+      # The "abs" OIDC app, declared here instead of in the admin UI. Consent
+      # is left on so the watch's consent screen gets exercised.
+      OIDC_abs_CLIENT_DISPLAY_NAME: Audiobookshelf
+      OIDC_abs_CLIENT_SECRET: ${ABS_OIDC_CLIENT_SECRET:?set in .env}
+      OIDC_abs_CLIENT_REDIRECT_URLS: >-
+        ${ABS_URL:?set in .env}/auth/openid/callback,
+        ${ABS_URL}/auth/openid/mobile-redirect,
+        http://localhost:13386/auth/openid/callback,
+        http://localhost:13386/auth/openid/mobile-redirect
+    volumes:
+      - ./data/voidauth/config:/app/config
+      - ./data/voidauth/db:/app/db

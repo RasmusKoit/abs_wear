@@ -309,5 +309,91 @@
                 "example": "50"
             }
         }
+    },
+    "ssoLogin": "Login with SSO",
+    "@ssoLogin": {
+        "description": "Login page: button that starts single sign-on (SSO) login"
+    },
+    "ssoCodeLabel": "Code",
+    "@ssoCodeLabel": {
+        "description": "SSO login: label of the field for a one-time code from an authenticator app"
+    },
+    "ssoWrongCode": "Wrong code.",
+    "@ssoWrongCode": {
+        "description": "SSO login: the one-time code was wrong"
+    },
+    "ssoConsent": "Allow {app} to use your account?",
+    "@ssoConsent": {
+        "description": "SSO login: the sign-in service asks to allow the app",
+        "placeholders": {
+            "app": {
+                "type": "String",
+                "example": "Audiobookshelf"
+            }
+        }
+    },
+    "ssoAllow": "Allow",
+    "@ssoAllow": {
+        "description": "SSO login: button that allows the app on the consent screen"
+    },
+    "ssoNotEnabled": "This server has no SSO login.",
+    "@ssoNotEnabled": {
+        "description": "SSO login: the server has no single sign-on"
+    },
+    "ssoRedirectNotAllowed": "Ask the server admin to allow {uri} under Allowed Mobile Redirect URIs.",
+    "@ssoRedirectNotAllowed": {
+        "description": "SSO login: the server does not allow the app yet; \"Allowed Mobile Redirect URIs\" is the server setting name and stays in English",
+        "placeholders": {
+            "uri": {
+                "type": "String",
+                "example": "abswear://oauth"
+            }
+        }
+    },
+    "ssoUnsupported": "This sign-in can't be done on the watch yet.",
+    "@ssoUnsupported": {
+        "description": "SSO login: the sign-in service asks for something the watch cannot do (passkey, captcha)"
+    },
+    "ssoAccessDenied": "The sign-in service denied access.",
+    "@ssoAccessDenied": {
+        "description": "SSO login: the sign-in service refused access"
+    },
+    "ssoNoAccount": "No Audiobookshelf account for this user.",
+    "@ssoNoAccount": {
+        "description": "SSO login worked but the server has no account for this user"
+    },
+    "ssoFailed": "SSO login failed. Try again.",
+    "@ssoFailed": {
+        "description": "SSO login failed for another reason"
+    },
+    "next": "Next",
+    "@next": {
+        "description": "Login: button after the server URL that checks how the server lets users log in"
+    },
+    "passwordLogin": "Login with password",
+    "@passwordLogin": {
+        "description": "Login: chooses logging in with the server username and password (when the server also offers SSO)"
+    },
+    "back": "Back",
+    "@back": {
+        "description": "Login: back to the previous login screen"
+    },
+    "emailLabel": "Email",
+    "@emailLabel": {
+        "description": "Label for an email address input field"
+    },
+    "ssoWaitApprove": "Approve the sign-in on your other device.",
+    "@ssoWaitApprove": {
+        "description": "SSO login: waiting while the user approves the sign-in on another device (for example a push notification on their phone)"
+    },
+    "ssoWaitCode": "On another device, enter this code: {code}",
+    "@ssoWaitCode": {
+        "description": "SSO login: the user enters this code on another device to approve the sign-in",
+        "placeholders": {
+            "code": {
+                "type": "String",
+                "example": "K7Q2-M9XD"
+            }
+        }
     }
 }

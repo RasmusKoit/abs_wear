@@ -24,12 +24,13 @@ void main() {
   // Identical to the English on purpose: the same word, or a loanword the
   // language uses as is. Anything else identical is an untranslated string.
   const sameAsEnglish = {
-    'de': {'pause', 'downloads'},
+    'de': {'pause', 'downloads', 'ssoCodeLabel'},
     'es': {'podcastCount'},
-    'fr': {'pause'},
-    'id': {'volumeLevel'},
-    'it': {'passwordLabel', 'sleepTimerOff'},
+    'fr': {'pause', 'ssoCodeLabel'},
+    'id': {'volumeLevel', 'emailLabel'},
+    'it': {'passwordLabel', 'sleepTimerOff', 'emailLabel'},
     'pt': {'downloads'},
+    'vi': {'emailLabel'},
   };
 
   test('every ARB locale is supported, and every supported locale has one', () {

@@ -63,5 +63,22 @@
     "minutesCount": "{count, plural, =0{0 minutos} =1{1 minuto} other{{count} minutos}}",
     "secondsCount": "{count, plural, =0{0 segundos} =1{1 segundo} other{{count} segundos}}",
     "loading": "Carregando",
-    "volumeLevel": "Volume em {percent}%"
+    "volumeLevel": "Volume em {percent}%",
+    "ssoLogin": "Entrar com SSO",
+    "ssoCodeLabel": "Código",
+    "ssoWrongCode": "Código incorreto.",
+    "ssoConsent": "Permitir que {app} use sua conta?",
+    "ssoAllow": "Permitir",
+    "ssoNotEnabled": "Este servidor não tem login SSO.",
+    "ssoRedirectNotAllowed": "Peça ao admin do servidor para permitir {uri} em Allowed Mobile Redirect URIs.",
+    "ssoUnsupported": "Este login ainda não pode ser feito no relógio.",
+    "ssoAccessDenied": "O serviço de login negou o acesso.",
+    "ssoNoAccount": "Nenhuma conta do Audiobookshelf para este usuário.",
+    "ssoFailed": "Falha no login SSO. Tente novamente.",
+    "next": "Próximo",
+    "passwordLogin": "Entrar com senha",
+    "back": "Voltar",
+    "emailLabel": "E-mail",
+    "ssoWaitApprove": "Aprove o login no seu outro dispositivo.",
+    "ssoWaitCode": "Em outro dispositivo, digite este código: {code}"
 }

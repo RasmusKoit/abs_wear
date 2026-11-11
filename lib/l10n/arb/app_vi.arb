@@ -63,5 +63,22 @@
     "minutesCount": "{count, plural, other{{count} phút}}",
     "secondsCount": "{count, plural, other{{count} giây}}",
     "loading": "Đang tải",
-    "volumeLevel": "Âm lượng {percent}%"
+    "volumeLevel": "Âm lượng {percent}%",
+    "ssoLogin": "Đăng nhập bằng SSO",
+    "ssoCodeLabel": "Mã",
+    "ssoWrongCode": "Sai mã.",
+    "ssoConsent": "Cho phép {app} dùng tài khoản của bạn?",
+    "ssoAllow": "Cho phép",
+    "ssoNotEnabled": "Máy chủ này không có đăng nhập SSO.",
+    "ssoRedirectNotAllowed": "Hãy nhờ quản trị viên máy chủ cho phép {uri} trong Allowed Mobile Redirect URIs.",
+    "ssoUnsupported": "Chưa thể đăng nhập kiểu này trên đồng hồ.",
+    "ssoAccessDenied": "Dịch vụ đăng nhập đã từ chối truy cập.",
+    "ssoNoAccount": "Không có tài khoản Audiobookshelf cho người dùng này.",
+    "ssoFailed": "Đăng nhập SSO thất bại. Hãy thử lại.",
+    "next": "Tiếp",
+    "passwordLogin": "Đăng nhập bằng mật khẩu",
+    "back": "Quay lại",
+    "emailLabel": "Email",
+    "ssoWaitApprove": "Hãy duyệt đăng nhập trên thiết bị khác của bạn.",
+    "ssoWaitCode": "Trên thiết bị khác, hãy nhập mã này: {code}"
 }

@@ -22,6 +22,7 @@ import 'package:http/testing.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../helpers/fake_pocketid_server.dart';
 import '../helpers/helpers.dart';
 
 const _server = 'http://abs.test';
@@ -103,16 +104,147 @@ void main() {
   }
 
   group('login', () {
-    screen('form', (tester, app) async {
+    screen('server', (tester, app) async {
       SharedPreferences.setMockInitialValues({});
       await tester.pumpWidget(app(const LoginPage()));
       await tester.pumpAndSettle();
-      expect(find.byType(TextFormField), findsNWidgets(3));
+      expect(find.byType(TextFormField), findsOneWidget);
+      expect(find.byType(ElevatedButton), findsOneWidget); // Next
       await expectAccessible(tester);
-      // The button is reachable by scrolling.
-      await tester.ensureVisible(find.byType(ElevatedButton));
+      expectNoLayoutErrors(tester);
+    });
+
+    /// Enters the server and taps "Next".
+    Future<void> next(
+      WidgetTester tester,
+      Widget Function(Widget home) app,
+    ) async {
+      SharedPreferences.setMockInitialValues({});
+      await tester.pumpWidget(app(const LoginPage()));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextFormField).first, fakeAbsUrl);
+      // Done typing: the keyboard closes (or the field keeps itself in view).
+      FocusManager.instance.primaryFocus?.unfocus();
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(ElevatedButton));
+      await tester.pumpAndSettle();
+    }
+
+    screen('choice, then username and password', (tester, app) async {
+      await http.runWithClient(() async {
+        await next(tester, app);
+        expect(find.byType(ElevatedButton), findsNWidgets(2));
+        expectNoLayoutErrors(tester);
+        await expectAccessible(tester);
+        // Password login: the username screen, then the password screen.
+        await tester.tap(find.byType(ElevatedButton).first);
+        await tester.pumpAndSettle();
+        expect(find.byType(TextFormField), findsOneWidget);
+        expectNoLayoutErrors(tester);
+        await expectAccessible(tester);
+        await tester.enterText(find.byType(TextFormField), 'alice');
+        FocusManager.instance.primaryFocus?.unfocus();
+        await tester.pumpAndSettle();
+        await tester.tap(find.byType(ElevatedButton));
+        await tester.pumpAndSettle();
+        expect(find.text('alice'), findsOneWidget);
+        expectNoLayoutErrors(tester);
+        await expectAccessible(tester);
+      }, () => FakeServers().client);
+    });
+
+    /// Enters the server and chooses SSO. Without [settle], doesn't wait for
+    /// spinners to stop (a screen waiting for approval spins until then).
+    Future<void> startSso(
+      WidgetTester tester,
+      Widget Function(Widget home) app, {
+      bool settle = true,
+    }) async {
+      await next(tester, app);
+      // The second choice is SSO.
+      await tester.drag(
+        find.byType(SingleChildScrollView),
+        const Offset(0, -400),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(ElevatedButton).last);
+      if (settle) {
+        await tester.pumpAndSettle();
+      } else {
+        for (var i = 0; i < 10; i++) {
+          await tester.pump(const Duration(milliseconds: 10));
+        }
+      }
+    }
+
+    Future<void> submit(WidgetTester tester, String text) async {
+      await tester.enterText(find.byType(TextFormField).first, text);
+      FocusManager.instance.primaryFocus?.unfocus();
+      await tester.pumpAndSettle();
+      await tester.drag(
+        find.byType(SingleChildScrollView),
+        const Offset(0, -400),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(ElevatedButton));
+      await tester.pumpAndSettle();
+    }
+
+    screen('SSO password and consent', (tester, app) async {
+      await http.runWithClient(() async {
+        await startSso(tester, app);
+        await submit(tester, 'wear');
+        await submit(tester, 'nope'); // Wrong: says so above the field.
+        expectNoLayoutErrors(tester);
+        await expectAccessible(tester);
+        await submit(tester, 'secret');
+        expect(find.byType(TextFormField), findsNothing); // Consent.
+        expectNoLayoutErrors(tester);
+        await expectAccessible(tester);
+      }, () => FakeServers().client);
+    });
+
+    screen('SSO error', (tester, app) async {
+      await http.runWithClient(
+        () => startSso(tester, app),
+        () => FakeServers(startStatus: 400).client,
+      );
+      expect(find.textContaining('abswear://oauth'), findsOneWidget);
+      // From the top: a button half scrolled off would fail the size check.
+      await tester.drag(
+        find.byType(SingleChildScrollView),
+        const Offset(0, 400),
+      );
       await tester.pumpAndSettle();
       expectNoLayoutErrors(tester);
+      await expectAccessible(tester);
+    });
+
+    screen('SSO wait', (tester, app) async {
+      // Never approved: the screen keeps waiting.
+      final servers = FakePocketId(decisions: [Decision.pending]);
+      await http.runWithClient(
+        () => startSso(tester, app, settle: false),
+        () => servers.client,
+      );
+      // The code is the same in every language; a spinner, no fields.
+      expect(find.textContaining('PAEX5F5A'), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(find.byType(TextFormField), findsNothing);
+      expect(find.byType(TextButton), findsOneWidget); // Back
+      // From the top: a button half scrolled off would fail the size check.
+      tester
+          .state<ScrollableState>(
+            find.descendant(
+              of: find.byType(SingleChildScrollView),
+              matching: find.byType(Scrollable),
+            ),
+          )
+          .position
+          .jumpTo(0);
+      await tester.pump();
+      expectNoLayoutErrors(tester);
+      await expectAccessible(tester);
     });
 
     screen('logged in, and the logout dialog', (tester, app) async {

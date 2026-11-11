@@ -60,6 +60,9 @@ void main() {
     tester,
   ) async {
     SharedPreferences.setMockInitialValues({});
+    routes['GET /status'] = () => ok({
+      'authMethods': ['local'],
+    });
     routes['POST /login'] = () => ok({
       'user': {'token': 'tok'},
       'userDefaultLibraryId': 'lib1',
@@ -73,13 +76,21 @@ void main() {
       await tester.pumpApp(const LoginPage());
       await tester.pumpAndSettle();
       await tester.enterText(find.byType(TextFormField).at(0), _server);
-      await tester.enterText(find.byType(TextFormField).at(1), 'alice ');
-      await tester.enterText(find.byType(TextFormField).at(2), 'pw');
+      await tester.tap(find.text('Next'));
+      await tester.pumpAndSettle();
+      // Password-only server: the username, then the password.
+      await tester.enterText(find.byType(TextFormField).at(0), 'alice ');
+      await tester.tap(find.text('Next'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextFormField).at(0), 'pw');
       await tester.tap(find.text('Login'));
       await tester.pumpAndSettle();
     }, () => client);
 
-    expect(jsonDecode(bodies.first), containsPair('username', 'alice'));
+    expect(
+      jsonDecode(bodies[requests.indexOf('POST /login')]),
+      containsPair('username', 'alice'),
+    );
     final prefs = await SharedPreferences.getInstance();
     expect(prefs.getString('username'), 'alice');
     // The identity used from now on (library, offline progress) matches.
@@ -180,7 +191,7 @@ void main() {
       final prefs = await SharedPreferences.getInstance();
       expect(prefs.getString('token'), isNull);
       // The login form is usable again once the logout finished.
-      expect(find.text('Login'), findsOneWidget);
+      expect(find.text('Next'), findsOneWidget);
       expect(loginButton(tester).onPressed, isNotNull);
       await revoked(tester);
     });
@@ -257,7 +268,7 @@ void main() {
       final prefs = await SharedPreferences.getInstance();
       expect(prefs.getStringList('pendingLogout'), isNull);
       expect(prefs.getString('pickedLibrary'), isNull);
-      expect(find.text('Login'), findsOneWidget);
+      expect(find.text('Next'), findsOneWidget);
     });
 
     testWidgets('a logout cut short before dropping its token is finished', (
@@ -286,7 +297,7 @@ void main() {
       final prefs = await SharedPreferences.getInstance();
       expect(prefs.getString('token'), isNull);
       expect(prefs.getStringList('pendingLogout'), isNull);
-      expect(find.text('Login'), findsOneWidget);
+      expect(find.text('Next'), findsOneWidget);
     });
 
     testWidgets("a cut short logout keeps a newer login's downloads", (

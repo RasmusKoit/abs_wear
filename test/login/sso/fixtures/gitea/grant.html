@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en-US" data-theme="gitea-auto">
+<head>
+<title>Gitea: Git with a cup of tea</title>
+</head>
+<body>
+	<div class="full height">
+		<noscript>This website requires JavaScript.</noscript>
+			<div role="main" aria-label="" class="page-content oauth2-authorize-application-box">
+	<div class="ui container tw-max-w-[500px]">
+		<h3 class="ui top attached header">
+			Authorize "Audiobookshelf" to access your account?
+		</h3>
+		<div class="ui attached segment">
+			<p>
+				<b>If you grant access, it will be able to access and write to all your account information, including private repos and organizations.</b><br>
+				This application was created by <a href="/abs-admin">@abs-admin</a>.<br>
+				With scopes: <b>openid profile email</b>
+			</p>
+		</div>
+		<div class="ui attached segment">
+			<p>You will be redirected to <strong>http://abs.test/auth/openid/mobile-redirect</strong> if you authorize this application.</p>
+		</div>
+		<div class="ui attached segment tw-text-center">
+			<form method="post" action="/login/oauth/grant">
+				<input type="hidden" name="client_id" value="8d7bf838-d5bc-412c-b1f3-69525f046952">
+				<input type="hidden" name="state" value="WUcq3K6d23WqZcdgDU6WBPolbqZVCeVR">
+				<input type="hidden" name="scope" value="openid profile email">
+				<input type="hidden" name="nonce" value="">
+				<input type="hidden" name="redirect_uri" value="http://abs.test/auth/openid/mobile-redirect">
+				<button type="submit" id="authorize-app" name="granted" value="true" class="ui red inline button">Authorize Application</button>
+				<button type="submit" name="granted" value="false" class="ui basic primary inline button">Cancel</button>
+			</form>
+		</div>
+	</div>
+</div>
+	</div>
+	</body>
+</html>

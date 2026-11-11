@@ -1,0 +1,45 @@
+# Audiobookshelf + Authelia for the watch's Authelia SSO adapter. Its own
+# compose project, next to (not touching) ../../docker-compose.yml. Run
+# setup.sh rather than "docker compose up": it writes the certificates,
+# keys and password hashes Authelia reads first.
+name: abs-wear-idp-authelia
+
+services:
+  audiobookshelf:
+    image: ghcr.io/advplyr/audiobookshelf:2.37.2
+    container_name: abs-wear-idp-authelia-abs
+    restart: unless-stopped
+    ports:
+      - "${ABS_PORT:-13382}:80"
+    environment:
+      - TZ=Europe/Tallinn
+      - RATE_LIMIT_AUTH_MAX=10000
+      # Authelia's certificate comes from setup.sh's test CA.
+      - NODE_EXTRA_CA_CERTS=/certs/ca.crt
+    volumes:
+      - ./data/abs/config:/config
+      - ./data/abs/metadata:/metadata
+      - ${AUDIOBOOKS_DIR:?set in .env}:/audiobooks:ro
+      - ./data/authelia/certs/ca.crt:/certs/ca.crt:ro
+
+  authelia:
+    image: docker.io/authelia/authelia:4.39.28
+    container_name: abs-wear-idp-authelia
+    restart: unless-stopped
+    ports:
+      - "${IDP_PORT:-9002}:9091"
+    environment:
+      X_AUTHELIA_CONFIG: /etc/authelia/configuration.yml
+      X_AUTHELIA_CONFIG_FILTERS: template
+      # Secrets are alphanumeric (Compose would expand a "$").
+      IDP_HOST: ${IDP_HOST:?set in .env}
+      IDP_PORT: ${IDP_PORT:-9002}
+      IDP_JWT_SECRET: ${IDP_JWT_SECRET:?set in .env}
+      IDP_SESSION_SECRET: ${IDP_SESSION_SECRET:?set in .env}
+      IDP_STORAGE_KEY: ${IDP_STORAGE_KEY:?set in .env}
+      IDP_OIDC_HMAC_SECRET: ${IDP_OIDC_HMAC_SECRET:?set in .env}
+      ABS_PUBLIC_URL: ${ABS_PUBLIC_URL:?set in .env}
+      ABS_TOTP_USER: ${ABS_TOTP_USER:?set in .env}
+    volumes:
+      - ./configuration.yml:/etc/authelia/configuration.yml:ro
+      - ./data/authelia:/data

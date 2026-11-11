@@ -298,18 +298,27 @@ Future<void> scrollAndTap(WidgetTester tester, Finder finder) async {
   await tester.tap(finder);
 }
 
-Future<void> logInAndOpenLibrary(WidgetTester tester) async {
+/// Enters the server on the first login screen and taps "Next".
+Future<void> enterServer(WidgetTester tester, String url) async {
   await tester.pumpWidget(const App());
-  await pumpUntil(tester, find.text('Login'));
+  await pumpUntil(tester, find.text('Next'));
+  await tester.enterText(find.widgetWithText(TextFormField, 'Server URL'), url);
+  await scrollAndTap(tester, find.text('Next'));
+}
 
-  await tester.enterText(
-    find.widgetWithText(TextFormField, 'Server URL'),
-    absUrl,
-  );
+Future<void> logInAndOpenLibrary(WidgetTester tester) async {
+  await enterServer(tester, absUrl);
+  // The test server offers passwords and SSO.
+  await pumpUntil(tester, find.text('Login with password'));
+  await scrollAndTap(tester, find.text('Login with password'));
+  // One question per screen: the username, then the password.
+  await pumpUntil(tester, find.widgetWithText(TextFormField, 'Username'));
   await tester.enterText(
     find.widgetWithText(TextFormField, 'Username'),
     absUser,
   );
+  await scrollAndTap(tester, find.text('Next'));
+  await pumpUntil(tester, find.widgetWithText(TextFormField, 'Password'));
   await tester.enterText(
     find.widgetWithText(TextFormField, 'Password'),
     absPassword,
@@ -361,25 +370,65 @@ void main() {
   });
 
   testWidgets('rejects a URL without a scheme', (tester) async {
-    await tester.pumpWidget(const App());
-    await pumpUntil(tester, find.text('Login'));
-    await tester.enterText(
-      find.widgetWithText(TextFormField, 'Server URL'),
-      'abs.example.com',
-    );
+    await enterServer(tester, 'abs.example.com');
+    await pumpFor(tester, const Duration(seconds: 2));
+    // Still on the server screen; an uncaught error would fail the test.
+    expect(find.text('Next'), findsOneWidget);
+    expect(find.text('Login with password'), findsNothing);
+  });
+
+  /// Starts an SSO login (Authentik on the test server) and answers the
+  /// username screen.
+  Future<void> startSso(WidgetTester tester) async {
+    await enterServer(tester, absUrl);
+    // The server's own label for its SSO button.
+    await pumpUntil(tester, find.text('Login with Authentik'));
+    await scrollAndTap(tester, find.text('Login with Authentik'));
+    await pumpUntil(tester, find.text('Next'));
+    expect(find.text('Authentik'), findsOneWidget);
     await tester.enterText(
       find.widgetWithText(TextFormField, 'Username'),
       absUser,
     );
+    await scrollAndTap(tester, find.text('Next'));
+    await pumpUntil(tester, find.widgetWithText(TextFormField, 'Password'));
+  }
+
+  testWidgets('logs in with SSO and opens the library', (tester) async {
+    await startSso(tester);
     await tester.enterText(
       find.widgetWithText(TextFormField, 'Password'),
       absPassword,
     );
-    await scrollAndTap(tester, find.text('Login'));
-    await pumpFor(tester, const Duration(seconds: 2));
-    // Still on the form; an uncaught error would fail the test.
-    expect(find.text('Login'), findsOneWidget);
-    expect(find.text('Hello $absUser'), findsNothing);
+    await scrollAndTap(tester, find.text('Next'));
+    // Authentik asks for consent once per user, then remembers it.
+    final allow = find.text('Allow');
+    final hello = find.text('Hello $absUser');
+    await pumpUntil(
+      tester,
+      find.byWidgetPredicate(
+        (w) => w is Text && (w.data == 'Allow' || w.data == 'Hello $absUser'),
+      ),
+    );
+    if (allow.evaluate().isNotEmpty) await scrollAndTap(tester, allow);
+    await pumpUntil(tester, hello);
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString('username'), absUser);
+
+    await scrollAndTap(tester, find.widgetWithText(ElevatedButton, 'Library'));
+    await pumpUntil(tester, find.text('Single File Book'));
+  });
+
+  testWidgets('SSO asks again after a wrong password', (tester) async {
+    await startSso(tester);
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Password'),
+      'not-the-password',
+    );
+    await scrollAndTap(tester, find.text('Next'));
+    await pumpUntil(tester, find.text('Wrong username or password.'));
+    await scrollAndTap(tester, find.text('Back'));
+    await pumpUntil(tester, find.text('Login with Authentik'));
   });
 
   testWidgets('an expired token returns to the login form', (tester) async {
@@ -392,7 +441,7 @@ void main() {
     await pumpUntil(tester, find.text('Hello $absUser'));
     await scrollAndTap(tester, find.widgetWithText(ElevatedButton, 'Library'));
     // The 401 pops the library and clears the token.
-    await pumpUntil(tester, find.widgetWithText(TextFormField, 'Password'));
+    await pumpUntil(tester, find.text('Next'));
     expect(prefs.getString('token'), isNull);
   });
 

@@ -63,5 +63,22 @@
     "minutesCount": "{count, plural, other{{count}분}}",
     "secondsCount": "{count, plural, other{{count}초}}",
     "loading": "불러오는 중",
-    "volumeLevel": "볼륨 {percent}%"
+    "volumeLevel": "볼륨 {percent}%",
+    "ssoLogin": "SSO로 로그인",
+    "ssoCodeLabel": "코드",
+    "ssoWrongCode": "코드가 올바르지 않습니다.",
+    "ssoConsent": "{app}에서 계정을 사용하도록 허용할까요?",
+    "ssoAllow": "허용",
+    "ssoNotEnabled": "이 서버에는 SSO 로그인이 없습니다.",
+    "ssoRedirectNotAllowed": "서버 관리자에게 Allowed Mobile Redirect URIs에 {uri}를 허용해 달라고 요청하세요.",
+    "ssoUnsupported": "이 로그인은 아직 시계에서 할 수 없습니다.",
+    "ssoAccessDenied": "로그인 서비스가 액세스를 거부했습니다.",
+    "ssoNoAccount": "이 사용자의 Audiobookshelf 계정이 없습니다.",
+    "ssoFailed": "SSO 로그인에 실패했습니다. 다시 시도하세요.",
+    "next": "다음",
+    "passwordLogin": "비밀번호로 로그인",
+    "back": "뒤로",
+    "emailLabel": "이메일",
+    "ssoWaitApprove": "다른 기기에서 로그인을 승인하세요.",
+    "ssoWaitCode": "다른 기기에서 이 코드를 입력하세요: {code}"
 }

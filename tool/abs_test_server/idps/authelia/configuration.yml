@@ -1,0 +1,79 @@
+# Authelia for ABS Wear SSO tests. Rendered by Authelia's template filter
+# (X_AUTHELIA_CONFIG_FILTERS=template): secrets come from the environment
+# (.env) and from files setup.sh writes under ./data/authelia.
+theme: light
+log:
+  level: info
+
+server:
+  address: tcp://:9091/
+  # Authelia only serves its portal over HTTPS (authelia_url must be https),
+  # so it terminates TLS itself with the test CA's certificate.
+  tls:
+    certificate: /data/certs/authelia.crt
+    key: /data/certs/authelia.key
+
+identity_validation:
+  reset_password:
+    jwt_secret: '{{ env "IDP_JWT_SECRET" }}'
+
+authentication_backend:
+  file:
+    path: /data/users_database.yml
+    watch: true
+
+access_control:
+  default_policy: one_factor
+
+# Tests try wrong passwords on purpose. Banned users get the same 401 as a
+# wrong password, so keep bans rare and short.
+regulation:
+  max_retries: 10
+  find_time: 1 minute
+  ban_time: 1 minute
+
+session:
+  secret: '{{ env "IDP_SESSION_SECRET" }}'
+  cookies:
+    - domain: '{{ env "IDP_HOST" }}'
+      authelia_url: 'https://{{ env "IDP_HOST" }}:{{ env "IDP_PORT" }}'
+
+storage:
+  encryption_key: '{{ env "IDP_STORAGE_KEY" }}'
+  local:
+    path: /data/db.sqlite3
+
+notifier:
+  filesystem:
+    filename: /data/notification.txt
+
+totp:
+  issuer: abs-wear.test
+
+identity_providers:
+  oidc:
+    hmac_secret: '{{ env "IDP_OIDC_HMAC_SECRET" }}'
+    jwks:
+      - key: {{ secret "/data/keys/oidc.pem" | mindent 10 "|" | msquote }}
+    authorization_policies:
+      abs:
+        default_policy: one_factor
+        rules:
+          # The TOTP test user always needs a second factor.
+          - policy: two_factor
+            subject: 'user:{{ env "ABS_TOTP_USER" }}'
+    clients:
+      - client_id: abs
+        client_name: Audiobookshelf
+        client_secret: '{{ secret "/data/client_secret.hash" }}'
+        public: false
+        authorization_policy: abs
+        # Ask every time, so the consent screen is always tested.
+        consent_mode: explicit
+        redirect_uris:
+          - '{{ env "ABS_PUBLIC_URL" }}/auth/openid/callback'
+          - '{{ env "ABS_PUBLIC_URL" }}/auth/openid/mobile-redirect'
+        scopes: [openid, profile, email, groups]
+        grant_types: [authorization_code]
+        response_types: [code]
+        token_endpoint_auth_method: client_secret_basic

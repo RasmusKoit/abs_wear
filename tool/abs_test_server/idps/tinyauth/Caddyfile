@@ -1,0 +1,11 @@
+# TLS for tinyauth (its OpenID provider insists on an https issuer). The
+# certificate comes from setup.sh's throwaway test CA.
+{
+	admin off
+	auto_https disable_redirects
+}
+
+:443 {
+	tls /tls/server.crt /tls/server.key
+	reverse_proxy tinyauth:3000
+}

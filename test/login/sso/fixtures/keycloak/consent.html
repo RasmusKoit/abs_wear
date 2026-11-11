@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html class="login-pf" lang="en">
+<head>
+<title>Sign in to abs</title>
+</head>
+<body id="keycloak-bg" class="" data-page-id="login-login-oauth-grant">
+<div class="pf-v5-c-login">
+  <div class="pf-v5-c-login__container">
+    <header id="kc-header" class="pf-v5-c-login__header">
+      <div id="kc-header-wrapper"
+              class="pf-v5-c-brand">abs</div>
+    </header>
+    <main class="pf-v5-c-login__main">
+      <div class="pf-v5-c-login__main-header">
+        <h1 class="pf-v5-c-title pf-m-3xl" id="kc-page-title">        <p>
+            Grant Access to Audiobookshelf
+        </p>
+</h1>
+      </div>
+      <div class="pf-v5-c-login__main-body">
+        <div id="kc-oauth" class="content-area">
+            <h3>Do you grant these access privileges?</h3>
+            <ul class="pf-v5-c-list">
+                        <li>
+                            <span>
+                                        Email address
+                            </span>
+                        </li>
+                        <li>
+                            <span>
+                                        User profile
+                            </span>
+                        </li>
+                        <li>
+                            <span>
+                                        User roles
+                            </span>
+                        </li>
+            </ul>
+            <form class="pf-v5-c-form pf-v5-u-w-100 pf-v5-u-mt-md-on-md" action="/realms/abs/login-actions/consent?client_id=abs&amp;tab_id=SNt-K7WBqRo&amp;client_data=eyJ0ZXN0Ijp0cnVlfQ" method="POST">
+                <input type="hidden" name="code" value="K0oQdeuOBbZJ_iADEgR_sjLZloxvhN4230t5R58UCNo">
+  <div class="pf-v5-c-form__group">
+    <div class="pf-v5-c-form__actions pf-v5-u-pt-xs pf-v5-u-flex-nowrap">
+  <button class="pf-v5-c-button pf-m-primary pf-m-block" name="accept" id="kc-login"
+          type="submit" >
+  Yes
+  </button>
+  <button class="pf-v5-c-button pf-m-secondary pf-m-block" name="cancel" id="kc-cancel"
+          type="submit" >
+  No
+  </button>
+    </div>
+  </div>
+            </form>
+        </div>
+          <div class="pf-v5-c-login__main-footer">
+          </div>
+      </div>
+        <div class="pf-v5-c-login__main-footer">
+        </div>
+    </main>
+  </div>
+</div>
+</body>
+</html>
