@@ -60,6 +60,14 @@ Identity providers the watch can sign in to by itself:
 
 Passkeys, captchas and setting up a new second factor need a browser, so they can't be done on the watch. Other providers are tracked in [issue #80][sso_providers_issue].
 
+#### Continue on phone
+
+When the watch can't sign in by itself (for example Google, or a passkey), it offers **Continue on phone**: the sign-in opens in the browser of the Android phone the watch is paired with, and the watch is logged in once you're done there. It works through the phone's watch companion app (Wear OS, Galaxy Wearable, OHealth and others), so there's nothing extra to install. The watch gives up after 3 minutes.
+
+For this, the server admin also adds `https://wear.googleapis.com/3p_auth/dev.koit.abs_wear` to **Allowed Mobile Redirect URIs**.
+
+Microsoft Entra ID (Azure) doesn't work this way yet: its sign-in codes are longer than Google's relay for watches passes on. See [issue #82][ms_phone_issue].
+
 Once you're logged in, the watch only talks to your Audiobookshelf server: the identity provider isn't asked again. So disabling someone in the identity provider doesn't log out a watch that's already signed in. To cut off access, disable the user in Audiobookshelf (or log out on the watch).
 
 ---
@@ -130,5 +138,6 @@ ABS Wear is a third-party app and isn't affiliated with the Audiobookshelf proje
 [play_store_link]: https://play.google.com/store/apps/details?id=dev.koit.abs_wear
 [releases_page]: https://github.com/RasmusKoit/abs_wear/releases/latest
 [sso_providers_issue]: https://github.com/RasmusKoit/abs_wear/issues/80
+[ms_phone_issue]: https://github.com/RasmusKoit/abs_wear/issues/82
 [very_good_analysis_badge]: https://img.shields.io/badge/style-very_good_analysis-B22C89.svg
 [very_good_analysis_link]: https://pub.dev/packages/very_good_analysis
