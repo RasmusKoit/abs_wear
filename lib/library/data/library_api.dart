@@ -165,6 +165,12 @@ http.Client _newClient() {
   return owned;
 }
 
+/// Per-request time limits; tests shorten them.
+@visibleForTesting
+Duration listTimeout = const Duration(seconds: 20);
+@visibleForTesting
+Duration coverTimeout = const Duration(seconds: 60);
+
 /// A hung connection never frees its slot, so a timeout drops the client.
 void _discard({required bool cover}) {
   final pool = _pool(cover: cover);
@@ -187,7 +193,7 @@ Future<http.Response> apiGet(
         Uri.parse(url),
         headers: {'Authorization': 'Bearer $token', 'Accept': ?accept},
       )
-      .timeout(Duration(seconds: cover ? 60 : 20));
+      .timeout(cover ? coverTimeout : listTimeout);
   try {
     try {
       return await get();

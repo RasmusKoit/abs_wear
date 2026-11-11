@@ -284,8 +284,6 @@ void main() {
     });
   });
 
-  group('apiGet', () {});
-
   group('warmUp', () {
     test('pings with the token and never throws', () async {
       await withServer(() async {
