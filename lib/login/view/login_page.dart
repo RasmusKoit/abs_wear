@@ -308,7 +308,9 @@ class LoginPageState extends State<LoginPage> {
     }
     final login = server;
     setState(() {
-      serverUrlController.text = url;
+      // Where the server really is (after an http to https redirect, say):
+      // the logins and everything after use that address.
+      serverUrlController.text = login.serverUrl;
       _serverLogin = login;
       // SSO started from here comes back to this screen when cancelled.
       _stage = !login.sso
@@ -318,7 +320,7 @@ class LoginPageState extends State<LoginPage> {
           : _Stage.server;
     });
     if (login.sso && (!login.password || login.ssoAutoLaunch)) {
-      await _startSso(url);
+      await _startSso(login.serverUrl);
     }
   }
 
