@@ -411,5 +411,13 @@
     "ssoPhoneTimedOut": "Sign-in on the phone didn't finish. Try again.",
     "@ssoPhoneTimedOut": {
         "description": "SSO login: the watch stopped waiting for the sign-in on the phone"
+    },
+    "ssoPhoneUnsupported": "This watch can't continue sign-ins on a phone.",
+    "@ssoPhoneUnsupported": {
+        "description": "SSO login: this watch has no way to open sign-ins on the paired phone"
+    },
+    "ssoPhoneUnavailableNoPassword": "No phone to continue on. Pair an Android phone.",
+    "@ssoPhoneUnavailableNoPassword": {
+        "description": "SSO login: no paired (Android) phone to continue on, on a server without password login"
     }
 }

@@ -84,5 +84,7 @@
     "ssoContinueOnPhone": "スマホで続ける",
     "ssoPhoneWaiting": "スマホでサインインを完了してください。",
     "ssoPhoneUnavailable": "続けるスマホがありません。Android スマホをペアリングするか、パスワードでログインしてください。",
-    "ssoPhoneTimedOut": "スマホでのサインインが完了しませんでした。もう一度お試しください。"
+    "ssoPhoneTimedOut": "スマホでのサインインが完了しませんでした。もう一度お試しください。",
+    "ssoPhoneUnsupported": "このウォッチではスマホでのサインインを続けられません。",
+    "ssoPhoneUnavailableNoPassword": "続けるスマホがありません。Android スマホをペアリングしてください。"
 }

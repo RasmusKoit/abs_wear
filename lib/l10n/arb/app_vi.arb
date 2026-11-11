@@ -84,5 +84,7 @@
     "ssoContinueOnPhone": "Tiếp tục trên điện thoại",
     "ssoPhoneWaiting": "Hãy hoàn tất đăng nhập trên điện thoại.",
     "ssoPhoneUnavailable": "Không có điện thoại để tiếp tục. Hãy ghép nối điện thoại Android hoặc đăng nhập bằng mật khẩu.",
-    "ssoPhoneTimedOut": "Đăng nhập trên điện thoại chưa hoàn tất. Hãy thử lại."
+    "ssoPhoneTimedOut": "Đăng nhập trên điện thoại chưa hoàn tất. Hãy thử lại.",
+    "ssoPhoneUnsupported": "Đồng hồ này không thể tiếp tục đăng nhập trên điện thoại.",
+    "ssoPhoneUnavailableNoPassword": "Không có điện thoại để tiếp tục. Hãy ghép nối điện thoại Android."
 }

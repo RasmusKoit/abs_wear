@@ -473,7 +473,8 @@ class LoginPageState extends State<LoginPage> {
     final offerPhone =
         error is SsoException &&
         (error.error == SsoError.unsupportedProvider ||
-            error.error == SsoError.unsupportedStep);
+            error.error == SsoError.unsupportedStep) &&
+        !_phoneCantCarry(error);
     if (mounted) {
       setState(() {
         _loginError = message;
@@ -482,12 +483,27 @@ class LoginPageState extends State<LoginPage> {
     }
   }
 
+  /// Microsoft's codes (about 2 KB) don't fit through Google's relay for
+  /// watches, which cuts addresses after 2046 characters (#82): offering
+  /// the phone would only end in a 3-minute wait. Unless the experiment
+  /// sends the sign-in straight to the companion app instead.
+  bool _phoneCantCarry(SsoException error) {
+    if (phoneAuth.redirectBase.isNotEmpty) return false;
+    final host = Uri.tryParse(error.detail ?? '')?.host ?? '';
+    return const {
+      'login.microsoftonline.com',
+      'login.microsoft.com',
+      'login.live.com',
+    }.contains(host);
+  }
+
   /// "Continue on phone": the same SSO login, finished in the paired
   /// phone's browser. The watch makes the server call first (and keeps its
   /// session), the phone opens the identical link, and its answer comes
   /// back here for the code exchange.
   Future<void> _continueOnPhone() async {
-    final url = serverUrlController.text;
+    final url = await _serverUrl(serverUrlController.text);
+    if (url == null || !mounted) return;
     _sessionEpoch++;
     // Back (or a newer attempt) bumps this: an older attempt still waiting
     // for the server or the phone then gives up without touching anything.
@@ -514,7 +530,10 @@ class LoginPageState extends State<LoginPage> {
           .authorize(start)
           // The watch can't tell a sign-in still going from one that got
           // stuck on the phone, so it stops waiting after a while.
-          .timeout(phoneSignInLimit);
+          .timeout(
+            phoneSignInLimit,
+            onTimeout: () => throw const _PhoneTimedOut(),
+          );
       if (!current()) return;
       setState(() => _loggingIn = true);
       final done = await login.finishOnPhone(response);
@@ -527,7 +546,7 @@ class LoginPageState extends State<LoginPage> {
       );
     } on Object catch (e) {
       if (current()) {
-        if (e is TimeoutException) unawaited(_cancelPhoneRequest());
+        if (e is _PhoneTimedOut) unawaited(_cancelPhoneRequest());
         _phoneFailed(e, redirect);
       }
     } finally {
@@ -566,22 +585,48 @@ class LoginPageState extends State<LoginPage> {
 
   void _phoneFailed(Object error, String redirect) {
     if (kDebugMode) debugPrint('Phone sign-in failed: $error');
+    final noPassword = !(_serverLogin?.password ?? true);
     final message = switch (error) {
       PhoneAuthException(error: PhoneAuthError.cancelled) => null,
-      PhoneAuthException(
-        error: PhoneAuthError.phoneUnavailable || PhoneAuthError.unsupported,
-      ) =>
-        l10n.ssoPhoneUnavailable,
+      PhoneAuthException(error: PhoneAuthError.unsupported) =>
+        l10n.ssoPhoneUnsupported,
+      PhoneAuthException(error: PhoneAuthError.phoneUnavailable) =>
+        noPassword
+            ? l10n.ssoPhoneUnavailableNoPassword
+            : l10n.ssoPhoneUnavailable,
       PhoneAuthException() => l10n.ssoFailed,
+      _PhoneTimedOut() => l10n.ssoPhoneTimedOut,
       SsoException(error: SsoError.redirectNotAllowed) =>
         l10n.ssoRedirectNotAllowed(redirect),
       SsoException(error: SsoError.notEnabled) => l10n.ssoNotEnabled,
       SsoException(error: SsoError.noAccount) => l10n.ssoNoAccount,
       SsoException() || TypeError() || FormatException() => l10n.ssoFailed,
-      TimeoutException() => l10n.ssoPhoneTimedOut,
+      TimeoutException() => l10n.serverTimeout,
       _ => l10n.cannotReachServer,
     };
-    if (mounted) setState(() => _loginError = message);
+    // Worth another go: the phone timed out or was cancelled there, or
+    // something went wrong on the way. Not when it can't work at all.
+    final retry = switch (error) {
+      _PhoneTimedOut() => true,
+      PhoneAuthException(
+        error: PhoneAuthError.cancelled || PhoneAuthError.failed,
+      ) =>
+        true,
+      PhoneAuthException() => false,
+      SsoException(
+        error: SsoError.redirectNotAllowed ||
+            SsoError.notEnabled ||
+            SsoError.noAccount,
+      ) =>
+        false,
+      _ => true,
+    };
+    if (mounted) {
+      setState(() {
+        _loginError = message;
+        _offerPhone = retry;
+      });
+    }
   }
 
   /// The user's saved library if it still exists, otherwise the first book
@@ -1306,3 +1351,9 @@ class LoginPageState extends State<LoginPage> {
 
 /// The logged-out screens, one question each.
 enum _Stage { server, choose, username, password }
+
+/// The watch stopped waiting for the sign-in on the phone
+/// ([LoginPageState.phoneSignInLimit]).
+class _PhoneTimedOut implements Exception {
+  const _PhoneTimedOut();
+}

@@ -84,5 +84,7 @@
     "ssoContinueOnPhone": "Продолжить на телефоне",
     "ssoPhoneWaiting": "Завершите вход на телефоне.",
     "ssoPhoneUnavailable": "Нет телефона для продолжения. Подключите телефон Android или войдите с паролем.",
-    "ssoPhoneTimedOut": "Вход на телефоне не завершён. Попробуйте снова."
+    "ssoPhoneTimedOut": "Вход на телефоне не завершён. Попробуйте снова.",
+    "ssoPhoneUnsupported": "Эти часы не могут продолжить вход на телефоне.",
+    "ssoPhoneUnavailableNoPassword": "Нет телефона для продолжения. Подключите телефон Android."
 }

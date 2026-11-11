@@ -84,5 +84,7 @@
     "ssoContinueOnPhone": "Auf dem Handy fortfahren",
     "ssoPhoneWaiting": "Die Anmeldung auf dem Handy abschließen.",
     "ssoPhoneUnavailable": "Kein Handy zum Fortfahren. Ein Android-Handy koppeln oder mit Passwort anmelden.",
-    "ssoPhoneTimedOut": "Die Anmeldung auf dem Handy wurde nicht abgeschlossen. Erneut versuchen."
+    "ssoPhoneTimedOut": "Die Anmeldung auf dem Handy wurde nicht abgeschlossen. Erneut versuchen.",
+    "ssoPhoneUnsupported": "Diese Uhr kann Anmeldungen nicht auf dem Handy fortsetzen.",
+    "ssoPhoneUnavailableNoPassword": "Kein Handy zum Fortfahren. Ein Android-Handy koppeln."
 }

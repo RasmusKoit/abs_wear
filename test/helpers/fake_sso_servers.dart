@@ -188,6 +188,13 @@ class FakeServers {
           });
       }
     }
+    // An identity provider elsewhere ([idpAuthorizeUrl]): just its login
+    // page, which no adapter knows.
+    if (idpAuthorizeUrl case final other?
+        when !other.startsWith(fakeIdpUrl) &&
+            r.url.host == Uri.parse(other).host) {
+      return http.Response('<html>sign in</html>', 200);
+    }
     if (url.startsWith(fakeIdpUrl)) {
       if (path == '/application/o/authorize/') {
         if (r.url.queryParameters['again'] == '1') {

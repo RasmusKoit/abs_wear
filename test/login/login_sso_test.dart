@@ -405,6 +405,61 @@ void main() {
       }, () => servers.client);
     });
 
+    testWidgets('system back while waiting stops it', (tester) async {
+      final phone = FakePhoneAuth(hang: true);
+      LoginPageState.phoneAuth = phone;
+      final servers = unknownProvider();
+      await http.runWithClient(() async {
+        await startSso(tester);
+        await tapContinueOnPhone(tester);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        await tester.binding.handlePopRoute();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+      }, () => servers.client);
+      expect(phone.cancels, 1);
+      expect(find.text('Finish signing in on your phone.'), findsNothing);
+      // Back at the offer, ready to try again; cancelling isn't an error.
+      expect(find.text('Continue on phone'), findsOneWidget);
+      expect(find.text('SSO login failed. Try again.'), findsNothing);
+    });
+
+    testWidgets('not offered for Microsoft (its codes are too long)', (
+      tester,
+    ) async {
+      final servers = FakeServers(
+        idpAuthorizeUrl:
+            'https://login.microsoftonline.com/tenant/oauth2/v2.0/authorize',
+      );
+      await http.runWithClient(() async {
+        await startSso(tester);
+      }, () => servers.client);
+      expect(
+        find.text("This sign-in can't be done on the watch yet."),
+        findsOneWidget,
+      );
+      expect(find.text('Continue on phone'), findsNothing);
+    });
+
+    testWidgets('a watch that cannot use the phone says so', (tester) async {
+      LoginPageState.phoneAuth = FakePhoneAuth(
+        error: PhoneAuthError.unsupported,
+      );
+      final servers = unknownProvider();
+      await http.runWithClient(() async {
+        await startSso(tester);
+        await tapContinueOnPhone(tester);
+        await tester.pumpAndSettle();
+      }, () => servers.client);
+      expect(
+        find.text("This watch can't continue sign-ins on a phone."),
+        findsOneWidget,
+      );
+      // Trying again can't help.
+      expect(find.text('Continue on phone'), findsNothing);
+    });
+
     testWidgets('gives up after the time limit', (tester) async {
       final phone = FakePhoneAuth(hang: true);
       LoginPageState.phoneAuth = phone;
