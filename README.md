@@ -21,12 +21,11 @@
 ## Features
 
 - **Audiobooks and podcasts**: Continue Listening, browse your libraries, switch between them.
-- **Stream or download**: download books to the watch and listen offline. Progress syncs when you're back online, and the latest listening wins, on the watch or anywhere else.
+- **Stream or download**: listen offline; progress syncs when you're back online.
 - **Player**: chapters, 10-second skips, playback speed, sleep timer and volume.
 - **Plays in the background** with media controls, also with the screen off.
-- **Downloads** keep going over Wi-Fi with the screen off, with a progress notification you can cancel.
 - **Made for the watch**: rotary crown scrolling, ambient mode, large text and screen reader support.
-- **Password or SSO login**, right on the watch: no phone needed (except Pocket ID, which you approve from another device).
+- **Password or SSO login**, right on the watch.
 - **18 languages**.
 
 Needs Wear OS 3 or newer and your own [Audiobookshelf][abs_github_link] server.
@@ -35,32 +34,14 @@ Needs Wear OS 3 or newer and your own [Audiobookshelf][abs_github_link] server.
 
 ## Logging in
 
-Enter your server's address and tap **Next**. The watch asks the server how you can log in and shows only that, one question per screen.
+Enter your server address and tap **Next**. The watch shows the login options your server offers, one question per screen.
 
-### With a password
+- **Password**: your Audiobookshelf username and password.
+- **SSO ([OpenID Connect][abs_oidc_docs])**: sign in with your identity provider right on the watch, over Wi-Fi or LTE. Works with Authentik, Authelia, Logto, VoidAuth, tinyauth, Keycloak, Gitea and Pocket ID (approve on another device). Forgejo, Dex, Kanidm and Zitadel should work but are untested. Passkeys and captchas aren't supported. More providers: [#80][sso_providers_issue].
 
-**Login with password**, then your Audiobookshelf username and password.
+**SSO setup for the server admin:** in Audiobookshelf, **Settings → Authentication → Allowed Mobile Redirect URIs**, add `abswear://oauth`. The identity provider needs the same redirect URIs as for the official Audiobookshelf app (`/auth/openid/callback` and `/auth/openid/mobile-redirect`).
 
-### With SSO (OpenID Connect)
-
-If your server has [OpenID Connect][abs_oidc_docs] set up, tap its SSO button (for example "Login with Authentik"). The watch signs you in with your identity provider itself, over Wi-Fi or LTE, without a browser or a phone (except Pocket ID, see below): you get the provider's own questions (username, password, a code from your authenticator app, allow access) as watch screens. With SSO only, the watch goes straight there.
-
-For the server admin:
-
-1. Set up OpenID Connect in Audiobookshelf (**Settings → Authentication**).
-2. Add `abswear://oauth` to **Allowed Mobile Redirect URIs**.
-3. At the identity provider, the Audiobookshelf client must allow both `https://<your-server>/auth/openid/callback` and `https://<your-server>/auth/openid/mobile-redirect`. The second one is the same one the official Audiobookshelf phone app uses. So if that app already logs in with SSO, nothing changes.
-
-Identity providers the watch can sign in to by itself:
-
-- Authentik, Authelia, Logto, VoidAuth and tinyauth
-- Keycloak and Gitea through their sign-in forms
-- Forgejo, Dex, Kanidm and Zitadel (V1 login) through their sign-in forms too, but not yet tested against a live server
-- Pocket ID: the watch shows a code to approve with "sign in with another device" on a phone or computer where you're signed in
-
-Passkeys, captchas and setting up a new second factor need a browser, so they can't be done on the watch. Other providers are tracked in [issue #80][sso_providers_issue].
-
-Once you're logged in, the watch only talks to your Audiobookshelf server: the identity provider isn't asked again. So disabling someone in the identity provider doesn't log out a watch that's already signed in. To cut off access, disable the user in Audiobookshelf (or log out on the watch).
+After login the watch only talks to Audiobookshelf. To cut off a user's access, disable them there, not in the identity provider.
 
 ---
 
