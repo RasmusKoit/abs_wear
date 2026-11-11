@@ -321,8 +321,17 @@ void main() {
       }, () => client);
 
       expect(download.existsSync(), isTrue);
-      expect(requests, ['POST /logout']);
-      expect(bodies, ['']);
+      // Bob's restored session also warms up connections.
+      expect(
+        requests,
+        unorderedEquals([
+          'POST /logout',
+          'GET /ping',
+          'GET /ping',
+          'GET /ping',
+        ]),
+      );
+      expect(bodies[requests.indexOf('POST /logout')], '');
       final prefs = await SharedPreferences.getInstance();
       expect(prefs.getStringList('pendingLogout'), isNull);
       expect(find.text('Hello bob'), findsOneWidget);
@@ -365,6 +374,37 @@ void main() {
       final json =
           jsonDecode(pending.readAsStringSync()) as Map<String, dynamic>;
       expect(json['pending'], isTrue);
+    });
+  });
+
+  group('warm-up', () {
+    testWidgets('a restored session pings the server with its token', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues({
+        'serverUrl': _server,
+        'username': 'alice',
+        'token': 'tok',
+        'defaultLibraryId': 'lib1',
+      });
+      final pings = <http.Request>[];
+      final client = MockClient((request) async {
+        if (request.url.path == '/ping') pings.add(request);
+        return http.Response('', 404);
+      });
+
+      await http.runWithClient(() async {
+        await tester.pumpApp(const LoginPage());
+        await tester.pumpAndSettle();
+      }, () => client);
+
+      expect(find.text('Hello alice'), findsOneWidget);
+      expect(pings, hasLength(3));
+      for (final ping in pings) {
+        expect(ping.method, 'GET');
+        expect(ping.url.toString(), '$_server/ping');
+        expect(ping.headers['Authorization'], 'Bearer tok');
+      }
     });
   });
 }

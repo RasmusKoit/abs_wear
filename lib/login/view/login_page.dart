@@ -7,6 +7,7 @@ import 'package:abs_wear/app/toast.dart';
 import 'package:abs_wear/app/view/crown_scrollbar.dart';
 import 'package:abs_wear/l10n/l10n.dart';
 import 'package:abs_wear/library/data/json_cache.dart';
+import 'package:abs_wear/library/data/library_api.dart';
 import 'package:abs_wear/library/view/library_page.dart';
 import 'package:abs_wear/login/data/server_login.dart';
 import 'package:abs_wear/login/data/sso/phone_auth.dart';
@@ -158,6 +159,7 @@ class LoginPageState extends State<LoginPage> {
       await prefs.setString('defaultLibraryId', libraryId);
     }
     if (!mounted || epoch != _sessionEpoch || _loggingIn) return;
+    warmUp(savedServerUrl, savedToken);
     setState(() {
       _token = savedToken;
       serverUrlController.text = savedServerUrl;
@@ -268,6 +270,7 @@ class LoginPageState extends State<LoginPage> {
       input.clear();
     }
     if (!mounted) return;
+    warmUp(url, token);
     setState(() {
       _token = token;
       defaultLibraryId = libraryId;

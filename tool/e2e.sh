@@ -25,7 +25,7 @@ PERM=android.permission.POST_NOTIFICATIONS
 done) &
 GRANT=$!
 trap 'kill $GRANT 2>/dev/null || true' EXIT
-"${FLUTTER:-flutter}" test integration_test \
+"${FLUTTER:-flutter}" test integration_test/app_e2e_test.dart \
   -d "$DEVICE" \
   --flavor development \
   --dart-define=ABS_URL="$URL" \
