@@ -172,6 +172,10 @@ class MainActivity : AudioServiceActivity() {
                     DownloadService.progress(call.argument<Int>("percent") ?: 0)
                     result.success(null)
                 }
+                "title" -> {
+                    DownloadService.retitle(call.argument<String>("title") ?: "")
+                    result.success(null)
+                }
                 "useDefaultNetwork" -> {
                     DownloadNetwork.useDefaultNetwork(context)
                     result.success(null)

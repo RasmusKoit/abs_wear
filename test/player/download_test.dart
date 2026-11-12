@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:abs_wear/player/darts/audio_player.dart';
 import 'package:abs_wear/player/darts/download_keep_alive.dart';
+import 'package:abs_wear/player/darts/download_manager.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -45,27 +46,50 @@ void main() {
         });
   });
 
-  tearDown(() {
+  tearDown(() async {
+    // The queue is global: nothing may run into the next test.
+    await DownloadManager.instance.cancelAll();
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(_channel, null);
     docs.deleteSync(recursive: true);
   });
 
-  AudioPlayerController controllerWith(http.Client client) =>
-      AudioPlayerController(client: client)
-        ..serverUrl = 'http://abs.test'
-        ..libraryItemId = 'li_1'
-        ..tracks = const [
-          BookTrack(
-            index: 1,
-            startOffset: 0,
-            duration: 60,
-            contentUrl: '/api/items/li_1/file/111',
-            filename: 'book.mp3',
-            ino: '111',
-            size: 1000,
-          ),
-        ];
+  AudioPlayerController controllerWith(
+    http.Client client, {
+    String item = 'li_1',
+  }) => AudioPlayerController(client: client)
+    ..serverUrl = 'http://abs.test'
+    ..libraryItemId = item
+    ..bookTitle = 'Book $item'
+    ..tracks = [
+      BookTrack(
+        index: 1,
+        startOffset: 0,
+        duration: 60,
+        contentUrl: '/api/items/$item/file/111',
+        filename: 'book.mp3',
+        ino: '111',
+        size: 1000,
+      ),
+    ];
+
+  /// Answers each file with a body the test feeds; covers with 404.
+  ({http.Client client, Map<String, StreamController<List<int>>> bodies})
+  feedable() {
+    final bodies = <String, StreamController<List<int>>>{};
+    final client = MockClient.streaming((request, _) async {
+      final path = request.url.path;
+      if (path.endsWith('/cover')) {
+        return http.StreamedResponse(const Stream.empty(), 404);
+      }
+      final body = bodies[path.split('/')[3]] = StreamController<List<int>>();
+      return http.StreamedResponse(body.stream, 200, contentLength: 1000);
+    });
+    return (client: client, bodies: bodies);
+  }
+
+  Future<void> settle() =>
+      Future<void>.delayed(const Duration(milliseconds: 50));
 
   List<String> filesIn(Directory dir) => dir.existsSync()
       ? dir.listSync(recursive: true).map((e) => e.path).toList()
@@ -173,23 +197,108 @@ void main() {
     wifi.complete();
   });
 
-  test('closing the player cancels its download', () async {
-    final body = StreamController<List<int>>();
-    final controller = controllerWith(
-      MockClient.streaming((request, _) async {
-        return http.StreamedResponse(body.stream, 200, contentLength: 1000);
-      }),
-    );
+  test('closing the player leaves its download running', () async {
+    final feed = feedable();
+    final controller = controllerWith(feed.client);
 
     final result = controller.downloadBook();
-    await Future<void>.delayed(const Duration(milliseconds: 50));
-    unawaited(controller.close());
+    await settle();
+    await controller.close();
+    expect(DownloadManager.instance.jobFor('li_1'), isNotNull);
+
+    feed.bodies['li_1']!.add(List.filled(1000, 1));
+    await feed.bodies['li_1']!.close();
     expect(
       await result.timeout(const Duration(seconds: 2)),
-      DownloadResult.canceled,
+      DownloadResult.done,
     );
+    expect(File('${docs.path}/li_1/001_111.mp3').lengthSync(), 1000);
     expect(calls.last, 'stop');
-    await body.close();
+  });
+
+  test('a second book waits for the first under one keep-alive', () async {
+    final feed = feedable();
+    final first = controllerWith(feed.client);
+    final second = controllerWith(feed.client, item: 'li_2');
+
+    final firstResult = first.downloadBook();
+    final secondResult = second.downloadBook();
+    await settle();
+    expect(feed.bodies.keys, ['li_1']);
+    expect(first.isDownloading, isTrue);
+    expect(second.isDownloading, isTrue);
+    // Queued: no progress yet.
+    expect(second.downloadProgress.value, isNull);
+
+    feed.bodies['li_1']!.add(List.filled(1000, 1));
+    await feed.bodies['li_1']!.close();
+    expect(await firstResult, DownloadResult.done);
+    await settle();
+    expect(feed.bodies.keys, ['li_1', 'li_2']);
+    expect(second.downloadProgress.value, 0);
+
+    feed.bodies['li_2']!.add(List.filled(1000, 1));
+    await feed.bodies['li_2']!.close();
+    expect(await secondResult, DownloadResult.done);
+    await settle();
+    expect(calls.where((c) => c == 'start'), hasLength(1));
+    expect(calls, containsAllInOrder(['start', 'title', 'stop']));
+    expect(calls.last, 'stop');
+  });
+
+  test('canceling a queued book leaves the running one alone', () async {
+    final feed = feedable();
+    final first = controllerWith(feed.client);
+    final second = controllerWith(feed.client, item: 'li_2');
+
+    final firstResult = first.downloadBook();
+    final secondResult = second.downloadBook();
+    await settle();
+    second.cancelDownload();
+    expect(await secondResult, DownloadResult.canceled);
+    expect(second.isDownloading, isFalse);
+    expect(first.isDownloading, isTrue);
+
+    feed.bodies['li_1']!.add(List.filled(1000, 1));
+    await feed.bodies['li_1']!.close();
+    expect(await firstResult, DownloadResult.done);
+    expect(feed.bodies.keys, ['li_1']);
+  });
+
+  test('downloading the same book again joins its download', () async {
+    final feed = feedable();
+    final controller = controllerWith(feed.client);
+    final reopened = controllerWith(feed.client);
+
+    final result = controller.downloadBook();
+    final again = reopened.downloadBook();
+    await settle();
+    expect(DownloadManager.instance.jobs, hasLength(1));
+
+    feed.bodies['li_1']!.add(List.filled(1000, 1));
+    await feed.bodies['li_1']!.close();
+    expect(await result, DownloadResult.done);
+    expect(await again, DownloadResult.done);
+  });
+
+  test("the notification's cancel stops the whole queue", () async {
+    final feed = feedable();
+    final first = controllerWith(feed.client).downloadBook();
+    final second = controllerWith(feed.client, item: 'li_2').downloadBook();
+    await settle();
+
+    await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .handlePlatformMessage(
+          _channel.name,
+          _channel.codec.encodeMethodCall(const MethodCall('cancel')),
+          (_) {},
+        );
+    expect(await first, DownloadResult.canceled);
+    expect(await second, DownloadResult.canceled);
+    expect(DownloadManager.instance.jobs, isEmpty);
+    expect(feed.bodies.keys, ['li_1']);
+    await settle();
+    expect(calls.last, 'stop');
   });
 
   test("an old download ending doesn't stop a newer one", () async {

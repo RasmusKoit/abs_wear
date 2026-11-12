@@ -7,7 +7,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
-import 'package:abs_wear/player/darts/download_keep_alive.dart';
+import 'package:abs_wear/player/darts/download_manager.dart';
 import 'package:abs_wear/player/darts/network_lock.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/foundation.dart';
@@ -109,21 +109,21 @@ class BookChapter {
 
 enum DownloadResult { done, noSpace, failed, canceled }
 
-/// Thrown inside [AudioPlayerController.downloadBook] when the user cancels.
-class _DownloadCanceled implements Exception {
-  const _DownloadCanceled();
-}
-
 class AudioPlayerController extends ChangeNotifier {
   AudioPlayerController({http.Client? client})
     : _client = client ?? _newClient(),
-      _injectedClient = client;
+      _injectedClient = client {
+    DownloadManager.instance.addListener(_notify);
+    _downloadSub = DownloadManager.instance.finished.listen(_onDownloaded);
+  }
 
   static http.Client _newClient() =>
       IOClient(HttpClient()..idleTimeout = _idleTimeout);
 
-  /// A client passed in (tests): used for downloads too, never replaced.
+  /// A client passed in (tests): used for downloads too.
   final http.Client? _injectedClient;
+
+  late final StreamSubscription<(String, DownloadResult)> _downloadSub;
 
   /// Shorter than the server's keep-alive (Node's default is 5 s), so a
   /// request never goes out on a connection the server is closing ("Connection
@@ -220,7 +220,11 @@ class AudioPlayerController extends ChangeNotifier {
   double _lastSyncedTime = 0;
 
   bool isLoaded = false;
-  bool isDownloading = false;
+
+  /// This book's download is queued or running in [DownloadManager].
+  bool get isDownloading => _downloadJob != null;
+
+  DownloadJob? get _downloadJob => DownloadManager.instance.jobFor(_folderName);
 
   /// Playing a downloaded book without a server session (no network).
   /// Progress is kept on the watch and sent the next time the book opens
@@ -267,8 +271,11 @@ class AudioPlayerController extends ChangeNotifier {
     return _unverified;
   }
 
-  /// 0..1 while downloading, null otherwise.
-  final ValueNotifier<double?> downloadProgress = ValueNotifier(null);
+  /// 0..1 while downloading, null while queued or not downloading.
+  ValueListenable<double?> get downloadProgress =>
+      _downloadJob?.progress ?? _noProgress;
+
+  static final ValueNotifier<double?> _noProgress = ValueNotifier(null);
 
   /// Playback speeds offered; the choice is kept for all books.
   static const speeds = [0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5];
@@ -524,7 +531,7 @@ class AudioPlayerController extends ChangeNotifier {
           unawaited(_saveSessionMeta());
           // Downloads from before covers were saved get theirs now.
           final dir = await localDirPath();
-          if (_hasCover && !_coverFile(dir).existsSync()) {
+          if (_hasCover && !coverFileIn(dir).existsSync()) {
             unawaited(_downloadCover(dir));
           }
         }
@@ -1194,21 +1201,18 @@ class AudioPlayerController extends ChangeNotifier {
     });
   }
 
+  /// Each episode of a podcast gets its own folder.
+  String get _folderName =>
+      episodeId == null ? libraryItemId : '${libraryItemId}_$episodeId';
+
   Future<String> localDirPath() async {
     final docs = await getApplicationDocumentsDirectory();
-    // Each episode of a podcast gets its own folder.
-    return '${docs.path}/'
-        '${episodeId == null ? libraryItemId : '${libraryItemId}_$episodeId'}';
+    return '${docs.path}/$_folderName';
   }
 
   /// Local file for a track. Named by index and inode, not the original
   /// basename, so multi-disc books (CD1/01.mp3, CD2/01.mp3) don't collide.
-  File _localFile(String dir, BookTrack track) {
-    final dot = track.filename.lastIndexOf('.');
-    final ext = dot >= 0 ? track.filename.substring(dot) : '';
-    final index = track.index.toString().padLeft(3, '0');
-    return File('$dir/${index}_${track.ino}$ext');
-  }
+  File _localFile(String dir, BookTrack track) => localTrackFile(dir, track);
 
   /// True when every audio file of the book is on the device.
   Future<bool> isDownloaded() async {
@@ -1247,7 +1251,7 @@ class AudioPlayerController extends ChangeNotifier {
     // one, else from the server (the header keeps the token out of the URL).
     // None when there is no cover, or offline without a saved copy (each
     // failed fetch would be retried and logged on every track change).
-    final coverFile = _coverFile(dir);
+    final coverFile = coverFileIn(dir);
     final cover = coverFile.existsSync()
         ? Uri.file(coverFile.path)
         : _hasCover && !isOffline
@@ -1626,194 +1630,67 @@ class AudioPlayerController extends ChangeNotifier {
     }
   }
 
-  /// Completes when the running download is canceled.
-  Completer<void>? _downloadCancel;
-
-  /// True while the download is bound to the watch's Wi-Fi.
-  bool _downloadOnWifi = false;
-
-  /// The running download's own client: opened after the network was
-  /// picked, so no pooled connection from before the switch is reused.
-  http.Client? _downloadClient;
-
-  void _closeDownloadClient() {
-    final client = _downloadClient;
-    _downloadClient = null;
-    if (client != null && client != _injectedClient) client.close();
-  }
-
   /// False once [close] was called.
   bool get isOpen => !_closed;
 
-  /// Stops the running download. Finished files are kept (the download can
-  /// resume, or the leftovers be deleted); the partial file is removed.
-  void cancelDownload() {
-    final cancel = _downloadCancel;
-    if (cancel != null && !cancel.isCompleted) cancel.complete();
-  }
+  /// Stops this book's download, queued or running; finished files stay.
+  void cancelDownload() => DownloadManager.instance.cancel(_folderName);
 
-  /// Downloads every audio file of the book, streaming each to disk and
-  /// reporting progress through [downloadProgress]. Finished files are kept
-  /// on failure, so a retry resumes with the next file.
-  ///
-  /// Keeps going with the screen off (see [DownloadKeepAlive]); the labels
-  /// are for its notification.
+  /// Queues the book in [DownloadManager]; labels are for its notification.
   Future<DownloadResult> downloadBook({
     String cancelLabel = 'Cancel',
     String channelName = 'Downloads',
   }) async {
-    if (isDownloading || tracks.isEmpty) return DownloadResult.failed;
-    isDownloading = true;
-    downloadProgress.value = 0;
-    final cancel = _downloadCancel = Completer<void>();
-    _notify();
-    // Byte progress only when every size is known; otherwise by file.
-    final sizesKnown = tracks.every((t) => t.size > 0);
-    final totalBytes = sizesKnown
-        ? tracks.fold<int>(0, (sum, t) => sum + t.size)
-        : 0;
-    var receivedBytes = 0;
-    var result = DownloadResult.failed;
-    File? part;
-    final keepAlive = DownloadKeepAlive.start(
-      title: bookTitle,
-      cancelLabel: cancelLabel,
-      channelName: channelName,
-      onCancel: cancelDownload,
+    if (tracks.isEmpty) return DownloadResult.failed;
+    final running = _downloadJob;
+    if (running != null) return await running.result;
+    return await DownloadManager.instance.enqueue(
+      DownloadJob(
+        key: _folderName,
+        dir: await localDirPath(),
+        title: bookTitle,
+        serverUrl: serverUrl,
+        token: token,
+        libraryItemId: libraryItemId,
+        episodeId: episodeId,
+        tracks: List.of(tracks),
+        hasCover: _hasCover,
+        sessionMeta: _sessionMeta,
+        cancelLabel: cancelLabel,
+        channelName: channelName,
+        client: _injectedClient,
+      ),
     );
-    try {
-      // Waiting for Wi-Fi takes up to a few seconds; a cancel ends it.
-      _downloadOnWifi = await Future.any([
-        keepAlive.onWifi,
-        cancel.future.then((_) => false),
-      ]);
-      if (cancel.isCompleted) throw const _DownloadCanceled();
-      _downloadClient = _injectedClient ?? _newClient();
-      final dir = Directory(await localDirPath())..createSync(recursive: true);
-      for (final (i, t) in tracks.indexed) {
-        if (cancel.isCompleted) throw const _DownloadCanceled();
-        final target = _localFile(dir.path, t);
-        // A finished file only exists after a complete download and rename.
-        if (target.existsSync() &&
-            (t.size == 0 || target.lengthSync() == t.size)) {
-          receivedBytes += t.size;
-          continue;
-        }
-        final response = await _requestDownload(t, cancel.future);
-        if (response.statusCode != 200) {
-          await response.stream.listen(null).cancel();
-          throw HttpException('HTTP ${response.statusCode} for ${t.filename}');
-        }
-        part = File('${target.path}.part');
-        // Synchronous writes fail right away when storage is full, instead
-        // of after the whole file was fetched.
-        final file = part.openSync(mode: FileMode.write);
-        final written = Completer<void>();
-        void fail(Object e, [StackTrace? s]) {
-          if (!written.isCompleted) written.completeError(e, s);
-        }
-
-        // Not `await for`: a cancel must end the wait for a stalled chunk.
-        unawaited(cancel.future.then((_) => fail(const _DownloadCanceled())));
-        // A stalled connection (Wi-Fi drop) must not hang forever.
-        final sub = response.stream
-            .timeout(const Duration(seconds: 30))
-            .listen(
-              (chunk) {
-                if (written.isCompleted) return;
-                try {
-                  if (_closed) throw const HttpException('Player closed');
-                  file.writeFromSync(chunk);
-                } on Object catch (e, s) {
-                  fail(e, s);
-                  return;
-                }
-                receivedBytes += chunk.length;
-                final progress = totalBytes > 0
-                    ? (receivedBytes / totalBytes).clamp(0.0, 1.0)
-                    : (i + 1) / tracks.length;
-                // Redraw per whole percent, not per network chunk.
-                if ((progress * 100).floor() !=
-                    ((downloadProgress.value ?? 0) * 100).floor()) {
-                  downloadProgress.value = progress;
-                  DownloadKeepAlive.progress(progress);
-                }
-              },
-              onError: fail,
-              onDone: () {
-                if (!written.isCompleted) written.complete();
-              },
-              cancelOnError: true,
-            );
-        try {
-          await written.future;
-        } finally {
-          await sub.cancel();
-          file.closeSync();
-        }
-        part.renameSync(target.path);
-        part = null;
-      }
-      result = DownloadResult.done;
-    } on _DownloadCanceled {
-      result = DownloadResult.canceled;
-    } on FileSystemException catch (e) {
-      debugPrint('Download failed: $e');
-      // ENOSPC is 28 on Linux/Android.
-      if (e.osError?.errorCode == 28) result = DownloadResult.noSpace;
-    } on Object catch (e) {
-      debugPrint('Download failed: $e');
-    } finally {
-      try {
-        if (part?.existsSync() ?? false) part!.deleteSync();
-      } on FileSystemException catch (e) {
-        debugPrint('Could not remove partial file: $e');
-      }
-      isDownloading = false;
-      _downloadCancel = null;
-      _downloadOnWifi = false;
-      _closeDownloadClient();
-      unawaited(keepAlive.stop());
-      if (!_closed) downloadProgress.value = null;
-      _notify();
-    }
-    if (result == DownloadResult.done && !_closed) {
-      await _saveSessionMeta();
-      await _downloadCover(await localDirPath());
-      await reloadSources();
-    }
-    return result;
   }
 
-  File _coverFile(String dir) => File('$dir/cover.jpg');
+  /// A download of this book finished: play the files from now on.
+  void _onDownloaded((String, DownloadResult) event) {
+    final (key, result) = event;
+    if (key != _folderName || result != DownloadResult.done) return;
+    if (_closed || !isLoaded) return;
+    unawaited(reloadSources());
+  }
 
   /// Saves the cover next to the audio, so the media notification shows it
   /// offline too. Best effort: a book without a cover is fine.
   Future<void> _downloadCover(String dir) async {
     if (!_hasCover) return;
-    final part = File('${_coverFile(dir).path}.part');
-    try {
-      final response = await _client
-          .get(
-            Uri.parse('$serverUrl/api/items/$libraryItemId/cover?width=400'),
-            headers: _authHeaders,
-          )
-          .timeout(const Duration(seconds: 20));
-      if (response.statusCode != 200 || response.bodyBytes.isEmpty) return;
-      // Renamed only when complete: a broken file would never be replaced.
-      await part.writeAsBytes(response.bodyBytes, flush: true);
-      await part.rename(_coverFile(dir).path);
-    } on Object catch (e) {
-      debugPrint('Could not save cover: $e');
-      try {
-        if (part.existsSync()) part.deleteSync();
-      } on FileSystemException {
-        // The folder may be gone (download deleted meanwhile).
-      }
-    }
+    await saveCover(
+      client: _client,
+      serverUrl: serverUrl,
+      token: token,
+      itemId: libraryItemId,
+      dir: dir,
+    );
   }
 
   Future<void> deleteDownload() async {
+    // A running download would write into the deleted folder.
+    final job = _downloadJob;
+    if (job != null) {
+      cancelDownload();
+      await job.result;
+    }
     final dir = Directory(await localDirPath());
     if (dir.existsSync()) dir.deleteSync(recursive: true);
     _notify(); // Show "not downloaded" before the slower reload.
@@ -1862,56 +1739,6 @@ class AudioPlayerController extends ChangeNotifier {
     _notify();
   }
 
-  /// Starts the download of one file. Retries once when the connection
-  /// drops before the response starts, which a reused keep-alive
-  /// connection can do.
-  ///
-  /// When the server can't be reached over the watch's Wi-Fi (e.g. only
-  /// through the phone's VPN), retries over the default network.
-  Future<http.StreamedResponse> _requestDownload(
-    BookTrack t,
-    Future<void> canceled,
-  ) async {
-    for (var attempt = 1; ; attempt++) {
-      // Abortable so a timed-out or canceled request releases its
-      // connection.
-      final abort = Completer<void>();
-      final request = http.AbortableRequest(
-        'GET',
-        Uri.parse('$serverUrl/api/items/$libraryItemId/file/${t.ino}/download'),
-        abortTrigger: Future.any([abort.future, canceled]),
-      )..headers.addAll(_authHeaders);
-      try {
-        return await Future.any([
-          _downloadClient!.send(request).timeout(const Duration(seconds: 30)),
-          canceled.then<http.StreamedResponse>(
-            (_) => throw const _DownloadCanceled(),
-          ),
-        ]);
-      } on _DownloadCanceled {
-        rethrow;
-      } on Object catch (e) {
-        if (e is TimeoutException) abort.complete();
-        final network = e is TimeoutException || e is http.ClientException;
-        if (!network || _closed) rethrow;
-        if (e is http.ClientException && attempt == 1) {
-          debugPrint('Download request failed, retrying: $e');
-          continue;
-        }
-        if (!_downloadOnWifi) rethrow;
-        debugPrint(
-          'Download over Wi-Fi failed, trying the default network: $e',
-        );
-        _downloadOnWifi = false;
-        await DownloadKeepAlive.useDefaultNetwork();
-        // New connections, over the default network.
-        _closeDownloadClient();
-        _downloadClient = _injectedClient ?? _newClient();
-        attempt = 0;
-      }
-    }
-  }
-
   /// Replaces the server session with a new one that streams the book as
   /// HLS where needed. The old session is closed at [position] only once
   /// the new one started, so when that fails the old one, still open, is
@@ -1955,8 +1782,9 @@ class AudioPlayerController extends ChangeNotifier {
   Future<void> close() {
     if (_closed) return _previousClose;
     _closed = true;
-    // Ends a running download now, releasing its service and wake lock.
-    cancelDownload();
+    // A running download is left to finish: only a cancel or delete stops it.
+    DownloadManager.instance.removeListener(_notify);
+    unawaited(_downloadSub.cancel());
     // Chained, so a quick close can't let the next player start before a
     // slower earlier close saved its book's position. Errors are swallowed:
     // one failed close must not block the ones after it.
@@ -1999,7 +1827,6 @@ class AudioPlayerController extends ChangeNotifier {
         }
       }
       _client.close();
-      downloadProgress.dispose();
       _sleepTimer?.cancel();
       sleepRemaining.dispose();
       super.dispose();
