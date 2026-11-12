@@ -103,21 +103,30 @@ void main() {
 
   group('resume', () {
     late File part;
+    late File tag;
     late File target;
 
     setUp(() {
       final dir = Directory('${docs.path}/li_1')..createSync(recursive: true);
       target = File('${dir.path}/001_111.mp3');
       part = File('${target.path}.part');
+      tag = File('${part.path}.tag');
     });
 
+    void savePart(int length) {
+      part.writeAsBytesSync(List.filled(length, 1));
+      tag.writeAsStringSync('W/"v1"');
+    }
+
     test('206 appends to the kept partial file', () async {
-      part.writeAsBytesSync(List.filled(400, 1));
+      savePart(400);
       final ranges = <String?>[];
+      final ifRanges = <String?>[];
       final controller = controllerWith(
         MockClient.streaming((request, _) async {
           if (request.url.path.endsWith('/download')) {
             ranges.add(request.headers['range']);
+            ifRanges.add(request.headers['if-range']);
           }
           return http.StreamedResponse(
             Stream.value(List.filled(600, 2)),
@@ -129,13 +138,15 @@ void main() {
 
       expect(await controller.downloadBook(), DownloadResult.done);
       expect(ranges, ['bytes=400-']);
+      expect(ifRanges, ['W/"v1"']);
       expect(part.existsSync(), isFalse);
+      expect(tag.existsSync(), isFalse);
       final bytes = target.readAsBytesSync();
       expect(bytes, [...List.filled(400, 1), ...List.filled(600, 2)]);
     });
 
     test('200 (Range ignored) restarts the file from zero', () async {
-      part.writeAsBytesSync(List.filled(400, 1));
+      savePart(400);
       final controller = controllerWith(
         MockClient.streaming((request, _) async {
           return http.StreamedResponse(Stream.value(List.filled(1000, 3)), 200);
@@ -147,7 +158,7 @@ void main() {
     });
 
     test('an oversized partial file is dropped, not resumed', () async {
-      part.writeAsBytesSync(List.filled(1500, 1));
+      savePart(1500);
       final ranges = <String?>[];
       final controller = controllerWith(
         MockClient.streaming((request, _) async {
@@ -164,7 +175,7 @@ void main() {
     });
 
     test('416 for a stale partial file restarts from zero', () async {
-      part.writeAsBytesSync(List.filled(400, 1));
+      savePart(400);
       final ranges = <String?>[];
       final controller = controllerWith(
         MockClient.streaming((request, _) async {
@@ -184,7 +195,7 @@ void main() {
     });
 
     test('a 206 from the wrong offset drops the partial file', () async {
-      part.writeAsBytesSync(List.filled(400, 1));
+      savePart(400);
       final controller = controllerWith(
         MockClient.streaming((request, _) async {
           return http.StreamedResponse(
@@ -203,17 +214,39 @@ void main() {
     test('a short body keeps the partial file for the next try', () async {
       final controller = controllerWith(
         MockClient.streaming((request, _) async {
-          return http.StreamedResponse(Stream.value(List.filled(700, 3)), 200);
+          return http.StreamedResponse(
+            Stream.value(List.filled(700, 3)),
+            200,
+            headers: {'etag': 'W/"v2"'},
+          );
         }),
       );
 
       expect(await controller.downloadBook(), DownloadResult.failed);
       expect(target.existsSync(), isFalse);
       expect(part.lengthSync(), 700);
+      expect(tag.readAsStringSync(), 'W/"v2"');
+    });
+
+    test('a partial file without a version is not resumed', () async {
+      part.writeAsBytesSync(List.filled(400, 1));
+      final ranges = <String?>[];
+      final controller = controllerWith(
+        MockClient.streaming((request, _) async {
+          if (request.url.path.endsWith('/download')) {
+            ranges.add(request.headers['range']);
+          }
+          return http.StreamedResponse(Stream.value(List.filled(1000, 3)), 200);
+        }),
+      );
+
+      expect(await controller.downloadBook(), DownloadResult.done);
+      expect(ranges, [null]);
+      expect(target.readAsBytesSync(), List.filled(1000, 3));
     });
 
     test('a complete partial file is finished without a request', () async {
-      part.writeAsBytesSync(List.filled(1000, 1));
+      savePart(1000);
       var requests = 0;
       final controller = controllerWith(
         MockClient.streaming((request, _) async {

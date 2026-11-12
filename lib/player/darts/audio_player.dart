@@ -1699,28 +1699,39 @@ class AudioPlayerController extends ChangeNotifier {
           continue;
         }
         final part = File('${target.path}.part');
+        final tag = _partTag(part);
         var offset = _resumeOffset(part, t);
         if (offset == t.size && offset > 0) {
           part.renameSync(target.path);
+          _dropPart(tag);
           receivedBytes += t.size;
           continue;
         }
-        var response = await _requestDownload(t, cancel.future, from: offset);
+        var response = await _requestDownload(
+          t,
+          cancel.future,
+          from: offset,
+          ifRange: offset > 0 ? tag.readAsStringSync() : null,
+        );
         if (response.statusCode == 416 && offset > 0) {
           // The server won't serve the rest: start this file over.
           await response.stream.listen(null).cancel();
-          part.deleteSync();
+          _dropPart(part);
           offset = 0;
           response = await _requestDownload(t, cancel.future);
         }
         if (response.statusCode == 206 &&
             !_rangeStartsAt(response.headers['content-range'], offset)) {
           await response.stream.listen(null).cancel();
-          part.deleteSync();
+          _dropPart(part);
           throw HttpException('Unexpected range for ${t.filename}');
         }
         if (response.statusCode == 200) {
-          offset = 0; // Range ignored: the body is the whole file.
+          offset = 0; // Range ignored or file changed: the whole file.
+          final version =
+              response.headers['etag'] ?? response.headers['last-modified'];
+          // Without a version the partial file can't be resumed safely.
+          version == null ? _dropPart(tag) : tag.writeAsStringSync(version);
         } else if (response.statusCode != 206) {
           await response.stream.listen(null).cancel();
           throw HttpException('HTTP ${response.statusCode} for ${t.filename}');
@@ -1776,10 +1787,11 @@ class AudioPlayerController extends ChangeNotifier {
         }
         if (t.size > 0 && part.lengthSync() != t.size) {
           // Too long can't be resumed; too short resumes next time.
-          if (part.lengthSync() > t.size) part.deleteSync();
+          if (part.lengthSync() > t.size) _dropPart(part);
           throw HttpException('Incomplete download of ${t.filename}');
         }
         part.renameSync(target.path);
+        _dropPart(tag);
       }
       result = DownloadResult.done;
     } on _DownloadCanceled {
@@ -1807,12 +1819,24 @@ class AudioPlayerController extends ChangeNotifier {
     return result;
   }
 
-  /// Bytes of [part] to resume from; drops it if oversized or size unknown.
+  /// The server's file version (ETag or Last-Modified) the [part] is from.
+  File _partTag(File part) => File('${part.path}.tag');
+
+  /// Deletes [file] (a partial file also loses its version) if it exists.
+  void _dropPart(File file) {
+    for (final f in [file, if (file.path.endsWith('.part')) _partTag(file)]) {
+      if (f.existsSync()) f.deleteSync();
+    }
+  }
+
+  /// Bytes of [part] to resume from; drops it when it can't be resumed.
   int _resumeOffset(File part, BookTrack t) {
     if (!part.existsSync()) return 0;
     final length = part.lengthSync();
-    if (t.size > 0 && length <= t.size) return length;
-    part.deleteSync();
+    if (t.size > 0 && length <= t.size && _partTag(part).existsSync()) {
+      return length;
+    }
+    _dropPart(part);
     return 0;
   }
 
@@ -1909,6 +1933,7 @@ class AudioPlayerController extends ChangeNotifier {
     BookTrack t,
     Future<void> canceled, {
     int from = 0,
+    String? ifRange,
   }) async {
     for (var attempt = 1; ; attempt++) {
       // Abortable so a timed-out or canceled request releases its
@@ -1920,6 +1945,7 @@ class AudioPlayerController extends ChangeNotifier {
         abortTrigger: Future.any([abort.future, canceled]),
       )..headers.addAll(_authHeaders);
       if (from > 0) request.headers['range'] = 'bytes=$from-';
+      if (from > 0 && ifRange != null) request.headers['if-range'] = ifRange;
       try {
         return await Future.any([
           _downloadClient!.send(request).timeout(const Duration(seconds: 30)),
