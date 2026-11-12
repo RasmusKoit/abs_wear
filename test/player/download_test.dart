@@ -222,7 +222,7 @@ void main() {
       MockClient.streaming((request, _) async {
         if (request.url.path.endsWith('/cover')) {
           coverAsked.complete();
-          return Completer<http.StreamedResponse>().future;
+          return await Completer<http.StreamedResponse>().future;
         }
         return http.StreamedResponse(
           Stream.value(List.filled(1000, 1)),
