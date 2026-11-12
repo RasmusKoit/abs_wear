@@ -6,6 +6,7 @@ import 'package:abs_wear/l10n/l10n.dart';
 import 'package:abs_wear/player/components/scrolling_text.dart';
 import 'package:abs_wear/player/components/time_left_widget.dart';
 import 'package:abs_wear/player/darts/audio_player.dart';
+import 'package:abs_wear/player/view/headphone_prompt.dart';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 
@@ -226,6 +227,15 @@ class _PlayPauseButton extends StatelessWidget {
 
   final AudioPlayerController controller;
 
+  // Media buttons and the notification play directly, without the check.
+  Future<void> _toggle(BuildContext context) async {
+    if (controller.toggleWouldPlay &&
+        (!await confirmAudioOutput(context) || !controller.toggleWouldPlay)) {
+      return;
+    }
+    await controller.togglePlayPause();
+  }
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<PlayerState>(
@@ -255,7 +265,7 @@ class _PlayPauseButton extends StatelessWidget {
         return IconButton(
           tooltip: playing ? context.l10n.pause : context.l10n.play,
           icon: Icon(playing ? Icons.pause : Icons.play_arrow),
-          onPressed: () => unawaited(controller.togglePlayPause()),
+          onPressed: () => unawaited(_toggle(context)),
         );
       },
     );
