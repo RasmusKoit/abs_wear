@@ -223,8 +223,8 @@ class AudioPlayerController extends ChangeNotifier {
   bool isDownloading = false;
 
   /// Playing a downloaded book without a server session (no network).
-  /// Progress is kept on the watch and sent the next time the book opens
-  /// online.
+  /// Progress is kept on the watch; [periodicSync] and pauses retry the
+  /// server and send it once a session starts.
   bool isOffline = false;
 
   /// What [_startOffline] needs to rebuild the session without the
@@ -959,7 +959,7 @@ class AudioPlayerController extends ChangeNotifier {
     } on Object {
       // No newer event (in-app pauses already carry the position).
     }
-    if (!_closed) await syncOpenSession();
+    if (!_closed) await (isOffline ? _reconnect() : syncOpenSession());
   }
 
   void _onPlayerError(PlayerException e) {
@@ -1160,16 +1160,33 @@ class AudioPlayerController extends ChangeNotifier {
     required bool directPlay,
     Duration timeout = const Duration(seconds: 20),
   }) async {
-    return await _client
-        .post(
-          Uri.parse(
-            '$serverUrl/api/items/$libraryItemId/play'
-            '${episodeId == null ? '' : '/$episodeId'}',
-          ),
-          headers: {..._authHeaders, 'Content-Type': 'application/json'},
-          body: await _deviceInfoBody(directPlay: directPlay),
-        )
-        .timeout(timeout);
+    final play = _client.post(
+      Uri.parse(
+        '$serverUrl/api/items/$libraryItemId/play'
+        '${episodeId == null ? '' : '/$episodeId'}',
+      ),
+      headers: {..._authHeaders, 'Content-Type': 'application/json'},
+      body: await _deviceInfoBody(directPlay: directPlay),
+    );
+    try {
+      return await play.timeout(timeout);
+    } on TimeoutException {
+      // The request still runs: a session it starts late is closed.
+      unawaited(_closeLateSession(play));
+      rethrow;
+    }
+  }
+
+  /// Closes the session a timed-out /play started, leaving progress as is.
+  Future<void> _closeLateSession(Future<http.Response> play) async {
+    try {
+      final response = await play;
+      if (response.statusCode != 200) return;
+      final id = (jsonDecode(response.body) as Map<String, dynamic>)['id'];
+      if (id is String) await _closeSessionAt(id, null);
+    } on Object catch (e) {
+      debugPrint('Late session not closed: $e');
+    }
   }
 
   Future<String> _deviceInfoBody({required bool directPlay}) async {
@@ -1516,6 +1533,7 @@ class AudioPlayerController extends ChangeNotifier {
   /// Periodic sync: skipped while paused with nothing new to report, or
   /// while paused and backing off after failed syncs.
   Future<void> periodicSync() {
+    if (isOffline) return _reconnect();
     if (!player.playing) {
       final retryAt = _retryAt;
       if (retryAt != null && DateTime.now().isBefore(retryAt)) {
@@ -1538,6 +1556,74 @@ class AudioPlayerController extends ChangeNotifier {
     return _syncChain = _syncChain.then(
       (_) => _sync(close: close, position: position),
     );
+  }
+
+  bool _reconnecting = false;
+
+  /// How long a reconnect waits for /play; shorter in tests.
+  @visibleForTesting
+  static Duration reconnectTimeout = const Duration(seconds: 10);
+
+  /// Offline: keeps progress on the watch, then tries (with the sync
+  /// backoff) to start a server session and go back online.
+  Future<void> _reconnect() async {
+    await syncOpenSession();
+    final retryAt = _retryAt;
+    if (!isOffline ||
+        _closed ||
+        _reconnecting ||
+        (retryAt != null && DateTime.now().isBefore(retryAt))) {
+      return;
+    }
+    _reconnecting = true;
+    try {
+      Map<String, dynamic>? session;
+      try {
+        final response = await _postPlay(
+          directPlay: _directPlay,
+          timeout: reconnectTimeout,
+        );
+        if (response.statusCode == 200) {
+          session = jsonDecode(response.body) as Map<String, dynamic>;
+        }
+      } on Object catch (e) {
+        debugPrint('Still offline: $e');
+      }
+      if (session == null) {
+        _failedSyncs++;
+        _retryAt = DateTime.now().add(
+          Duration(minutes: min(30, 1 << min(_failedSyncs, 5))),
+        );
+        return;
+      }
+      final id = session['id'] as String;
+      if (_closed) {
+        // Its close kept the progress on the watch.
+        unawaited(_closeSessionAt(id, null));
+        return;
+      }
+      final local = await _readLocalProgress();
+      sessionId = id;
+      isOffline = false;
+      _failedSyncs = 0;
+      _retryAt = null;
+      // The server's position: offline progress that differs gets sent.
+      _lastSyncedTime =
+          (session['currentTime'] as num?)?.toDouble() ?? _lastSyncedTime;
+      debugPrint('Back online with session $sessionId');
+      _notify();
+      // Paused where the watch last saved: the newer progress wins, as on open.
+      if (!player.playing) {
+        _unverified = (
+          time: local?.time ?? bookPosition,
+          updatedAt: local?.updatedAt ?? 0,
+        );
+      }
+      // Moved or playing since: the watch's progress is the latest.
+      await (_unsettled != null ? _verifyLocalProgress() : syncOpenSession());
+    } finally {
+      _reconnecting = false;
+    }
   }
 
   Future<void> _sync({required bool close, double? position}) async {
@@ -1814,6 +1900,8 @@ class AudioPlayerController extends ChangeNotifier {
   }
 
   Future<void> deleteDownload() async {
+    // Offline the files are all there is to play.
+    if (isOffline) return;
     final dir = Directory(await localDirPath());
     if (dir.existsSync()) dir.deleteSync(recursive: true);
     _notify(); // Show "not downloaded" before the slower reload.
