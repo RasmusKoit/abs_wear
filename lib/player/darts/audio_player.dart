@@ -582,6 +582,9 @@ class AudioPlayerController extends ChangeNotifier {
     if (local != null) {
       _pendingPosition = _lastSyncedTime = local.time;
       _carriedListening = local.listened;
+    } else {
+      // The cached position isn't new: don't save it with today's time.
+      _savedTime = _pendingPosition;
     }
     isOffline = true;
     await _loadSources(initialTime: _pendingPosition);
@@ -1597,12 +1600,13 @@ class AudioPlayerController extends ChangeNotifier {
         return;
       }
       final id = session['id'] as String;
+      final local = await _readLocalProgress();
+      // No await from here until adopted, so a close can't slip in between.
       if (_closed) {
         // Its close kept the progress on the watch.
         unawaited(_closeSessionAt(id, null));
         return;
       }
-      final local = await _readLocalProgress();
       sessionId = id;
       isOffline = false;
       _failedSyncs = 0;

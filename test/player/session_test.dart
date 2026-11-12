@@ -518,6 +518,55 @@ void main() {
       await c.close();
     });
 
+    test(
+      "an untouched download's cached position doesn't beat the server's",
+      () async {
+        final dir = Directory('${docs.path}/li_1')..createSync();
+        File('${dir.path}/001_111.mp3').writeAsStringSync('');
+        File('${dir.path}/session.json').writeAsStringSync(
+          jsonEncode({
+            'duration': 600,
+            'currentTime': 30,
+            'audioTracks': [
+              {
+                'index': 1,
+                'startOffset': 0,
+                'duration': 600,
+                'contentUrl': '/api/items/li_1/file/111',
+                'metadata': {'filename': 'a.mp3'},
+                'mimeType': 'audio/mpeg',
+              },
+            ],
+          }),
+        );
+        // No local progress file; the server's is older than today.
+        routes['POST /api/items/li_1/play'] = () async =>
+            http.Response('', 500);
+        final c = AudioPlayerController(client: client);
+        expect(
+          await c.setupPlayer('li_1', _server, 't', userName: 'u'),
+          isTrue,
+        );
+        expect(c.isOffline, isTrue);
+        expect(c.bookPosition, 30);
+
+        routes['POST /api/items/li_1/play'] = () async =>
+            ok({'id': 's2', 'currentTime': 100});
+        routes['GET /api/me/progress/li_1'] = () async => ok({
+          'currentTime': 100,
+          'lastUpdate': DateTime.now().millisecondsSinceEpoch - 60000,
+        });
+        routes['POST /api/session/s2/sync'] = () async => ok();
+        routes['POST /api/session/s2/close'] = () async => ok();
+        await c.periodicSync();
+
+        expect(c.isOffline, isFalse);
+        expect(c.bookPosition, 100);
+        expect(requests, isNot(contains('POST /api/session/s2/sync')));
+        await http.runWithClient(c.close, () => client);
+      },
+    );
+
     test('keeps its download', () async {
       final c = await offline();
       final dir = Directory(await c.localDirPath())..createSync();
