@@ -92,6 +92,44 @@ void main() {
     expect(find.byType(AlertDialog), findsNothing);
   });
 
+  for (final speaker in [true, false]) {
+    testWidgets('a late connect does not pop the page under the prompt '
+        '(speaker: $speaker)', (tester) async {
+      await tester.pumpApp(
+        Builder(
+          builder: (context) => TextButton(
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute<void>(
+                builder: (context) => Scaffold(
+                  body: TextButton(
+                    onPressed: () => confirmAudioOutput(context),
+                    child: const Text('Play'),
+                  ),
+                ),
+              ),
+            ),
+            child: const Text('Open player'),
+          ),
+        ),
+      );
+      await tester.tap(find.text('Open player'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Play'));
+      await tester.pumpAndSettle();
+      if (speaker) {
+        await tester.tap(find.byTooltip('Play on the watch speaker'));
+      } else {
+        await tester.tapAt(const Offset(1, 1));
+      }
+      await tester.pump();
+      // Still closing: the dialog's state is mounted.
+      await simulatePlatformCall('audio_output', 'changed', true);
+      await tester.pumpAndSettle();
+      expect(find.text('Play'), findsOneWidget);
+    });
+  }
+
   testWidgets('dismissing does not play', (tester) async {
     final answers = await pumpCheck(tester);
     await tester.tapAt(const Offset(1, 1));

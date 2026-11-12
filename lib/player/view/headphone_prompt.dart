@@ -29,8 +29,17 @@ class _HeadphonePromptState extends State<_HeadphonePrompt> {
   void initState() {
     super.initState();
     _changes = AudioOutput.changes.listen((connected) {
-      if (connected && mounted) Navigator.pop(context, true);
+      if (connected) _close();
     });
+  }
+
+  // Pops once: a later pop would close the page under the closing dialog.
+  void _close() {
+    if (_changes == null || !mounted) return;
+    if (!(ModalRoute.of(context)?.isCurrent ?? false)) return;
+    unawaited(_changes!.cancel());
+    _changes = null;
+    Navigator.pop(context, true);
   }
 
   @override
@@ -61,7 +70,7 @@ class _HeadphonePromptState extends State<_HeadphonePrompt> {
         IconButton(
           tooltip: l10n.playOnSpeaker,
           icon: const Icon(Icons.volume_up_rounded),
-          onPressed: () => Navigator.pop(context, true),
+          onPressed: _close,
         ),
       ],
     );

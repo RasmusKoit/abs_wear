@@ -12,6 +12,7 @@ import android.os.Looper
 import android.provider.Settings
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import java.lang.ref.WeakReference
 
 /** Channel `audio_output`: Bluetooth audio outputs (no permission needed) and the Bluetooth picker. */
 object AudioOutput {
@@ -26,6 +27,7 @@ object AudioOutput {
     )
 
     private var callback: AudioDeviceCallback? = null
+    private var watchedEngine: WeakReference<FlutterEngine>? = null
 
     private fun audioManager(context: Context) =
         context.getSystemService(AudioManager::class.java)
@@ -37,6 +39,15 @@ object AudioOutput {
     }
 
     fun register(engine: FlutterEngine, context: Context) {
+        // Dart can't unwatch once its engine stops; once per engine, which outlives activities.
+        if (watchedEngine?.get() !== engine) {
+            watchedEngine = WeakReference(engine)
+            engine.addEngineLifecycleListener(object : FlutterEngine.EngineLifecycleListener {
+                override fun onPreEngineRestart() = unwatch(context)
+
+                override fun onEngineWillDestroy() = unwatch(context)
+            })
+        }
         val channel = MethodChannel(engine.dartExecutor.binaryMessenger, "audio_output")
         channel.setMethodCallHandler { call, result ->
             when (call.method) {
