@@ -1645,16 +1645,16 @@ class AudioPlayerController extends ChangeNotifier {
   /// False once [close] was called.
   bool get isOpen => !_closed;
 
-  /// Stops the running download. Finished files are kept (the download can
-  /// resume, or the leftovers be deleted); the partial file is removed.
+  /// Stops the running download. Finished files and the partial file are
+  /// kept (the download can resume, or the leftovers be deleted).
   void cancelDownload() {
     final cancel = _downloadCancel;
     if (cancel != null && !cancel.isCompleted) cancel.complete();
   }
 
   /// Downloads every audio file of the book, streaming each to disk and
-  /// reporting progress through [downloadProgress]. Finished files are kept
-  /// on failure, so a retry resumes with the next file.
+  /// reporting progress through [downloadProgress]. Finished files and the
+  /// partial file are kept on failure, so a retry resumes where it stopped.
   ///
   /// Keeps going with the screen off (see [DownloadKeepAlive]); the labels
   /// are for its notification.
@@ -1674,7 +1674,6 @@ class AudioPlayerController extends ChangeNotifier {
         : 0;
     var receivedBytes = 0;
     var result = DownloadResult.failed;
-    File? part;
     final keepAlive = DownloadKeepAlive.start(
       title: bookTitle,
       cancelLabel: cancelLabel,
@@ -1699,15 +1698,39 @@ class AudioPlayerController extends ChangeNotifier {
           receivedBytes += t.size;
           continue;
         }
-        final response = await _requestDownload(t, cancel.future);
-        if (response.statusCode != 200) {
+        final part = File('${target.path}.part');
+        var offset = _resumeOffset(part, t);
+        if (offset == t.size && offset > 0) {
+          part.renameSync(target.path);
+          receivedBytes += t.size;
+          continue;
+        }
+        var response = await _requestDownload(t, cancel.future, from: offset);
+        if (response.statusCode == 416 && offset > 0) {
+          // The server won't serve the rest: start this file over.
+          await response.stream.listen(null).cancel();
+          part.deleteSync();
+          offset = 0;
+          response = await _requestDownload(t, cancel.future);
+        }
+        if (response.statusCode == 206 &&
+            !_rangeStartsAt(response.headers['content-range'], offset)) {
+          await response.stream.listen(null).cancel();
+          part.deleteSync();
+          throw HttpException('Unexpected range for ${t.filename}');
+        }
+        if (response.statusCode == 200) {
+          offset = 0; // Range ignored: the body is the whole file.
+        } else if (response.statusCode != 206) {
           await response.stream.listen(null).cancel();
           throw HttpException('HTTP ${response.statusCode} for ${t.filename}');
         }
-        part = File('${target.path}.part');
+        receivedBytes += offset;
         // Synchronous writes fail right away when storage is full, instead
         // of after the whole file was fetched.
-        final file = part.openSync(mode: FileMode.write);
+        final file = part.openSync(
+          mode: offset > 0 ? FileMode.append : FileMode.write,
+        );
         final written = Completer<void>();
         void fail(Object e, [StackTrace? s]) {
           if (!written.isCompleted) written.completeError(e, s);
@@ -1751,8 +1774,12 @@ class AudioPlayerController extends ChangeNotifier {
           await sub.cancel();
           file.closeSync();
         }
+        if (t.size > 0 && part.lengthSync() != t.size) {
+          // Too long can't be resumed; too short resumes next time.
+          if (part.lengthSync() > t.size) part.deleteSync();
+          throw HttpException('Incomplete download of ${t.filename}');
+        }
         part.renameSync(target.path);
-        part = null;
       }
       result = DownloadResult.done;
     } on _DownloadCanceled {
@@ -1764,11 +1791,6 @@ class AudioPlayerController extends ChangeNotifier {
     } on Object catch (e) {
       debugPrint('Download failed: $e');
     } finally {
-      try {
-        if (part?.existsSync() ?? false) part!.deleteSync();
-      } on FileSystemException catch (e) {
-        debugPrint('Could not remove partial file: $e');
-      }
       isDownloading = false;
       _downloadCancel = null;
       _downloadOnWifi = false;
@@ -1784,6 +1806,21 @@ class AudioPlayerController extends ChangeNotifier {
     }
     return result;
   }
+
+  /// Bytes of [part] to resume from; drops it if oversized or size unknown.
+  int _resumeOffset(File part, BookTrack t) {
+    if (!part.existsSync()) return 0;
+    final length = part.lengthSync();
+    if (t.size > 0 && length <= t.size) return length;
+    part.deleteSync();
+    return 0;
+  }
+
+  /// True when a 206's Content-Range starts at [offset].
+  static bool _rangeStartsAt(String? contentRange, int offset) =>
+      contentRange != null &&
+      RegExp(r'^bytes\s+(\d+)-').firstMatch(contentRange)?.group(1) ==
+          '$offset';
 
   File _coverFile(String dir) => File('$dir/cover.jpg');
 
@@ -1870,8 +1907,9 @@ class AudioPlayerController extends ChangeNotifier {
   /// through the phone's VPN), retries over the default network.
   Future<http.StreamedResponse> _requestDownload(
     BookTrack t,
-    Future<void> canceled,
-  ) async {
+    Future<void> canceled, {
+    int from = 0,
+  }) async {
     for (var attempt = 1; ; attempt++) {
       // Abortable so a timed-out or canceled request releases its
       // connection.
@@ -1881,6 +1919,7 @@ class AudioPlayerController extends ChangeNotifier {
         Uri.parse('$serverUrl/api/items/$libraryItemId/file/${t.ino}/download'),
         abortTrigger: Future.any([abort.future, canceled]),
       )..headers.addAll(_authHeaders);
+      if (from > 0) request.headers['range'] = 'bytes=$from-';
       try {
         return await Future.any([
           _downloadClient!.send(request).timeout(const Duration(seconds: 30)),
