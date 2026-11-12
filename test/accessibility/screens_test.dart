@@ -388,6 +388,9 @@ void main() {
       }, () => client);
       expect(find.text('Book 2'), findsOneWidget);
       await expectAccessible(tester);
+      // Leaving saves the list; done in the real zone so the write finishes.
+      await tester.runAsync(() => tester.pumpWidget(const SizedBox()));
+      await tester.runAsync(() => JsonCache.idle);
     });
 
     screen('episodes', (tester, app) async {

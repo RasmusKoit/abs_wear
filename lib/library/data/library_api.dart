@@ -111,6 +111,31 @@ Future<List<LibraryInfo>> fetchLibraries(String serverUrl, String token) async {
       .toList();
 }
 
+/// Books (or podcasts) in a library whose title matches [query], from the
+/// server's library search.
+Future<List<ShelfBook>> searchLibrary(
+  String serverUrl,
+  String token,
+  String libraryId,
+  String query, {
+  int limit = 25,
+}) async {
+  final json =
+      await getJson(
+            '$serverUrl/api/libraries/$libraryId/search'
+            '?q=${Uri.encodeQueryComponent(query)}&limit=$limit',
+            token,
+          )
+          as Map<String, dynamic>;
+  final matches = (json['book'] ?? json['podcast'] ?? const <Object>[]) as List;
+  final seen = <String>{};
+  return [
+    for (final match in matches.cast<Map<String, dynamic>>())
+      if (match['libraryItem'] case final Map<String, dynamic> item)
+        if (seen.add(item['id'] as String)) ShelfBook.fromJson(item),
+  ];
+}
+
 /// Why a library page closed itself, for the login page to act on.
 enum LibraryResult {
   /// The server rejected the token (401): log in again.

@@ -5,13 +5,24 @@ import 'package:abs_wear/l10n/l10n.dart';
 import 'package:abs_wear/library/data/json_cache.dart';
 import 'package:abs_wear/library/data/library_api.dart';
 import 'package:abs_wear/library/view/book_tile.dart';
-import 'package:abs_wear/library/view/episodes_page.dart';
-import 'package:abs_wear/player/player.dart';
+import 'package:abs_wear/library/view/search_page.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-/// Every book (or podcast) in the library, A to Z, loaded a page at a time
-/// as the user scrolls, so libraries with thousands of books stay fast and
-/// light.
+/// How the library browser orders the list.
+enum BrowseSort {
+  title('sort=media.metadata.title'),
+  added('sort=addedAt&desc=1');
+
+  const BrowseSort(this.query);
+
+  /// The items request's sort parameters.
+  final String query;
+}
+
+/// Every book (or podcast) in the library, A to Z or newest first, loaded a
+/// page at a time as the user scrolls, so libraries with thousands of books
+/// stay fast and light.
 class BrowsePage extends StatefulWidget {
   const BrowsePage({
     required this.serverUrl,
@@ -42,8 +53,23 @@ class _BrowsePageState extends State<BrowsePage> {
   /// Start loading the next page this many rows before the end.
   static const _prefetchRows = 8;
 
+  /// Remembers the chosen sort across visits.
+  static const _sortKey = 'browseSort';
+
+  /// The list is saved this long after it last grew, and when leaving.
+  static const _saveDelay = Duration(seconds: 5);
+
   final _scrollController = ScrollController();
   final List<ShelfBook> _books = [];
+
+  /// Ids in [_books], to skip duplicates while paging.
+  final Set<String> _ids = {};
+
+  BrowseSort _sort = BrowseSort.title;
+
+  /// The list changed since it was last saved.
+  bool _dirty = false;
+  Timer? _saveTimer;
 
   /// Total on the server; null until known (from the cache or server).
   int? _total;
@@ -64,9 +90,10 @@ class _BrowsePageState extends State<BrowsePage> {
   /// True while showing the saved list because the server is unreachable.
   bool get _offline => _error != null && !_validated && _books.isNotEmpty;
 
+  /// One saved list per sort; title keeps the key from before sorting.
   String get _cacheKey =>
       'browse_${'${widget.serverUrl}|${widget.user}'.hashCode}_'
-      '${widget.libraryId}';
+      '${widget.libraryId}${_sort == BrowseSort.title ? '' : '_${_sort.name}'}';
 
   bool get _hasMore =>
       !_reachedEnd && (_total == null || _books.length < _total!);
@@ -74,27 +101,84 @@ class _BrowsePageState extends State<BrowsePage> {
   @override
   void initState() {
     super.initState();
-    unawaited(_showCached().then((_) => _checkFirstPage()));
+    unawaited(_start());
   }
 
   @override
   void dispose() {
+    _flush();
     _scrollController.dispose();
     super.dispose();
   }
 
-  Future<void> _showCached() async {
+  Future<void> _start() async {
+    final generation = _generation;
+    final saved = await _savedSort();
+    if (!mounted || generation != _generation) return;
+    setState(() => _sort = saved);
+    await _showCached(generation);
+    if (generation == _generation) await _checkFirstPage();
+  }
+
+  static Future<BrowseSort> _savedSort() async {
+    try {
+      final name = (await SharedPreferences.getInstance()).getString(_sortKey);
+      return BrowseSort.values.asNameMap()[name] ?? BrowseSort.title;
+    } on Object catch (e) {
+      debugPrint('Reading the browse sort failed: $e');
+      return BrowseSort.title;
+    }
+  }
+
+  Future<void> _toggleSort() async {
+    _flush();
+    final next = _sort == BrowseSort.title
+        ? BrowseSort.added
+        : BrowseSort.title;
+    final generation = ++_generation;
+    setState(() {
+      _sort = next;
+      _books.clear();
+      _ids.clear();
+      _total = null;
+      _reachedEnd = false;
+      _validated = false;
+      _nextPage = 0;
+      _loading = false;
+      _error = null;
+    });
+    if (_scrollController.hasClients) _scrollController.jumpTo(0);
+    unawaited(_saveSort(next));
+    await _showCached(generation);
+    if (generation == _generation) await _checkFirstPage();
+  }
+
+  static Future<void> _saveSort(BrowseSort sort) async {
+    try {
+      await (await SharedPreferences.getInstance()).setString(
+        _sortKey,
+        sort.name,
+      );
+    } on Object catch (e) {
+      debugPrint('Saving the browse sort failed: $e');
+    }
+  }
+
+  Future<void> _showCached(int generation) async {
     final cached = await JsonCache.read(_cacheKey);
-    if (!mounted || cached is! Map<String, dynamic>) return;
+    if (!mounted || generation != _generation) return;
+    if (cached is! Map<String, dynamic>) return;
     final books = cached['books'];
     if (books is! List) return;
     setState(() {
-      _books.addAll(
-        books.cast<Map<String, dynamic>>().map(ShelfBook.fromCache),
-      );
+      _add(books.cast<Map<String, dynamic>>().map(ShelfBook.fromCache));
       _total = cached['total'] as int?;
     });
   }
+
+  /// Appends the [books] that aren't listed yet.
+  void _add(Iterable<ShelfBook> books) =>
+      _books.addAll(books.where((b) => _ids.add(b.id)));
 
   /// Compares the server's first page with what is shown: if it still
   /// matches, paging continues after the saved books; if the library
@@ -118,16 +202,16 @@ class _BrowsePageState extends State<BrowsePage> {
           ].every((same) => same);
       setState(() {
         if (!unchanged) {
-          _books
-            ..clear()
-            ..addAll(page);
+          _books.clear();
+          _ids.clear();
+          _add(page);
+          _markDirty();
         }
         _total = total;
         _reachedEnd = page.length < _pageSize || _books.length >= total;
         _nextPage = (_books.length / _pageSize).ceil();
         _validated = true;
       });
-      unawaited(_save());
     } on Object catch (e) {
       if (!mounted || generation != _generation || _handleAuthError(e)) {
         return;
@@ -145,7 +229,7 @@ class _BrowsePageState extends State<BrowsePage> {
         await getJson(
               '${widget.serverUrl}/api/libraries/${widget.libraryId}/items'
               '?limit=$_pageSize&page=$page'
-              '&sort=media.metadata.title&minified=1',
+              '&${_sort.query}&minified=1',
               widget.token,
             )
             as Map<String, dynamic>;
@@ -166,14 +250,13 @@ class _BrowsePageState extends State<BrowsePage> {
       final (page, total) = await _fetchPage(pageNumber);
       if (!mounted || generation != _generation) return;
       setState(() {
-        // Skip duplicates in case the library changed while paging.
-        final known = {for (final b in _books) b.id};
-        _books.addAll(page.where((b) => !known.contains(b.id)));
+        // Skips duplicates in case the library changed while paging.
+        _add(page);
         _total = total;
         _nextPage = pageNumber + 1;
         _reachedEnd = page.length < _pageSize;
       });
-      unawaited(_save());
+      _markDirty();
     } on Object catch (e) {
       if (!mounted || generation != _generation || _handleAuthError(e)) {
         return;
@@ -186,10 +269,25 @@ class _BrowsePageState extends State<BrowsePage> {
     }
   }
 
-  Future<void> _save() => JsonCache.write(_cacheKey, {
-    'total': _total,
-    'books': [for (final b in _books) b.toCache()],
-  });
+  void _markDirty() {
+    _dirty = true;
+    _saveTimer?.cancel();
+    _saveTimer = Timer(_saveDelay, _flush);
+  }
+
+  /// Writes the list if it changed since the last write.
+  void _flush() {
+    _saveTimer?.cancel();
+    _saveTimer = null;
+    if (!_dirty) return;
+    _dirty = false;
+    unawaited(
+      JsonCache.write(_cacheKey, {
+        'total': _total,
+        'books': [for (final b in _books) b.toCache()],
+      }),
+    );
+  }
 
   /// 401/404: leave, and let the library and login pages handle it.
   /// Returns true when handled (also while another page is on top, so
@@ -213,32 +311,33 @@ class _BrowsePageState extends State<BrowsePage> {
     }
   }
 
-  Future<void> _open(ShelfBook book) async {
-    if (!book.isPodcast) {
-      await Navigator.push(
-        context,
-        MaterialPageRoute<void>(
-          builder: (context) => PlayerPage(
-            token: widget.token,
-            serverUrl: widget.serverUrl,
-            libraryItemId: book.id,
-            user: widget.user,
-          ),
-        ),
-      );
-      return;
-    }
-    final result = await Navigator.push(
+  Future<void> _open(ShelfBook book) => _closeWith(
+    openShelfBook(
+      context,
+      book,
+      serverUrl: widget.serverUrl,
+      token: widget.token,
+      user: widget.user,
+    ),
+  );
+
+  Future<void> _openSearch() => _closeWith(
+    Navigator.push(
       context,
       MaterialPageRoute<LibraryResult>(
-        builder: (context) => EpisodesPage(
+        builder: (context) => SearchPage(
           serverUrl: widget.serverUrl,
           token: widget.token,
+          libraryId: widget.libraryId,
           user: widget.user,
-          podcast: book,
         ),
       ),
-    );
+    ),
+  );
+
+  /// Passes on why a page on top closed the library, if it did.
+  Future<void> _closeWith(Future<LibraryResult?> page) async {
+    final result = await page;
     if (result == null || !mounted) return;
     final route = ModalRoute.of(context);
     if (route != null && route.isCurrent) Navigator.of(context).pop(result);
@@ -279,8 +378,10 @@ class _BrowsePageState extends State<BrowsePage> {
           // Round screen: keep rows away from the clipped corners.
           padding: const EdgeInsets.fromLTRB(28, 4, 24, 48),
           itemExtent: BookTile.height,
-          itemCount: _books.length + (showFooter ? 1 : 0),
-          itemBuilder: (context, index) {
+          itemCount: 1 + _books.length + (showFooter ? 1 : 0),
+          itemBuilder: (context, row) {
+            if (row == 0) return _header(l10n, theme);
+            final index = row - 1;
             if (index >= _books.length) return _footer(l10n, theme);
             if (index >= _books.length - _prefetchRows) {
               // Near the end: fetch the next page after this frame.
@@ -299,6 +400,35 @@ class _BrowsePageState extends State<BrowsePage> {
           },
         ),
       ),
+    );
+  }
+
+  /// Search and the sort toggle, above the list.
+  Widget _header(AppLocalizations l10n, ThemeData theme) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        IconButton(
+          icon: const Icon(Icons.search_rounded),
+          tooltip: l10n.search,
+          onPressed: () => unawaited(_openSearch()),
+        ),
+        Flexible(
+          child: TextButton.icon(
+            icon: const Icon(Icons.sort_rounded, size: 20),
+            label: Text(
+              switch (_sort) {
+                BrowseSort.title => l10n.sortByTitle,
+                BrowseSort.added => l10n.sortByAdded,
+              },
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.labelSmall,
+            ),
+            onPressed: () => unawaited(_toggleSort()),
+          ),
+        ),
+      ],
     );
   }
 
