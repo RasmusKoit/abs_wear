@@ -1415,12 +1415,15 @@ class AudioPlayerController extends ChangeNotifier {
     _notify();
   }
 
-  Future<void> seekRelative(double seconds) =>
-      seekToBookTime(bookPosition + seconds);
+  Future<void> seekRelative(double seconds) {
+    _syncAfterSkip();
+    return seekToBookTime(bookPosition + seconds);
+  }
 
   Future<void> seekToNextChapter() async {
     final i = chapterIndexAt(bookPosition);
     if (i < chapters.length - 1) {
+      _syncAfterSkip();
       await seekToBookTime(chapters[i + 1].start);
     }
   }
@@ -1428,6 +1431,7 @@ class AudioPlayerController extends ChangeNotifier {
   /// Restarts the current chapter, or goes to the previous one when within
   /// the first 3 seconds of a chapter.
   Future<void> seekToPreviousChapter() async {
+    _syncAfterSkip();
     final pos = bookPosition;
     final i = chapterIndexAt(pos);
     if (i < 0) {
@@ -1513,18 +1517,52 @@ class AudioPlayerController extends ChangeNotifier {
   @visibleForTesting
   DateTime? get retryAt => _retryAt;
 
-  /// Periodic sync: skipped while paused with nothing new to report, or
-  /// while paused and backing off after failed syncs.
+  /// Overrides [AudioPlayer.playing] in tests, which can't play audio.
+  @visibleForTesting
+  bool? debugPlaying;
+
+  /// Periodic ticks (one a minute) between server posts while playing.
+  static const postEveryTicks = 10;
+  int _ticksSincePost = 0;
+
+  /// How long after the last of a run of skips its position is posted.
+  static const skipSyncDelay = Duration(seconds: 3);
+  Timer? _skipSyncTimer;
+
+  /// Posts the position [skipSyncDelay] after the last skip.
+  void _syncAfterSkip() {
+    _skipSyncTimer?.cancel();
+    _skipSyncTimer = Timer(skipSyncDelay, () {
+      _skipSyncTimer = null;
+      if (!_closed) unawaited(syncOpenSession());
+    });
+  }
+
+  /// Saves the position as pending on the watch between server posts.
+  Future<void> _saveProgressLocally() async {
+    if (_closed || sessionId.isEmpty || _unsettled != null) return;
+    final listened =
+        _listenClock.elapsed - _reportedListening + _carriedListening;
+    await _savePendingProgress(bookPosition, listened);
+  }
+
+  /// Playing: posts every [postEveryTicks] ticks; paused: news, no backoff.
   Future<void> periodicSync() {
-    if (!player.playing) {
+    final playing = debugPlaying ?? player.playing;
+    if (!playing) {
       final retryAt = _retryAt;
       if (retryAt != null && DateTime.now().isBefore(retryAt)) {
         return Future.value();
       }
     }
     if (_unsettled != null) return _verifyLocalProgress();
+    if (playing &&
+        sessionId.isNotEmpty &&
+        ++_ticksSincePost < postEveryTicks) {
+      return _syncChain = _syncChain.then((_) => _saveProgressLocally());
+    }
     final idle =
-        !player.playing &&
+        !playing &&
         bookPosition == _lastSyncedTime &&
         _listenClock.elapsed == _reportedListening;
     return idle ? Future.value() : syncOpenSession();
@@ -1560,6 +1598,9 @@ class AudioPlayerController extends ChangeNotifier {
       await _savePendingProgress(current, _carriedListening);
       return;
     }
+    _ticksSincePost = 0;
+    _skipSyncTimer?.cancel();
+    _skipSyncTimer = null;
     // Read once: listening while the request is in flight (a 404 restart
     // can take a minute) isn't in this body, so it goes to the next sync.
     final sentAt = _listenClock.elapsed;
@@ -1973,6 +2014,7 @@ class AudioPlayerController extends ChangeNotifier {
       // the next book can start; the close request uses the recorded one.
       final position = bookPosition;
       _listenClock.stop();
+      _skipSyncTimer?.cancel();
       await _stateSub?.cancel();
       await _errorSub?.cancel();
       await player.dispose();

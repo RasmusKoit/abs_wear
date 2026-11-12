@@ -64,8 +64,7 @@ class _PlayerPageState extends State<PlayerPage> {
     if (_playerController.isOffline) {
       unawaited(showToast(l10n.playingOffline));
     }
-    // Keep the server's progress in sync while the player is open.
-    // Offline, this saves progress on the watch instead.
+    // Saves progress locally every minute; posts it every 10 while playing.
     _syncTimer = Timer.periodic(
       const Duration(minutes: 1),
       (_) => unawaited(_playerController.periodicSync()),
