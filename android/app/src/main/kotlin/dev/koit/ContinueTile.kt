@@ -62,13 +62,12 @@ object ContinueTile {
         // Legacy shared_preferences: this file, keys prefixed "flutter.".
         val prefs = context.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
         if (prefs.getString("flutter.token", null).isNullOrEmpty()) return null
-        val library = prefs.getString("flutter.defaultLibraryId", null).orEmpty()
-        // Dart's key is shelf_<hash of server and user>_<library id>, sanitized like JsonCache._fileName.
-        val suffix = "_" + library.replace(Regex("[^A-Za-z0-9_-]"), "_") + ".json"
-        val shelves = File(context.filesDir, "json_cache").listFiles { f ->
-            f.name.startsWith("shelf_") && f.name.endsWith(if (library.isEmpty()) ".json" else suffix)
-        } ?: return null
-        val file = shelves.maxByOrNull { it.lastModified() } ?: return null
+        // The signed-in user's JsonCache key, set by LibraryPage and removed on logout and login.
+        val key = prefs.getString("flutter.tileShelf", null)
+        if (key.isNullOrEmpty()) return null
+        // File name as in JsonCache._fileName.
+        val file = File(File(context.filesDir, "json_cache"), key.replace(Regex("[^A-Za-z0-9_-]"), "_") + ".json")
+        if (!file.isFile) return null
         val books = JSONArray(file.readText())
         for (i in 0 until books.length()) {
             val book = books.optJSONObject(i) ?: continue

@@ -48,6 +48,8 @@ class LoginPageState extends State<LoginPage> {
   /// doesn't see the login form flash on every start.
   bool _checking = true;
 
+  StreamSubscription<void>? _tileOpens;
+
   /// Where the logged-out user is: entering the server, choosing how to log
   /// in (when the server offers both), or entering a password.
   _Stage _stage = _Stage.server;
@@ -100,6 +102,7 @@ class LoginPageState extends State<LoginPage> {
 
   @override
   void dispose() {
+    unawaited(_tileOpens?.cancel());
     serverUrlController.dispose();
     usernameController.dispose();
     passwordController.dispose();
@@ -116,6 +119,7 @@ class LoginPageState extends State<LoginPage> {
   void initState() {
     super.initState();
     serverUrlController.text = 'https://';
+    _tileOpens = ContinueTile.opens.listen((_) => unawaited(_openFromTile()));
     unawaited(_checkToken());
   }
 
@@ -128,6 +132,16 @@ class LoginPageState extends State<LoginPage> {
     } finally {
       if (mounted) setState(() => _checking = false);
     }
+    await _openFromTile();
+  }
+
+  /// Opens the library, then the tile's book, when signed in on this page.
+  Future<void> _openFromTile() async {
+    if (!mounted || _checking || _token.isEmpty) return;
+    if (!(ModalRoute.of(context)?.isCurrent ?? false)) return;
+    final open = await ContinueTile.take();
+    if (open == null || !mounted) return;
+    await _openLibrary(tileOpen: open);
   }
 
   Future<void> _restoreSession() async {
@@ -264,6 +278,7 @@ class LoginPageState extends State<LoginPage> {
     await prefs.setString('serverUrl', url);
     await prefs.setString('username', username);
     await prefs.setString('token', token);
+    await ContinueTile.forgetShelf(prefs);
     await prefs.setString('defaultLibraryId', libraryId);
     // Don't keep passwords in memory once they have done their job.
     passwordController.clear();
@@ -682,7 +697,7 @@ class LoginPageState extends State<LoginPage> {
     }
     await prefs.remove('token');
     await prefs.remove('defaultLibraryId');
-    unawaited(ContinueTile.refresh());
+    await ContinueTile.forgetShelf(prefs);
     if (mounted) {
       setState(() {
         _token = '';
@@ -763,6 +778,7 @@ class LoginPageState extends State<LoginPage> {
       await prefs.remove('token');
       await prefs.remove('defaultLibraryId');
       await prefs.remove('pickedLibrary');
+      await ContinueTile.forgetShelf(prefs);
       await _deleteDownloadsAndCache();
       await AudioPlayerController.clearAllLocalProgress(keepPending: true);
     }
@@ -814,7 +830,7 @@ class LoginPageState extends State<LoginPage> {
     if (confirmed ?? false) await logout(deleteDownloads: true);
   }
 
-  Future<void> _openLibrary() async {
+  Future<void> _openLibrary({TileOpen? tileOpen}) async {
     final result = await Navigator.push(
       context,
       MaterialPageRoute<LibraryResult>(
@@ -823,6 +839,7 @@ class LoginPageState extends State<LoginPage> {
           token: _token,
           libraryId: defaultLibraryId,
           user: usernameController.text,
+          tileOpen: tileOpen,
         ),
       ),
     );

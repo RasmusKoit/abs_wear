@@ -23,12 +23,16 @@ class LibraryPage extends StatefulWidget {
     required this.serverUrl,
     required this.libraryId,
     required this.user,
+    this.tileOpen,
     super.key,
   });
   final String token;
   final String serverUrl;
   final String libraryId;
   final String user;
+
+  /// A tile tap the login page already took, opened once this page shows.
+  final TileOpen? tileOpen;
 
   @override
   State<LibraryPage> createState() => _LibraryPageState();
@@ -66,7 +70,8 @@ class _LibraryPageState extends State<LibraryPage> {
   void initState() {
     super.initState();
     _tileOpens = ContinueTile.opens.listen((_) => unawaited(_openFromTile()));
-    unawaited(_openFromTile());
+    unawaited(_openFromTile(widget.tileOpen));
+    unawaited(ContinueTile.showShelf(_cacheKey));
     unawaited(_showCachedThenRefresh());
   }
 
@@ -227,8 +232,11 @@ class _LibraryPageState extends State<LibraryPage> {
   }
 
   /// Opens the book a tap on the tile asked for, on top of this page.
-  Future<void> _openFromTile() async {
-    final open = await ContinueTile.take();
+  Future<void> _openFromTile([TileOpen? taken]) async {
+    // Always after an await: initState must not read the route.
+    final open = await (taken != null
+        ? Future.value(taken)
+        : ContinueTile.take());
     if (open == null || !mounted || _closing) return;
     final route = ModalRoute.of(context);
     if (route == null) return;

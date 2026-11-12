@@ -2,7 +2,10 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:abs_wear/app/continue_tile.dart';
+import 'package:abs_wear/library/view/library_page.dart';
 import 'package:abs_wear/login/view/login_page.dart';
+import 'package:abs_wear/player/player.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -405,6 +408,122 @@ void main() {
         expect(ping.url.toString(), '$_server/ping');
         expect(ping.headers['Authorization'], 'Bearer tok');
       }
+    });
+  });
+
+  group('Continue listening tile', () {
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    late List<String> calls;
+    late Map<String, Object?>? pending;
+    PlayerPage? player;
+
+    setUp(() {
+      fakeCrown();
+      Directory('${root.path}/docs').createSync();
+      calls = [];
+      pending = null;
+      player = null;
+      messenger.setMockMethodCallHandler(ContinueTile.channel, (call) async {
+        calls.add(call.method);
+        if (call.method != 'take') return null;
+        final open = pending;
+        pending = null;
+        return open;
+      });
+    });
+
+    tearDown(
+      () => messenger.setMockMethodCallHandler(ContinueTile.channel, null),
+    );
+
+    // The player closes again when its session fails, so keep what opened.
+    bool Function() playerShows(WidgetTester tester) => () {
+      final found = find.byType(PlayerPage, skipOffstage: false);
+      if (found.evaluate().isNotEmpty) player ??= tester.widget(found);
+      return player != null;
+    };
+
+    void signedIn() => SharedPreferences.setMockInitialValues({
+      'serverUrl': _server,
+      'username': 'alice',
+      'token': 'tok',
+      'defaultLibraryId': 'lib1',
+      ContinueTile.shelfPref: 'shelf_old',
+    });
+
+    testWidgets('a tap at start opens the library, then the player', (
+      tester,
+    ) async {
+      signedIn();
+      pending = {'id': 'li_1'};
+      await http.runWithClient(() async {
+        await tester.pumpAppInRealZone(const LoginPage());
+        await tester.settleRealZone(done: playerShows(tester));
+      }, () => client);
+
+      expect(find.byType(LibraryPage, skipOffstage: false), findsOneWidget);
+      expect(player?.libraryItemId, 'li_1');
+      expect(pending, isNull);
+      // The library page points the tile at this user's shelf.
+      final prefs = await SharedPreferences.getInstance();
+      expect(
+        prefs.getString(ContinueTile.shelfPref),
+        'shelf_${'$_server|alice'.hashCode}_lib1',
+      );
+      await tester.runAsync(() => tester.pumpWidget(const SizedBox()));
+    });
+
+    testWidgets('a tap on the signed-in home page opens the player', (
+      tester,
+    ) async {
+      signedIn();
+      await http.runWithClient(() async {
+        await tester.pumpAppInRealZone(const LoginPage());
+        await tester.settleRealZone(
+          done: () => find.text('Hello alice').evaluate().isNotEmpty,
+        );
+        expect(find.byType(LibraryPage), findsNothing);
+
+        pending = {'id': 'pod_1', 'episodeId': 'ep_1'};
+        await tester.runAsync(
+          () => simulatePlatformCall(ContinueTile.channel.name, 'open'),
+        );
+        await tester.settleRealZone(done: playerShows(tester));
+      }, () => client);
+
+      expect(player?.libraryItemId, 'pod_1');
+      expect(player?.episodeId, 'ep_1');
+      await tester.runAsync(() => tester.pumpWidget(const SizedBox()));
+    });
+
+    testWidgets('signed out, a tap only opens the app', (tester) async {
+      SharedPreferences.setMockInitialValues({'serverUrl': _server});
+      pending = {'id': 'li_1'};
+      await http.runWithClient(() async {
+        await tester.pumpAppInRealZone(const LoginPage());
+        await tester.settleRealZone();
+      }, () => client);
+
+      expect(calls, isNot(contains('take')));
+      expect(find.byType(LibraryPage), findsNothing);
+    });
+
+    testWidgets("logging out stops the tile showing the user's shelf", (
+      tester,
+    ) async {
+      signedIn();
+      routes['POST /logout'] = () => ok({});
+      await tester.pumpApp(const LoginPage());
+      await tester.pumpAndSettle();
+      await tester.runAsync(
+        () => http.runWithClient(() => state(tester).logout(), () => client),
+      );
+      await tester.pumpAndSettle();
+
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString(ContinueTile.shelfPref), isNull);
+      expect(calls, contains('refresh'));
     });
   });
 }

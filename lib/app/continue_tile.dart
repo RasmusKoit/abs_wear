@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// A book the "Continue listening" tile asked to open.
 class TileOpen {
@@ -41,6 +42,28 @@ class ContinueTile {
     } on Exception {
       return null;
     }
+  }
+
+  /// Preference with the signed-in user's shelf key (read by the tile).
+  static const shelfPref = 'tileShelf';
+
+  /// Points the tile at the shelf saved under [cacheKey] and redraws it.
+  static Future<void> showShelf(String cacheKey) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (prefs.getString(shelfPref) != cacheKey) {
+        await prefs.setString(shelfPref, cacheKey);
+      }
+    } on Object {
+      // No preferences (tests): the tile keeps showing the app name.
+    }
+    unawaited(refresh());
+  }
+
+  /// Stops the tile showing any shelf (signed out) and redraws it.
+  static Future<void> forgetShelf(SharedPreferences prefs) async {
+    await prefs.remove(shelfPref);
+    unawaited(refresh());
   }
 
   /// Asks the system to redraw the tile; fails silently (e.g. in tests).
