@@ -284,6 +284,40 @@ void main() {
       expect(await firstCached(tester, '_added'), 'New 000');
     });
 
+    testWidgets('a list left open is saved once it stops growing', (
+      tester,
+    ) async {
+      browseSaveDelay = const Duration(seconds: 2);
+      addTearDown(() => browseSaveDelay = const Duration(seconds: 5));
+      Future<int?> cachedCount() async {
+        final cached = await tester.runAsync(
+          () => JsonCache.read(cacheKey('')),
+        );
+        return ((cached as Map<String, dynamic>?)?['books'] as List?)?.length;
+      }
+
+      Future<void> idle() => tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 2300));
+        await JsonCache.idle;
+      });
+
+      await http.runWithClient(() async {
+        await tester.pumpAppInRealZone(page);
+        await tester.settleRealZone(done: () => requests.isNotEmpty);
+        expect(await cachedCount(), isNull, reason: 'not idle long enough');
+        await idle();
+        expect(await cachedCount(), 30);
+
+        // The next page restarts the wait, then is saved too.
+        await scrollToEnd(tester);
+        expect(pagesAsked(), [0, 1]);
+        expect(await cachedCount(), 30);
+        await idle();
+        expect(await cachedCount(), 45);
+      }, () => client);
+      await leave(tester);
+    });
+
     testWidgets('the search button opens search', (tester) async {
       await http.runWithClient(() async {
         await tester.pumpAppInRealZone(page);

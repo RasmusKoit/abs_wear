@@ -20,6 +20,10 @@ enum BrowseSort {
   final String query;
 }
 
+/// The browse list is saved this long after it last grew, and when leaving.
+@visibleForTesting
+Duration browseSaveDelay = const Duration(seconds: 5);
+
 /// Every book (or podcast) in the library, A to Z or newest first, loaded a
 /// page at a time as the user scrolls, so libraries with thousands of books
 /// stay fast and light.
@@ -55,9 +59,6 @@ class _BrowsePageState extends State<BrowsePage> {
 
   /// Remembers the chosen sort across visits.
   static const _sortKey = 'browseSort';
-
-  /// The list is saved this long after it last grew, and when leaving.
-  static const _saveDelay = Duration(seconds: 5);
 
   final _scrollController = ScrollController();
   final List<ShelfBook> _books = [];
@@ -272,7 +273,7 @@ class _BrowsePageState extends State<BrowsePage> {
   void _markDirty() {
     _dirty = true;
     _saveTimer?.cancel();
-    _saveTimer = Timer(_saveDelay, _flush);
+    _saveTimer = Timer(browseSaveDelay, _flush);
   }
 
   /// Writes the list if it changed since the last write.
