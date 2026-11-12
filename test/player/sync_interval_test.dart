@@ -122,6 +122,8 @@ void main() {
     expect(requests, contains('PATCH /api/me/progress/li_1'));
     expect(jsonDecode(bodies.last), containsPair('currentTime', 120));
     expect(progressFiles().single, containsPair('pending', false));
+    c.debugPlaying = null;
+    await c.close();
   });
 
   test('a paused player still posts what is new each tick', () async {
@@ -159,6 +161,22 @@ void main() {
       async.elapse(AudioPlayerController.skipSyncDelay);
       expect(requests, hasLength(2));
       expect(jsonDecode(bodies.last), containsPair('currentTime', 0));
+      unawaited(c.close());
+      async.elapse(const Duration(seconds: 1));
+    });
+  });
+
+  test('a post of an older position leaves a newer skip waiting', () {
+    fakeAsync((async) {
+      final c = controller();
+      unawaited(c.seekRelative(10));
+      // As reloadSources does, with a position captured before the skip.
+      unawaited(c.syncOpenSession(position: 5));
+      async.elapse(AudioPlayerController.skipSyncDelay);
+      expect(requests, hasLength(2));
+      expect(jsonDecode(bodies.last), containsPair('currentTime', 10));
+      unawaited(c.close());
+      async.elapse(const Duration(seconds: 1));
     });
   });
 
@@ -169,6 +187,8 @@ void main() {
       unawaited(c.syncOpenSession());
       async.elapse(const Duration(seconds: 10));
       expect(requests, hasLength(1));
+      unawaited(c.close());
+      async.elapse(const Duration(seconds: 1));
     });
   });
 }

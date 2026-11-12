@@ -1599,8 +1599,11 @@ class AudioPlayerController extends ChangeNotifier {
       return;
     }
     _ticksSincePost = 0;
-    _skipSyncTimer?.cancel();
-    _skipSyncTimer = null;
+    // A given position may predate a skip, which then still needs its post.
+    if (position == null) {
+      _skipSyncTimer?.cancel();
+      _skipSyncTimer = null;
+    }
     // Read once: listening while the request is in flight (a 404 restart
     // can take a minute) isn't in this body, so it goes to the next sync.
     final sentAt = _listenClock.elapsed;
