@@ -213,4 +213,58 @@ void main() {
       expect(prefs.getString('refreshToken'), isNull);
     });
   });
+
+  group('expiry', () {
+    final now = DateTime(2026, 11, 13, 12);
+
+    String jwt(Map<String, Object> payload) {
+      String part(Object json) =>
+          base64Url.encode(utf8.encode(jsonEncode(json))).replaceAll('=', '');
+      return '${part({'alg': 'HS256'})}.${part(payload)}.sig';
+    }
+
+    final expiry = now.add(const Duration(hours: 1));
+    final acc1 = jwt({'exp': expiry.millisecondsSinceEpoch ~/ 1000});
+
+    setUp(() => auth.clock = () => now);
+    tearDown(() => auth.clock = DateTime.now);
+
+    test('reads exp from a JWT, nothing from a legacy token', () {
+      expect(AuthSession.expiryOf(acc1), expiry);
+      expect(AuthSession.expiryOf(jwt({'userId': 'u'})), isNull);
+      expect(AuthSession.expiryOf('not-a-jwt'), isNull);
+    });
+
+    test('renewal is due the margin before expiry', () {
+      auth.start(_server, acc1, 'ref1');
+      const margin = Duration(minutes: 2);
+
+      expect(auth.renewIn(acc1, margin: margin), const Duration(minutes: 58));
+      auth.clock = () => expiry;
+      expect(auth.renewIn(acc1, margin: margin), Duration.zero);
+      auth.start(_server, acc1, null);
+      expect(auth.renewIn(acc1, margin: margin), isNull);
+    });
+
+    test('freshToken refreshes only close to expiry', () async {
+      auth.start(_server, acc1, 'ref1');
+      final client = server(refresh: () => refreshed('acc2', 'ref2'));
+      const margin = Duration(minutes: 2);
+
+      final early = await http.runWithClient(
+        () => auth.freshToken(acc1, margin: margin),
+        () => client,
+      );
+      auth.clock = () => expiry.subtract(const Duration(minutes: 1));
+      final late = await http.runWithClient(
+        () => auth.freshToken(acc1, margin: margin),
+        () => client,
+      );
+
+      expect(early, acc1);
+      expect(late, 'acc2');
+      expect(paths(), ['/auth/refresh']);
+      expect(auth.isStale(acc1), isTrue, reason: 'replaced');
+    });
+  });
 }

@@ -3,13 +3,16 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
+import 'package:abs_wear/login/data/auth_session.dart';
 import 'package:abs_wear/player/darts/audio_player.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:just_audio/just_audio.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class _FakePathProvider extends PathProviderPlatform
     with MockPlatformInterfaceMixin {
@@ -754,6 +757,161 @@ void main() {
       expect(jsonDecode(close), isEmpty);
       expect(requests, contains('HEAD /hls/s2/output-8.ts'));
       expect(c.bookPosition, 50);
+      await http.runWithClient(c.close, () => client);
+    });
+  });
+
+  group('stream token', () {
+    final now = DateTime(2026, 11, 13, 12);
+    final auth = AuthSession.instance;
+
+    /// A JWT (unsigned, the app never checks signatures) expiring at [exp].
+    String jwt(String id, DateTime exp) {
+      String part(Object json) =>
+          base64Url.encode(utf8.encode(jsonEncode(json))).replaceAll('=', '');
+      final seconds = exp.millisecondsSinceEpoch ~/ 1000;
+      final payload = part({'jti': id, 'exp': seconds});
+      return '${part({'alg': 'HS256'})}.$payload.sig';
+    }
+
+    final old = jwt('old', now.add(const Duration(hours: 1)));
+    final renewed = jwt('new', now.add(const Duration(hours: 2)));
+    final mp3Session = {
+      'id': 's1',
+      'currentTime': 100,
+      'duration': 600,
+      'audioTracks': [
+        {
+          'index': 1,
+          'startOffset': 0,
+          'duration': 600,
+          'contentUrl': '/api/items/li_1/file/111',
+          'mimeType': 'audio/mpeg',
+        },
+      ],
+    };
+
+    setUp(() {
+      SharedPreferences.setMockInitialValues({});
+      auth
+        ..start(_server, old, 'ref1')
+        ..clock = () => now;
+      routes['POST /api/items/li_1/play'] = () async => ok(mp3Session);
+      routes['POST /api/session/s1/sync'] = () async => ok();
+      routes['POST /api/session/s1/close'] = () async => ok();
+      routes['POST /auth/refresh'] = () async => ok({
+        'user': {'accessToken': renewed, 'refreshToken': 'ref2'},
+      });
+    });
+
+    tearDown(() {
+      auth
+        ..clear()
+        ..clock = DateTime.now;
+    });
+
+    Future<AudioPlayerController> open(String token) async {
+      final c = AudioPlayerController(client: client);
+      expect(
+        await c.setupPlayer('li_1', _server, token, userName: 'u'),
+        isTrue,
+      );
+      return c;
+    }
+
+    /// Waits (briefly) until [done] holds.
+    Future<void> until(bool Function() done) async {
+      for (var i = 0; i < 200 && !done(); i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+    }
+
+    test('direct-play streams schedule a renewal before expiry', () async {
+      final c = await open(old);
+
+      expect(c.sourceToken, old);
+      expect(c.renewalScheduled, isTrue);
+      await http.runWithClient(c.close, () => client);
+      expect(c.renewalScheduled, isFalse);
+    });
+
+    test('a legacy token is never renewed', () async {
+      auth.start(_server, 'legacy', null);
+      final c = await open('legacy');
+
+      expect(c.sourceToken, 'legacy');
+      expect(c.renewalScheduled, isFalse);
+      await http.runWithClient(c.close, () => client);
+    });
+
+    test('renewal refreshes and reloads at the same position', () async {
+      final c = await open(old);
+      auth.clock = () => now.add(const Duration(minutes: 59));
+
+      await http.runWithClient(c.debugRenewSources, () => client);
+
+      expect(requests, contains('POST /auth/refresh'));
+      expect(c.sourceToken, renewed);
+      expect(c.bookPosition, 100);
+      expect(c.renewalScheduled, isTrue, reason: 'for the new token');
+      await http.runWithClient(c.close, () => client);
+    });
+
+    test('renewal does nothing while the token has time left', () async {
+      final c = await open(old);
+
+      await http.runWithClient(c.debugRenewSources, () => client);
+
+      expect(requests, isNot(contains('POST /auth/refresh')));
+      expect(c.sourceToken, old);
+      await http.runWithClient(c.close, () => client);
+    });
+
+    test('an error on an expired token recovers without a message', () async {
+      final c = await open(old);
+      var errors = 0;
+      c.onPlaybackError = () => errors++;
+      auth.clock = () => now.add(const Duration(hours: 1, seconds: 1));
+
+      await http.runWithClient(() async {
+        c.debugPlayerError(PlayerException(0, 'Response code: 401', 0));
+        await until(() => c.sourceToken == renewed);
+      }, () => client);
+
+      expect(c.sourceToken, renewed);
+      expect(errors, 0);
+      await http.runWithClient(c.close, () => client);
+    });
+
+    test(
+      'an expired token the server will not renew shows the error',
+      () async {
+        routes['POST /auth/refresh'] = () async => http.Response('', 401);
+        final c = await open(old);
+        var errors = 0;
+        c.onPlaybackError = () => errors++;
+        auth.clock = () => now.add(const Duration(hours: 1, seconds: 1));
+
+        await http.runWithClient(() async {
+          c.debugPlayerError(PlayerException(0, 'Response code: 401', 0));
+          await until(() => errors > 0);
+        }, () => client);
+
+        expect(errors, 1);
+        expect(c.sourceToken, old);
+        await http.runWithClient(c.close, () => client);
+      },
+    );
+
+    test('other errors with a valid token show the error', () async {
+      final c = await open(old);
+      var errors = 0;
+      c
+        ..onPlaybackError = (() => errors++)
+        ..debugPlayerError(PlayerException(0, 'Connection lost', 0));
+
+      expect(errors, 1);
+      expect(requests, isNot(contains('POST /auth/refresh')));
       await http.runWithClient(c.close, () => client);
     });
   });

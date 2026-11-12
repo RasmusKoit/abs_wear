@@ -432,6 +432,22 @@ class AudioPlayerController extends ChangeNotifier {
   /// localized message.
   void Function()? onPlaybackError;
 
+  /// The token in the streamed sources' headers; null when none needs one.
+  String? _sourceToken;
+
+  /// Reloads the streamed sources with a new token before theirs expires.
+  Timer? _renewTimer;
+
+  /// How long before expiry streamed sources get a new token.
+  static const _renewMargin = Duration(minutes: 2);
+
+  /// The source token an expiry error was already recovered from (no loops).
+  String? _recoveredFrom;
+
+  /// The token the streamed sources use; read by tests.
+  @visibleForTesting
+  String? get sourceToken => _sourceToken;
+
   /// Serialises syncs so overlapping calls don't double-report time.
   Future<void> _syncChain = Future.value();
 
@@ -982,6 +998,7 @@ class AudioPlayerController extends ChangeNotifier {
   void _onPlayerError(PlayerException e) {
     debugPrint('Playback error: ${e.code} ${e.message}');
     if (_closed) return;
+    final play = player.playing || _wasPlaying;
     // The player is idle now, so bookPosition would return a stale cached
     // value; the error event carries the real position.
     final index = e.index ?? player.currentIndex ?? 0;
@@ -991,8 +1008,94 @@ class AudioPlayerController extends ChangeNotifier {
     }
     _needsReload = true;
     unawaited(player.pause());
+    final source = _sourceToken;
+    if (source != null &&
+        source != _recoveredFrom &&
+        AuthSession.instance.isStale(source, margin: _staleMargin)) {
+      // Most likely a 401 on an expired token: renew and carry on quietly.
+      _recoveredFrom = source;
+      unawaited(_recoverSources(source, play: play));
+      _notify();
+      return;
+    }
     onPlaybackError?.call();
     _notify();
+  }
+
+  /// Leeway for the watch's clock running behind the server's.
+  static const _staleMargin = Duration(seconds: 30);
+
+  /// Test hook for a playback error from the native player.
+  @visibleForTesting
+  void debugPlayerError(PlayerException e) => _onPlayerError(e);
+
+  /// Test hook for the renewal timer firing.
+  @visibleForTesting
+  Future<void> debugRenewSources() => _renewSources();
+
+  /// Whether a renewal is scheduled; read by tests.
+  @visibleForTesting
+  bool get renewalScheduled => _renewTimer?.isActive ?? false;
+
+  void _scheduleRenewal() {
+    _renewTimer?.cancel();
+    _renewTimer = null;
+    final source = _sourceToken;
+    if (source == null || _closed) return;
+    final due = AuthSession.instance.renewIn(source, margin: _renewMargin);
+    if (due == null) return;
+    _renewTimer = Timer(due, () => unawaited(_renewSources()));
+  }
+
+  /// Reloads the streamed sources at the same position with a renewed token.
+  Future<void> _renewSources() async {
+    final source = _sourceToken;
+    if (_closed || source == null) return;
+    String? fresh;
+    try {
+      fresh = await AuthSession.instance.freshToken(
+        source,
+        margin: _renewMargin,
+      );
+    } on Object catch (e) {
+      debugPrint('Could not renew the stream token: $e');
+      // Offline for now: try again shortly, the 401 recovery is the backstop.
+      if (!_closed && _sourceToken == source) {
+        _renewTimer = Timer(
+          const Duration(minutes: 1),
+          () => unawaited(_renewSources()),
+        );
+      }
+      return;
+    }
+    if (_closed || fresh == null || fresh == source) return;
+    // Replaced meanwhile, or idle after an error: the next load renews it.
+    if (_sourceToken != source || _reloading || _needsReload) return;
+    await reloadSources();
+  }
+
+  /// After an expiry error: renews the token and reloads where it stopped.
+  Future<void> _recoverSources(String source, {required bool play}) async {
+    String? fresh;
+    try {
+      fresh = await AuthSession.instance.freshToken(
+        source,
+        margin: _renewMargin,
+      );
+    } on Object catch (e) {
+      debugPrint('Could not renew the stream token: $e');
+    }
+    if (_closed) return;
+    if (fresh == null || fresh == source) {
+      // Can't renew (offline, or logged out on the server): the usual error.
+      onPlaybackError?.call();
+      _notify();
+      return;
+    }
+    // A Play tap meanwhile already reloaded.
+    if (!_needsReload || _reloading) return;
+    _playAfterReload = play;
+    await reloadSources();
   }
 
   /// Closes a session that was started after the player was closed,
@@ -1269,6 +1372,10 @@ class AudioPlayerController extends ChangeNotifier {
     // one, else from the server (the header keeps the token out of the URL).
     // None when there is no cover, or offline without a saved copy (each
     // failed fetch would be retried and logged on every track change).
+    // Direct-play files are under /api and need a valid token; HLS is not.
+    final current = AuthSession.instance.current(token);
+    final sourceToken = !local && playing.any((t) => !t.isHls) ? current : null;
+    final sourceHeaders = {'Authorization': 'Bearer $current'};
     final coverFile = _coverFile(dir);
     final cover = coverFile.existsSync()
         ? Uri.file(coverFile.path)
@@ -1281,7 +1388,7 @@ class AudioPlayerController extends ChangeNotifier {
           local
               ? Uri.file(_localFile(dir, t).path)
               : Uri.parse('$serverUrl${t.contentUrl}'),
-          headers: local || (t.isHls && _https) ? null : _authHeaders,
+          headers: local || (t.isHls && _https) ? null : sourceHeaders,
           tag: MediaItem(
             id: '$_mediaPath/${t.index}',
             title: bookTitle,
@@ -1290,11 +1397,13 @@ class AudioPlayerController extends ChangeNotifier {
             artUri: cover,
             artHeaders: cover == null || cover.scheme == 'file'
                 ? null
-                : _authHeaders,
+                : sourceHeaders,
           ),
         ),
     ];
     _playing = playing;
+    _sourceToken = sourceToken;
+    _scheduleRenewal();
     _pendingPosition = initialTime;
     if (!local) {
       // Seeks made while waiting only move the pending position; the audio
@@ -1981,6 +2090,7 @@ class AudioPlayerController extends ChangeNotifier {
   Future<void> close() {
     if (_closed) return _previousClose;
     _closed = true;
+    _renewTimer?.cancel();
     // Ends a running download now, releasing its service and wake lock.
     cancelDownload();
     // Chained, so a quick close can't let the next player start before a

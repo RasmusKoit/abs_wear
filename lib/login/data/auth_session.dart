@@ -101,6 +101,56 @@ class AuthSession {
       return Future.value(_replaced.contains(failed) ? _access : null);
     }
     if (_refresh == null) return Future.value();
+    return _sharedRefresh();
+  }
+
+  /// Clock for expiry checks; tests replace it.
+  @visibleForTesting
+  DateTime Function() clock = DateTime.now;
+
+  /// When JWT [token] expires; null for tokens without `exp` (legacy).
+  static DateTime? expiryOf(String token) {
+    try {
+      final parts = token.split('.');
+      if (parts.length != 3) return null;
+      final payload = utf8.decode(
+        base64Url.decode(base64Url.normalize(parts[1])),
+      );
+      final exp = (jsonDecode(payload) as Map<String, dynamic>)['exp'];
+      if (exp is! num) return null;
+      return DateTime.fromMillisecondsSinceEpoch((exp * 1000).round());
+    } on Object {
+      return null;
+    }
+  }
+
+  /// Whether [token] was refreshed away or expires within [margin].
+  bool isStale(String token, {Duration margin = Duration.zero}) {
+    if (current(token) != token) return true;
+    final exp = expiryOf(token);
+    return exp != null && exp.difference(clock()) <= margin;
+  }
+
+  /// Time until [margin] before [token] expires; null if it can't be renewed.
+  Duration? renewIn(String token, {required Duration margin}) {
+    if (current(token) != token) return Duration.zero;
+    if (token != _access || _refresh == null) return null;
+    final exp = expiryOf(token);
+    if (exp == null) return null;
+    final left = exp.difference(clock()) - margin;
+    return left.isNegative ? Duration.zero : left;
+  }
+
+  /// [token], refreshed if it expires within [margin]; null if it can't be.
+  Future<String?> freshToken(String token, {required Duration margin}) {
+    final now = current(token);
+    if (now != token) return Future.value(now);
+    if (!isStale(token, margin: margin)) return Future.value(token);
+    if (token != _access || _refresh == null) return Future.value();
+    return _sharedRefresh();
+  }
+
+  Future<String?> _sharedRefresh() {
     final pending = _refreshing;
     if (pending != null) return pending;
     late final Future<String?> refreshing;
