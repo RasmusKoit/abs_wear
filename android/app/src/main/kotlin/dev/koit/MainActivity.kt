@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -153,6 +154,7 @@ class MainActivity : AudioServiceActivity() {
             }
         // "Continue on phone" sign-in through the Wear OS companion.
         RemoteAuth.register(flutterEngine, context)
+        ContinueTile.register(flutterEngine, context)
         currentActivity = WeakReference(this)
         val downloads = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "download_keep_alive")
         DownloadService.onCancel = { downloads.invokeMethod("cancel", null) }
@@ -272,5 +274,11 @@ class MainActivity : AudioServiceActivity() {
         super.onCreate(savedInstanceState)
         ambientObserver = AmbientLifecycleObserver(this, ambientCallback)
         lifecycle.addObserver(ambientObserver)
+        ContinueTile.onLaunch(intent, savedInstanceState == null)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        ContinueTile.onLaunch(intent, true)
     }
 }

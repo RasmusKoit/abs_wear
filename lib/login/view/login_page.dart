@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
 
+import 'package:abs_wear/app/continue_tile.dart';
 import 'package:abs_wear/app/toast.dart';
 import 'package:abs_wear/app/view/crown_scrollbar.dart';
 import 'package:abs_wear/l10n/l10n.dart';
@@ -681,6 +682,7 @@ class LoginPageState extends State<LoginPage> {
     }
     await prefs.remove('token');
     await prefs.remove('defaultLibraryId');
+    unawaited(ContinueTile.refresh());
     if (mounted) {
       setState(() {
         _token = '';
@@ -726,6 +728,7 @@ class LoginPageState extends State<LoginPage> {
       debugPrint('Could not delete downloads: $e');
     }
     await JsonCache.clear();
+    unawaited(ContinueTile.refresh());
   }
 
   /// Revokes [token], then drops its pending logout (unless a newer logout

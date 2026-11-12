@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:abs_wear/app/continue_tile.dart';
 import 'package:abs_wear/app/view/crown_scrollbar.dart';
 import 'package:abs_wear/l10n/l10n.dart';
 import 'package:abs_wear/library/data/downloads.dart';
@@ -35,6 +36,7 @@ class LibraryPage extends StatefulWidget {
 
 class _LibraryPageState extends State<LibraryPage> {
   final _scrollController = ScrollController();
+  StreamSubscription<void>? _tileOpens;
 
   /// Continue Listening; null until the cache or the server answered.
   List<ShelfBook>? _books;
@@ -63,11 +65,14 @@ class _LibraryPageState extends State<LibraryPage> {
   @override
   void initState() {
     super.initState();
+    _tileOpens = ContinueTile.opens.listen((_) => unawaited(_openFromTile()));
+    unawaited(_openFromTile());
     unawaited(_showCachedThenRefresh());
   }
 
   @override
   void dispose() {
+    unawaited(_tileOpens?.cancel());
     _scrollController.dispose();
     super.dispose();
   }
@@ -127,7 +132,9 @@ class _LibraryPageState extends State<LibraryPage> {
         ),
       );
       unawaited(
-        JsonCache.write(_cacheKey, [for (final b in books) b.toCache()]),
+        JsonCache.write(_cacheKey, [
+          for (final b in books) b.toCache(),
+        ]).then((_) => ContinueTile.refresh()),
       );
     } on Object catch (e) {
       if (!mounted) return;
@@ -217,6 +224,18 @@ class _LibraryPageState extends State<LibraryPage> {
     if (!mounted) return;
     unawaited(_refreshDownloads());
     unawaited(_refresh());
+  }
+
+  /// Opens the book a tap on the tile asked for, on top of this page.
+  Future<void> _openFromTile() async {
+    final open = await ContinueTile.take();
+    if (open == null || !mounted || _closing) return;
+    final route = ModalRoute.of(context);
+    if (route == null) return;
+    Navigator.of(context).popUntil((r) => r == route);
+    await _openBook(
+      ShelfBook(id: open.id, title: '', author: '', episodeId: open.episodeId),
+    );
   }
 
   Future<void> _openBook(ShelfBook book) async {
