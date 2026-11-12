@@ -192,6 +192,24 @@ void main() {
       expect(paths(), ['/api/a']);
     });
 
+    test('a logout between the two token writes fails nothing', () async {
+      auth.start(_server, 'acc1', 'ref1');
+      final prefs = await SharedPreferences.getInstance();
+
+      final response = await http.runWithClient(() async {
+        final call = apiGet('$_server/api/a', 'acc1');
+        // The first write has landed in the cache; log out before the second.
+        while (prefs.getString('token') != 'acc2') {
+          await Future<void>.value();
+        }
+        auth.clear();
+        return await call;
+      }, () => server(refresh: () => refreshed('acc2', 'ref2')));
+
+      expect(response.statusCode, isNot(401));
+      expect(prefs.getString('refreshToken'), isNull);
+    });
+
     test('a refresh finishing after logout saves nothing', () async {
       auth.start(_server, 'acc1', 'ref1');
       final answer = Completer<http.Response>();

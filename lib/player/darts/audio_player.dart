@@ -1830,9 +1830,15 @@ class AudioPlayerController extends ChangeNotifier {
           receivedBytes += t.size;
           continue;
         }
-        final response = await _authed(
-          () => _requestDownload(t, cancel.future),
-        );
+        final request = _authed(() => _requestDownload(t, cancel.future));
+        // A cancel stops waiting for a token refresh, which others may share.
+        unawaited(request.then((_) {}, onError: (_) {}));
+        final response = await Future.any([
+          request,
+          cancel.future.then<http.StreamedResponse>(
+            (_) => throw const _DownloadCanceled(),
+          ),
+        ]);
         if (response.statusCode != 200) {
           await response.stream.listen(null).cancel();
           throw HttpException('HTTP ${response.statusCode} for ${t.filename}');

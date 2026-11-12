@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:abs_wear/login/data/auth_session.dart';
 import 'package:abs_wear/player/darts/audio_player.dart';
 import 'package:abs_wear/player/darts/download_keep_alive.dart';
 import 'package:flutter/services.dart';
@@ -117,6 +118,30 @@ void main() {
       DownloadResult.canceled,
     );
     expect(calls.last, 'stop');
+  });
+
+  test('cancel while a 401 waits for a token refresh', () async {
+    AuthSession.instance.start('http://abs.test', 'acc1', 'ref1');
+    addTearDown(AuthSession.instance.clear);
+    final refresh = Completer<http.Response>();
+    final controller = controllerWith(
+      MockClient.streaming(
+        (request, _) async => http.StreamedResponse(Stream.value([]), 401),
+      ),
+    )..token = 'acc1';
+
+    final result = http.runWithClient(
+      controller.downloadBook,
+      () => MockClient((_) => refresh.future),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    controller.cancelDownload();
+    expect(
+      await result.timeout(const Duration(seconds: 2)),
+      DownloadResult.canceled,
+    );
+    expect(calls.last, 'stop');
+    refresh.complete(http.Response('', 503));
   });
 
   test('falls back to the default network when Wi-Fi fails', () async {

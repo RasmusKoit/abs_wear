@@ -186,11 +186,13 @@ class AuthSession {
     _replaced.add(old);
     _access = access;
     if (refresh is String && refresh.isNotEmpty) _refresh = refresh;
+    final saved = _refresh!;
     final prefs = await SharedPreferences.getInstance();
-    if (generation == _generation) {
-      await prefs.setString(accessKey, _access);
-      await prefs.setString(refreshKey, _refresh!);
-    }
+    // Rechecked before each write: a logout may run between them.
+    if (generation != _generation) return access;
+    await prefs.setString(accessKey, access);
+    if (generation != _generation) return access;
+    await prefs.setString(refreshKey, saved);
     return access;
   }
 
