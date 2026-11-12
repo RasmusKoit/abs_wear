@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:abs_wear/app/crown.dart';
 import 'package:abs_wear/player/view/crown_volume.dart';
+import 'package:abs_wear/player/volume.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -14,9 +17,13 @@ void main() {
   late double systemVolume;
   late List<double> setVolumes;
   late List<bool> showSystemUi;
+  late int steps;
+  Completer<void>? gate;
 
   setUp(() {
     systemVolume = 0.5;
+    steps = 15;
+    gate = null;
     setVolumes = [];
     showSystemUi = [];
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -31,10 +38,11 @@ void main() {
       ..setMockMethodCallHandler(volumeChannel, (call) async {
         if (call.method == 'getVolume') return systemVolume;
         if (call.method == 'setVolume') {
+          await gate?.future;
           final args = call.arguments as Map<Object?, Object?>;
-          // Like a 15-step media stream: the system rounds each request.
+          // Like a media stream of [steps] steps: the system rounds requests.
           final asked = args['volume']! as double;
-          systemVolume = (asked * 15).round() / 15;
+          systemVolume = (asked * steps).round() / steps;
           setVolumes.add(asked);
           showSystemUi.add(args['showSystemUI']! as bool);
         }
@@ -104,14 +112,46 @@ void main() {
   });
 
   testWidgets('small steps add up past the system rounding', (tester) async {
+    // 7 steps: a lone 5% request from 3/7 rounds back to 3/7.
+    steps = 7;
+    systemVolume = 3 / 7;
     await pumpPlayer(tester);
 
     await turn(tester, clockwise: true);
+    expect(systemVolume, 3 / 7);
+    await turn(tester, clockwise: true);
+
+    expect(systemVolume, 4 / 7);
+  });
+
+  testWidgets('crown continues from a level the buttons set', (tester) async {
+    await pumpPlayer(tester);
+    await turn(tester, clockwise: true);
+
+    // The controls page's + button, before the indicator hides.
+    await tester.runAsync(() => changeVolume(0.1));
+    final fromButton = systemVolume;
+    await turn(tester, clockwise: true);
+
+    expect(setVolumes.last, closeTo(fromButton + 0.05, 1e-9));
+  });
+
+  testWidgets('queued turns stop when the player closes', (tester) async {
+    gate = Completer<void>();
+    await pumpPlayer(tester);
+    await turn(tester, clockwise: true);
     await turn(tester, clockwise: true);
     await turn(tester, clockwise: true);
 
-    // Not stuck re-reading the rounded level: 0.5 + 3 x 0.05.
-    expect(setVolumes.last, closeTo(0.65, 1e-9));
+    await tester.pumpWidget(const SizedBox());
+    await tester.runAsync(() async {
+      gate!.complete();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    });
+    await tester.pump();
+    await tester.pump();
+
+    expect(setVolumes, hasLength(1));
   });
 
   testWidgets('volume stops at 0 and 1', (tester) async {

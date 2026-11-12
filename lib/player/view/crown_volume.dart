@@ -5,6 +5,7 @@ import 'package:abs_wear/app/view/crown_scrollbar.dart';
 import 'package:abs_wear/l10n/l10n.dart';
 import 'package:abs_wear/player/volume.dart';
 import 'package:flutter/material.dart';
+import 'package:volume_controller/volume_controller.dart';
 
 /// Crown detents step the volume and briefly show it; swipes still page.
 class CrownVolume extends StatefulWidget {
@@ -33,6 +34,9 @@ class _CrownVolumeState extends State<CrownVolume> {
   /// Target of the current detent run, so steps add up past system rounding.
   double? _target;
 
+  /// System level right after the crown's last change, to spot other changes.
+  double? _settled;
+
   @override
   void dispose() {
     _hide?.cancel();
@@ -47,12 +51,19 @@ class _CrownVolumeState extends State<CrownVolume> {
   }
 
   Future<void> _step(bool clockwise) async {
+    if (!_onTop) return;
+    final volume = VolumeController.instance;
     final double level;
     try {
+      final current = await volume.getVolume();
+      // Another control (buttons, hardware keys) moved it: start from there.
+      final from = current == _settled ? _target : current;
+      if (!_onTop) return;
       level = await changeVolume(
         clockwise ? CrownVolume.step : -CrownVolume.step,
-        from: _target,
+        from: from,
       );
+      _settled = await volume.getVolume();
     } on Exception {
       return;
     }
@@ -63,9 +74,12 @@ class _CrownVolumeState extends State<CrownVolume> {
     _hide?.cancel();
     _hide = Timer(CrownVolume.shownFor, () {
       _target = null;
+      _settled = null;
       if (mounted) _visible.value = false;
     });
   }
+
+  bool get _onTop => mounted && (ModalRoute.of(context)?.isCurrent ?? true);
 
   @override
   Widget build(BuildContext context) {
