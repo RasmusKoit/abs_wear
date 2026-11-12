@@ -7,6 +7,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
+import 'package:abs_wear/ambient_mode/view/ambient_mode_listener.dart';
+import 'package:abs_wear/app/app_visibility.dart';
 import 'package:abs_wear/player/darts/download_keep_alive.dart';
 import 'package:abs_wear/player/darts/network_lock.dart';
 import 'package:device_info_plus/device_info_plus.dart';
@@ -115,9 +117,11 @@ class _DownloadCanceled implements Exception {
 }
 
 class AudioPlayerController extends ChangeNotifier {
-  AudioPlayerController({http.Client? client})
+  /// Tests pass a fake-time [sleepClock].
+  AudioPlayerController({http.Client? client, Stopwatch? sleepClock})
     : _client = client ?? _newClient(),
-      _injectedClient = client;
+      _injectedClient = client,
+      _sleepClock = sleepClock ?? Stopwatch();
 
   static http.Client _newClient() =>
       IOClient(HttpClient()..idleTimeout = _idleTimeout);
@@ -311,9 +315,16 @@ class AudioPlayerController extends ChangeNotifier {
 
   /// Listening time left before playback pauses; null when off. Counts
   /// down only while audio is actually heard (not paused or buffering).
+  /// Updated each second only while the app is on screen and not ambient.
   final ValueNotifier<Duration?> sleepRemaining = ValueNotifier(null);
+
+  /// Fires when the listening time is up.
   Timer? _sleepTimer;
-  final Stopwatch _sleepClock = Stopwatch();
+
+  /// Refreshes [sleepRemaining] each second.
+  Timer? _sleepTick;
+  bool _watchingDisplay = false;
+  final Stopwatch _sleepClock;
   Duration _sleepTarget = Duration.zero;
 
   /// Index in [sleepOptions] of the running timer; -1 when off.
@@ -327,8 +338,7 @@ class AudioPlayerController extends ChangeNotifier {
 
   /// Starts the timer with [sleepOptions] at [choice], or turns it off.
   void setSleepTimer(int? choice) {
-    _sleepTimer?.cancel();
-    _sleepTimer = null;
+    _stopSleepTimers();
     _sleepClock
       ..stop()
       ..reset();
@@ -340,25 +350,83 @@ class AudioPlayerController extends ChangeNotifier {
     }
     _sleepTarget = sleepOptions[choice];
     sleepRemaining.value = _sleepTarget;
-    if (_audible) {
+    if (_audible) _sleepAudible(audible: true);
+  }
+
+  /// Tests run it in place of playing audio, which they can't do.
+  @visibleForTesting
+  void debugSleepAudible({required bool audible}) =>
+      _sleepAudible(audible: audible);
+
+  /// Counts the sleep timer down while audio plays; paused, nothing runs.
+  void _sleepAudible({required bool audible}) {
+    if (_sleepChoice < 0 || _closed) return;
+    if (audible) {
       _sleepClock.start();
-      _startSleepTick();
+      _sleepTimer ??= Timer(_sleepLeft, _onSleepDue);
+      if (!_watchingDisplay) {
+        _watchingDisplay = true;
+        AppVisibility.instance
+          ..ensureInitialized()
+          ..addListener(_updateSleepTick);
+        AmbientModeListener.instance.addListener(_updateSleepTick);
+      }
+      _updateSleepTick();
+    } else {
+      _sleepClock.stop();
+      _showSleepLeft();
+      _stopSleepTimers();
     }
   }
 
-  /// Counts the sleep timer down while audio plays; paused, the clock and
-  /// the tick stop (no wakeups while nothing changes). The clock measures
-  /// time; the tick only shows it (late ticks don't slow the timer down).
-  void _startSleepTick() {
-    _sleepTimer ??= Timer.periodic(const Duration(seconds: 1), (_) {
-      final left = _sleepTarget - _sleepClock.elapsed;
-      if (left > Duration.zero) {
-        sleepRemaining.value = Duration(seconds: left.inSeconds + 1);
-        return;
-      }
-      setSleepTimer(null);
-      unawaited(player.pause());
-    });
+  Duration get _sleepLeft => _sleepTarget - _sleepClock.elapsed;
+
+  void _onSleepDue() {
+    _sleepTimer = null;
+    final left = _sleepLeft;
+    if (left > Duration.zero) {
+      _sleepTimer = Timer(left, _onSleepDue);
+      return;
+    }
+    setSleepTimer(null);
+    unawaited(player.pause());
+  }
+
+  /// Ticks the display only while it can be seen at full refresh.
+  void _updateSleepTick() {
+    final visible =
+        _sleepTimer != null &&
+        AppVisibility.instance.value &&
+        !AmbientModeListener.instance.value;
+    if (!visible) {
+      _sleepTick?.cancel();
+      _sleepTick = null;
+      return;
+    }
+    _showSleepLeft();
+    _sleepTick ??= Timer.periodic(
+      const Duration(seconds: 1),
+      (_) => _showSleepLeft(),
+    );
+  }
+
+  void _showSleepLeft() {
+    final left = _sleepLeft;
+    if (_closed || _sleepChoice < 0 || left <= Duration.zero) return;
+    sleepRemaining.value = Duration(
+      seconds: (left.inMicroseconds / Duration.microsecondsPerSecond).ceil(),
+    );
+  }
+
+  void _stopSleepTimers() {
+    _sleepTimer?.cancel();
+    _sleepTimer = null;
+    _sleepTick?.cancel();
+    _sleepTick = null;
+    if (!_watchingDisplay) return;
+    _watchingDisplay = false;
+    AppVisibility.instance.removeListener(_updateSleepTick);
+    AmbientModeListener.instance.removeListener(_updateSleepTick);
   }
 
   bool get _audible =>
@@ -922,16 +990,7 @@ class AudioPlayerController extends ChangeNotifier {
     audible ? _listenClock.start() : _listenClock.stop();
     // Listening on the watch now: its progress is the latest.
     if (state.playing) _unverified = null;
-    if (_sleepChoice >= 0) {
-      if (audible) {
-        _sleepClock.start();
-        _startSleepTick();
-      } else {
-        _sleepClock.stop();
-        _sleepTimer?.cancel();
-        _sleepTimer = null;
-      }
-    }
+    _sleepAudible(audible: audible);
     // Keep the network up while streaming, also while loading with the
     // screen off.
     unawaited(NetworkLock.set(hold: state.playing && _streaming));
@@ -2000,7 +2059,7 @@ class AudioPlayerController extends ChangeNotifier {
       }
       _client.close();
       downloadProgress.dispose();
-      _sleepTimer?.cancel();
+      _stopSleepTimers();
       sleepRemaining.dispose();
       super.dispose();
     }

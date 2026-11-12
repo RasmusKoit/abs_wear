@@ -1,3 +1,5 @@
+import 'package:abs_wear/ambient_mode/ambient_mode.dart';
+import 'package:abs_wear/app/app_visibility.dart';
 import 'package:abs_wear/player/darts/audio_player.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -229,6 +231,76 @@ void main() {
       await tester.pump(const Duration(minutes: 20));
 
       expect(c.sleepRemaining.value, const Duration(minutes: 15));
+    });
+
+    group('while playing', () {
+      tearDown(() {
+        AmbientModeListener.instance.value = false;
+        AppVisibility.instance.value = true;
+      });
+
+      AudioPlayerController playing(WidgetTester tester) =>
+          AudioPlayerController(sleepClock: tester.binding.clock.stopwatch())
+            ..setSleepTimer(0)
+            ..debugSleepAudible(audible: true);
+
+      testWidgets('ticks each second on screen', (tester) async {
+        final c = playing(tester);
+
+        await tester.pump(const Duration(seconds: 1));
+        expect(
+          c.sleepRemaining.value,
+          const Duration(minutes: 14, seconds: 59),
+        );
+        await tester.pump(const Duration(seconds: 1));
+        expect(
+          c.sleepRemaining.value,
+          const Duration(minutes: 14, seconds: 58),
+        );
+
+        c.setSleepTimer(null);
+      });
+
+      testWidgets("doesn't tick while ambient or hidden", (tester) async {
+        final c = playing(tester);
+        final shown = <Duration?>[];
+        c.sleepRemaining.addListener(() => shown.add(c.sleepRemaining.value));
+
+        AmbientModeListener.instance.value = true;
+        await tester.pump(const Duration(minutes: 1));
+        AppVisibility.instance.value = false;
+        AmbientModeListener.instance.value = false;
+        await tester.pump(const Duration(minutes: 1));
+        expect(shown, isEmpty);
+
+        // Back on screen: shows the time left at once.
+        AppVisibility.instance.value = true;
+        expect(c.sleepRemaining.value, const Duration(minutes: 13));
+
+        c.setSleepTimer(null);
+      });
+
+      testWidgets('pauses on time while ambient', (tester) async {
+        AmbientModeListener.instance.value = true;
+        final c = playing(tester);
+
+        await tester.pump(const Duration(minutes: 14, seconds: 59));
+        expect(c.sleepRemaining.value, const Duration(minutes: 15));
+        await tester.pump(const Duration(seconds: 1));
+
+        expect(c.sleepRemaining.value, isNull);
+      });
+
+      testWidgets('stops counting when audio stops', (tester) async {
+        final c = playing(tester);
+        await tester.pump(const Duration(minutes: 5));
+
+        c.debugSleepAudible(audible: false);
+        await tester.pump(const Duration(minutes: 20));
+
+        expect(c.sleepRemaining.value, const Duration(minutes: 10));
+        c.setSleepTimer(null);
+      });
     });
 
     test('is ignored once the player closed', () async {

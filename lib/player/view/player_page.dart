@@ -93,7 +93,10 @@ class _PlayerPageState extends State<PlayerPage> {
             PlayerViewPage(playerController: _playerController),
             OverscrollToPreviousPage(
               controller: _pageController,
-              child: ControlViewPage(playerController: _playerController),
+              child: AmbientPlayerGate(
+                playerController: _playerController,
+                child: ControlViewPage(playerController: _playerController),
+              ),
             ),
           ],
         ),
