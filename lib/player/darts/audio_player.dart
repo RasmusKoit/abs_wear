@@ -1622,8 +1622,8 @@ class AudioPlayerController extends ChangeNotifier {
       // Keep the position on the watch until the server gets it (e.g. the
       // network dropped while listening to a downloaded book).
       await _savePendingProgress(current, listened);
-    } else if (await isDownloaded()) {
-      // Where offline play resumes next time.
+    } else if (isDownloading || await isDownloaded()) {
+      // Where offline play resumes, also for a download still running.
       await _writeLocalProgress(current, Duration.zero, pending: false);
     } else {
       await _clearLocalProgress();

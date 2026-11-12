@@ -216,6 +216,33 @@ void main() {
     expect(calls.last, 'stop');
   });
 
+  test('cancel ends the wait for the cover at once', () async {
+    final coverAsked = Completer<void>();
+    final controller = controllerWith(
+      MockClient.streaming((request, _) async {
+        if (request.url.path.endsWith('/cover')) {
+          coverAsked.complete();
+          return Completer<http.StreamedResponse>().future;
+        }
+        return http.StreamedResponse(
+          Stream.value(List.filled(1000, 1)),
+          200,
+          contentLength: 1000,
+        );
+      }),
+    );
+
+    final result = controller.downloadBook();
+    await coverAsked.future.timeout(const Duration(seconds: 2));
+    controller.cancelDownload();
+    // The audio is all there, so the book counts as downloaded.
+    expect(
+      await result.timeout(const Duration(seconds: 2)),
+      DownloadResult.done,
+    );
+    expect(DownloadManager.instance.jobs, isEmpty);
+  });
+
   test('a second book waits for the first under one keep-alive', () async {
     final feed = feedable();
     final first = controllerWith(feed.client);

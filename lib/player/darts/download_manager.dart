@@ -31,15 +31,20 @@ Future<void> saveCover({
   required String token,
   required String itemId,
   required String dir,
+  Future<void>? canceled,
 }) async {
   final part = File('${coverFileIn(dir).path}.part');
   try {
-    final response = await client
-        .get(
-          Uri.parse('$serverUrl/api/items/$itemId/cover?width=400'),
-          headers: {'Authorization': 'Bearer $token'},
-        )
-        .timeout(const Duration(seconds: 20));
+    final response = await Future.any([
+      client
+          .get(
+            Uri.parse('$serverUrl/api/items/$itemId/cover?width=400'),
+            headers: {'Authorization': 'Bearer $token'},
+          )
+          .timeout(const Duration(seconds: 20)),
+      if (canceled != null)
+        canceled.then<http.Response>((_) => throw const _DownloadCanceled()),
+    ]);
     if (response.statusCode != 200 || response.bodyBytes.isEmpty) return;
     // Renamed only when complete: a broken file would never be replaced.
     await part.writeAsBytes(response.bodyBytes, flush: true);
@@ -228,6 +233,7 @@ class DownloadJob {
           token: token,
           itemId: libraryItemId,
           dir: dir,
+          canceled: _cancel.future,
         );
       }
     }

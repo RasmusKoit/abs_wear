@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:abs_wear/player/darts/audio_player.dart';
+import 'package:abs_wear/player/darts/download_manager.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -435,6 +436,49 @@ void main() {
   });
 
   group('closing', () {
+    test('a book still downloading keeps its closing position', () async {
+      routes['POST /api/session/s1/close'] = () async => ok();
+      final job = DownloadJob(
+        key: 'li_1',
+        dir: '${docs.path}/li_1',
+        title: 'Book',
+        serverUrl: _server,
+        token: 't',
+        libraryItemId: 'li_1',
+        tracks: const [
+          BookTrack(
+            index: 1,
+            startOffset: 0,
+            duration: 600,
+            contentUrl: '/api/items/li_1/file/111',
+            filename: 'book.mp3',
+            ino: '111',
+            size: 1000,
+          ),
+        ],
+        hasCover: false,
+        sessionMeta: null,
+        client: MockClient.streaming(
+          (_, _) => Completer<http.StreamedResponse>().future,
+        ),
+      );
+      final result = DownloadManager.instance.enqueue(job);
+      addTearDown(() async {
+        DownloadManager.instance.cancel('li_1');
+        await result;
+      });
+      final c = controller()..isLoaded = true;
+
+      await c.syncOpenSession(close: true, position: 250);
+
+      final key = '$_server|u|li_1'.hashCode.toUnsigned(32);
+      final file = File('${docs.path}/support/offline_progress/$key.json');
+      expect(file.existsSync(), isTrue, reason: 'offline play resumes here');
+      final json = jsonDecode(file.readAsStringSync()) as Map<String, dynamic>;
+      expect(json['currentTime'], 250);
+      expect(json['pending'], isFalse);
+    });
+
     test('the next player waits for every earlier close', () async {
       final slow = Completer<http.Response>();
       routes['POST /api/session/a/close'] = () => slow.future;
