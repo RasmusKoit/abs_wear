@@ -10,13 +10,16 @@ on:
       - master
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           flutter-version: 3.47.9
           channel: stable
@@ -36,7 +39,7 @@ jobs:
         run: flutter build apk --release --flavor production -t lib/main_production.dart
 
   spell-check:
-    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/spell_check.yml@v2
+    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/spell_check.yml@33d441b1f92ff046f1945309a204d9ed039e6fc9 # v2.1.0
     with:
       includes: |
         **/*.md
