@@ -7,6 +7,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
+import 'package:abs_wear/login/data/auth_session.dart';
 import 'package:abs_wear/player/darts/download_keep_alive.dart';
 import 'package:abs_wear/player/darts/network_lock.dart';
 import 'package:device_info_plus/device_info_plus.dart';
@@ -373,7 +374,14 @@ class AudioPlayerController extends ChangeNotifier {
 
   bool get _audioLoaded => player.processingState != ProcessingState.idle;
 
-  Map<String, String> get _authHeaders => {'Authorization': 'Bearer $token'};
+  Map<String, String> get _authHeaders => {
+    'Authorization': 'Bearer ${AuthSession.instance.current(token)}',
+  };
+
+  /// Runs [request] (using [_authHeaders]), again after a refresh on a 401.
+  Future<R> _authed<R extends http.BaseResponse>(
+    Future<R> Function() request,
+  ) => AuthSession.instance.send(token, (_) => request());
 
   /// Position in the whole book, across all audio files. While audio is
   /// loaded this also records the last known position, so a stop, error or
@@ -659,10 +667,13 @@ class AudioPlayerController extends ChangeNotifier {
     await lastClose;
     final dir = await _localProgressDir();
     if (!dir.existsSync()) return;
-    final headers = {
-      'Authorization': 'Bearer $token',
+    Map<String, String> headers() => {
+      'Authorization': 'Bearer ${AuthSession.instance.current(token)}',
       'Content-Type': 'application/json',
     };
+    Future<R> authed<R extends http.BaseResponse>(
+      Future<R> Function() request,
+    ) => AuthSession.instance.send(token, (_) => request());
     final client = http.Client();
     try {
       for (final file in dir.listSync().whereType<File>()) {
@@ -678,9 +689,11 @@ class AudioPlayerController extends ChangeNotifier {
           final key = _keyFor(serverUrl, user, mediaPath);
           if (_openKeys.containsKey(key)) continue;
           final url = Uri.parse('$serverUrl/api/me/progress/$mediaPath');
-          final current = await client
-              .get(url, headers: headers)
-              .timeout(const Duration(seconds: 10));
+          final current = await authed(
+            () => client
+                .get(url, headers: headers())
+                .timeout(const Duration(seconds: 10)),
+          );
           // Without an answer the server may have newer progress: keep the
           // file pending and try again on the next push.
           if (current.statusCode != 200 && current.statusCode != 404) {
@@ -695,18 +708,20 @@ class AudioPlayerController extends ChangeNotifier {
           if (serverUpdated <= (json['updatedAt'] as num).toInt()) {
             final time = (json['currentTime'] as num).toDouble();
             final duration = (json['duration'] as num?)?.toDouble() ?? 0;
-            final response = await client
-                .patch(
-                  url,
-                  headers: headers,
-                  body: jsonEncode({
-                    'currentTime': time,
-                    if (duration > 0) 'duration': duration,
-                    if (duration > 0)
-                      'progress': (time / duration).clamp(0.0, 1.0),
-                  }),
-                )
-                .timeout(const Duration(seconds: 10));
+            final response = await authed(
+              () => client
+                  .patch(
+                    url,
+                    headers: headers(),
+                    body: jsonEncode({
+                      'currentTime': time,
+                      if (duration > 0) 'duration': duration,
+                      if (duration > 0)
+                        'progress': (time / duration).clamp(0.0, 1.0),
+                    }),
+                  )
+                  .timeout(const Duration(seconds: 10)),
+            );
             if (response.statusCode != 200) continue;
             updated = {...json, 'pending': false};
           } else {
@@ -853,12 +868,14 @@ class AudioPlayerController extends ChangeNotifier {
     Duration timeout,
   ) async {
     try {
-      final response = await _client
-          .get(
-            Uri.parse('$serverUrl/api/me/progress/$_mediaPath'),
-            headers: _authHeaders,
-          )
-          .timeout(timeout);
+      final response = await _authed(
+        () => _client
+            .get(
+              Uri.parse('$serverUrl/api/me/progress/$_mediaPath'),
+              headers: _authHeaders,
+            )
+            .timeout(timeout),
+      );
       if (response.statusCode == 404) return (lastUpdate: 0, time: null);
       if (response.statusCode != 200) return null;
       final json = jsonDecode(response.body) as Map<String, dynamic>;
@@ -991,21 +1008,23 @@ class AudioPlayerController extends ChangeNotifier {
     if (id.isEmpty) return;
     final client = http.Client();
     try {
-      await client
-          .post(
-            Uri.parse('$serverUrl/api/session/$id/close'),
-            headers: {..._authHeaders, 'Content-Type': 'application/json'},
-            body: jsonEncode(
-              position == null
-                  ? const <String, Object?>{}
-                  : {
-                      'currentTime': position,
-                      'timeListened': 0,
-                      'duration': duration,
-                    },
-            ),
-          )
-          .timeout(const Duration(seconds: 20));
+      await _authed(
+        () => client
+            .post(
+              Uri.parse('$serverUrl/api/session/$id/close'),
+              headers: {..._authHeaders, 'Content-Type': 'application/json'},
+              body: jsonEncode(
+                position == null
+                    ? const <String, Object?>{}
+                    : {
+                        'currentTime': position,
+                        'timeListened': 0,
+                        'duration': duration,
+                      },
+              ),
+            )
+            .timeout(const Duration(seconds: 20)),
+      );
     } on Object catch (e) {
       debugPrint('Could not close session $id: $e');
     } finally {
@@ -1160,16 +1179,19 @@ class AudioPlayerController extends ChangeNotifier {
     required bool directPlay,
     Duration timeout = const Duration(seconds: 20),
   }) async {
-    return await _client
-        .post(
-          Uri.parse(
-            '$serverUrl/api/items/$libraryItemId/play'
-            '${episodeId == null ? '' : '/$episodeId'}',
-          ),
-          headers: {..._authHeaders, 'Content-Type': 'application/json'},
-          body: await _deviceInfoBody(directPlay: directPlay),
-        )
-        .timeout(timeout);
+    final body = await _deviceInfoBody(directPlay: directPlay);
+    return await _authed(
+      () => _client
+          .post(
+            Uri.parse(
+              '$serverUrl/api/items/$libraryItemId/play'
+              '${episodeId == null ? '' : '/$episodeId'}',
+            ),
+            headers: {..._authHeaders, 'Content-Type': 'application/json'},
+            body: body,
+          )
+          .timeout(timeout),
+    );
   }
 
   Future<String> _deviceInfoBody({required bool directPlay}) async {
@@ -1581,7 +1603,7 @@ class AudioPlayerController extends ChangeNotifier {
         .timeout(const Duration(seconds: 20));
     try {
       final id = sessionId;
-      var response = await post();
+      var response = await _authed(post);
       // The server forgot the session (e.g. it restarted): every later sync
       // would fail too, so start a new one and send the progress there, once
       // per sync. Not for a close: the pending file below keeps the position
@@ -1594,7 +1616,7 @@ class AudioPlayerController extends ChangeNotifier {
           !_closed &&
           (sessionId != id || await _restartSession()) &&
           !_closed) {
-        response = await post();
+        response = await _authed(post);
       }
       if (response.statusCode == 200) {
         synced = true;
@@ -1699,7 +1721,9 @@ class AudioPlayerController extends ChangeNotifier {
           receivedBytes += t.size;
           continue;
         }
-        final response = await _requestDownload(t, cancel.future);
+        final response = await _authed(
+          () => _requestDownload(t, cancel.future),
+        );
         if (response.statusCode != 200) {
           await response.stream.listen(null).cancel();
           throw HttpException('HTTP ${response.statusCode} for ${t.filename}');
@@ -1793,12 +1817,14 @@ class AudioPlayerController extends ChangeNotifier {
     if (!_hasCover) return;
     final part = File('${_coverFile(dir).path}.part');
     try {
-      final response = await _client
-          .get(
-            Uri.parse('$serverUrl/api/items/$libraryItemId/cover?width=400'),
-            headers: _authHeaders,
-          )
-          .timeout(const Duration(seconds: 20));
+      final response = await _authed(
+        () => _client
+            .get(
+              Uri.parse('$serverUrl/api/items/$libraryItemId/cover?width=400'),
+              headers: _authHeaders,
+            )
+            .timeout(const Duration(seconds: 20)),
+      );
       if (response.statusCode != 200 || response.bodyBytes.isEmpty) return;
       // Renamed only when complete: a broken file would never be replaced.
       await part.writeAsBytes(response.bodyBytes, flush: true);

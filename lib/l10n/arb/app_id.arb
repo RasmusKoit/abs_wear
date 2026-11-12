@@ -20,6 +20,7 @@
     "fillAllFields": "Isi semua kolom.",
     "noLibraries": "Tidak ada pustaka buku di server ini.",
     "sessionExpired": "Sesi berakhir. Masuk lagi.",
+    "noUsableToken": "Server tidak mengirim token masuk yang valid.",
     "logoutConfirm": "Keluar? Buku yang diunduh akan dihapus.",
     "cancel": "Batal",
     "nothingInProgress": "Tidak ada yang sedang didengarkan.",
