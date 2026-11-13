@@ -20,6 +20,7 @@
     "fillAllFields": "Hãy điền đủ các trường.",
     "noLibraries": "Máy chủ này không có thư viện sách.",
     "sessionExpired": "Phiên đã hết hạn. Hãy đăng nhập lại.",
+    "noUsableToken": "Máy chủ không gửi mã đăng nhập hợp lệ.",
     "logoutConfirm": "Đăng xuất? Sách đã tải sẽ bị xóa.",
     "cancel": "Hủy",
     "nothingInProgress": "Chưa nghe dở cuốn nào.",

@@ -14,13 +14,16 @@ class CrownScrollbar extends StatefulWidget {
   const CrownScrollbar({
     required this.controller,
     required this.child,
+    this.onTurn,
     super.key,
   });
 
-  /// A [PageController] moves a page per detent; any other controller
-  /// scrolls 50 px per detent.
+  /// Scrolls 50 px per detent, unless [onTurn] is set.
   final ScrollController controller;
   final Widget child;
+
+  /// Gets the detents (`true` when clockwise) instead of [controller].
+  final ValueChanged<bool>? onTurn;
 
   @override
   State<CrownScrollbar> createState() => _CrownScrollbarState();
@@ -53,21 +56,11 @@ class _CrownScrollbarState extends State<CrownScrollbar> {
     if (!mounted) return;
     final route = ModalRoute.of(context);
     if (route != null && !route.isCurrent) return;
+    final onTurn = widget.onTurn;
+    if (onTurn != null) return onTurn(clockwise);
     final controller = widget.controller;
     if (!controller.hasClients) return;
     final forward = clockwise;
-
-    if (controller is PageController) {
-      unawaited(
-        forward
-            ? controller.nextPage(duration: _duration, curve: Curves.easeOut)
-            : controller.previousPage(
-                duration: _duration,
-                curve: Curves.easeOut,
-              ),
-      );
-      return;
-    }
     final position = controller.position;
     final from = _target ?? position.pixels;
     final to = (from + (forward ? _step : -_step)).clamp(
