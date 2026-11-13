@@ -435,6 +435,151 @@ void main() {
     });
   });
 
+  group('a player that started offline', () {
+    /// Played offline at 50 s, the server's session at 100 s.
+    Future<AudioPlayerController> offline() async {
+      final c = controller()
+        ..sessionId = ''
+        ..isOffline = true;
+      await c.seekToBookTime(50);
+      return c;
+    }
+
+    void serverAt(int lastUpdate) {
+      routes['POST /api/items/li_1/play'] = () async =>
+          ok({'id': 's2', 'currentTime': 100});
+      routes['GET /api/me/progress/li_1'] = () async =>
+          ok({'currentTime': 20, 'lastUpdate': lastUpdate});
+      routes['POST /api/session/s2/sync'] = () async => ok();
+      routes['POST /api/session/s2/close'] = () async => ok();
+    }
+
+    test('goes online and sends newer offline progress', () async {
+      serverAt(DateTime.now().millisecondsSinceEpoch - 60000);
+      final c = await offline();
+
+      await c.periodicSync();
+
+      expect(c.isOffline, isFalse);
+      expect(c.sessionId, 's2');
+      expect(
+        jsonDecode(bodies[requests.lastIndexOf('POST /api/session/s2/sync')]),
+        containsPair('currentTime', 50),
+      );
+      expect(pendingFiles(), isEmpty);
+      await http.runWithClient(c.close, () => client);
+    });
+
+    test('goes online and moves to newer server progress', () async {
+      serverAt(DateTime.now().millisecondsSinceEpoch + 60000);
+      final c = await offline();
+
+      await c.periodicSync();
+
+      expect(c.isOffline, isFalse);
+      expect(c.bookPosition, 20);
+      expect(requests, isNot(contains('POST /api/session/s2/sync')));
+      await http.runWithClient(c.close, () => client);
+    });
+
+    test('a failed /play keeps progress on the watch and backs off', () async {
+      routes['POST /api/items/li_1/play'] = () async => http.Response('', 500);
+      final c = await offline();
+
+      await c.periodicSync();
+      expect(c.isOffline, isTrue);
+      expect(c.retryAt, isNotNull);
+      expect(pendingFiles().single['currentTime'], 50);
+
+      await c.periodicSync();
+      expect(requests.where((r) => r.contains('/play')), hasLength(1));
+      await c.close();
+    });
+
+    test('a /play that times out has its late session closed', () async {
+      final saved = AudioPlayerController.reconnectTimeout;
+      AudioPlayerController.reconnectTimeout = const Duration(milliseconds: 50);
+      addTearDown(() => AudioPlayerController.reconnectTimeout = saved);
+      final play = Completer<http.Response>();
+      routes['POST /api/items/li_1/play'] = () => play.future;
+      routes['POST /api/session/s9/close'] = () async => ok();
+      final c = await offline();
+
+      await http.runWithClient(c.periodicSync, () => client);
+      expect(c.isOffline, isTrue);
+      play.complete(ok({'id': 's9'}));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      expect(requests, contains('POST /api/session/s9/close'));
+      expect(
+        jsonDecode(bodies[requests.indexOf('POST /api/session/s9/close')]),
+        isEmpty,
+      );
+      expect(c.sessionId, isEmpty);
+      await c.close();
+    });
+
+    test(
+      "an untouched download's cached position doesn't beat the server's",
+      () async {
+        final dir = Directory('${docs.path}/li_1')..createSync();
+        File('${dir.path}/001_111.mp3').writeAsStringSync('');
+        File('${dir.path}/session.json').writeAsStringSync(
+          jsonEncode({
+            'duration': 600,
+            'currentTime': 30,
+            'audioTracks': [
+              {
+                'index': 1,
+                'startOffset': 0,
+                'duration': 600,
+                'contentUrl': '/api/items/li_1/file/111',
+                'metadata': {'filename': 'a.mp3'},
+                'mimeType': 'audio/mpeg',
+              },
+            ],
+          }),
+        );
+        // No local progress file; the server's is older than today.
+        routes['POST /api/items/li_1/play'] = () async =>
+            http.Response('', 500);
+        final c = AudioPlayerController(client: client);
+        expect(
+          await c.setupPlayer('li_1', _server, 't', userName: 'u'),
+          isTrue,
+        );
+        expect(c.isOffline, isTrue);
+        expect(c.bookPosition, 30);
+
+        routes['POST /api/items/li_1/play'] = () async =>
+            ok({'id': 's2', 'currentTime': 100});
+        routes['GET /api/me/progress/li_1'] = () async => ok({
+          'currentTime': 100,
+          'lastUpdate': DateTime.now().millisecondsSinceEpoch - 60000,
+        });
+        routes['POST /api/session/s2/sync'] = () async => ok();
+        routes['POST /api/session/s2/close'] = () async => ok();
+        await c.periodicSync();
+
+        expect(c.isOffline, isFalse);
+        expect(c.bookPosition, 100);
+        expect(requests, isNot(contains('POST /api/session/s2/sync')));
+        await http.runWithClient(c.close, () => client);
+      },
+    );
+
+    test('keeps its download', () async {
+      final c = await offline();
+      final dir = Directory(await c.localDirPath())..createSync();
+      File('${dir.path}/session.json').writeAsStringSync('{}');
+
+      await c.deleteDownload();
+
+      expect(dir.existsSync(), isTrue);
+      await c.close();
+    });
+  });
+
   group('closing', () {
     test('a book still downloading keeps its closing position', () async {
       routes['POST /api/session/s1/close'] = () async => ok();
