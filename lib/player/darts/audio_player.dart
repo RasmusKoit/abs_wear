@@ -1633,7 +1633,8 @@ class AudioPlayerController extends ChangeNotifier {
   /// False once [close] was called.
   bool get isOpen => !_closed;
 
-  /// Stops this book's download, queued or running; finished files stay.
+  /// Stops this book's download, queued or running; finished and partial
+  /// files stay, so a retry resumes.
   void cancelDownload() => DownloadManager.instance.cancel(_folderName);
 
   /// Queues the book in [DownloadManager]; labels are for its notification.

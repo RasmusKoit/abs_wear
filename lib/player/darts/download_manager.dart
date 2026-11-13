@@ -129,7 +129,8 @@ class DownloadJob {
 
   Map<String, String> get _authHeaders => {'Authorization': 'Bearer $token'};
 
-  /// Downloads every file; finished files are kept so a retry resumes.
+  /// Downloads every file; finished and partial files are kept so a retry
+  /// resumes where it stopped.
   Future<DownloadResult> _run(_QueueRun run) async {
     progress.value = 0;
     final sizesKnown = tracks.every((t) => t.size > 0);
@@ -138,7 +139,6 @@ class DownloadJob {
         : 0;
     var receivedBytes = 0;
     var result = DownloadResult.failed;
-    File? part;
     try {
       // Waiting for Wi-Fi takes up to a few seconds; a cancel ends it.
       await Future.any([run.onWifi, _cancel.future]);
@@ -154,15 +154,50 @@ class DownloadJob {
           receivedBytes += t.size;
           continue;
         }
-        final response = await _requestDownload(t, run);
-        if (response.statusCode != 200) {
+        final part = File('${target.path}.part');
+        final tag = _partTag(part);
+        var offset = _resumeOffset(part, t);
+        if (offset == t.size && offset > 0) {
+          part.renameSync(target.path);
+          _dropPart(tag);
+          receivedBytes += t.size;
+          continue;
+        }
+        var response = await _requestDownload(
+          t,
+          run,
+          from: offset,
+          ifRange: offset > 0 ? tag.readAsStringSync() : null,
+        );
+        if (response.statusCode == 416 && offset > 0) {
+          // The server won't serve the rest: start this file over.
+          await response.stream.listen(null).cancel();
+          _dropPart(part);
+          offset = 0;
+          response = await _requestDownload(t, run);
+        }
+        if (response.statusCode == 206 &&
+            !_rangeStartsAt(response.headers['content-range'], offset)) {
+          await response.stream.listen(null).cancel();
+          _dropPart(part);
+          throw HttpException('Unexpected range for ${t.filename}');
+        }
+        if (response.statusCode == 200) {
+          offset = 0; // Range ignored or file changed: the whole file.
+          final version =
+              response.headers['etag'] ?? response.headers['last-modified'];
+          // Without a version the partial file can't be resumed safely.
+          version == null ? _dropPart(tag) : tag.writeAsStringSync(version);
+        } else if (response.statusCode != 206) {
           await response.stream.listen(null).cancel();
           throw HttpException('HTTP ${response.statusCode} for ${t.filename}');
         }
-        part = File('${target.path}.part');
+        receivedBytes += offset;
         // Synchronous writes fail right away when storage is full, instead
         // of after the whole file was fetched.
-        final file = part.openSync(mode: FileMode.write);
+        final file = part.openSync(
+          mode: offset > 0 ? FileMode.append : FileMode.write,
+        );
         final written = Completer<void>();
         void fail(Object e, [StackTrace? s]) {
           if (!written.isCompleted) written.completeError(e, s);
@@ -205,8 +240,13 @@ class DownloadJob {
           await sub.cancel();
           file.closeSync();
         }
+        if (t.size > 0 && part.lengthSync() != t.size) {
+          // Too long can't be resumed; too short resumes next time.
+          if (part.lengthSync() > t.size) _dropPart(part);
+          throw HttpException('Incomplete download of ${t.filename}');
+        }
         part.renameSync(target.path);
-        part = null;
+        _dropPart(tag);
       }
       result = DownloadResult.done;
     } on _DownloadCanceled {
@@ -217,12 +257,6 @@ class DownloadJob {
       if (e.osError?.errorCode == 28) result = DownloadResult.noSpace;
     } on Object catch (e) {
       debugPrint('Download failed: $e');
-    } finally {
-      try {
-        if (part?.existsSync() ?? false) part!.deleteSync();
-      } on FileSystemException catch (e) {
-        debugPrint('Could not remove partial file: $e');
-      }
     }
     if (result == DownloadResult.done) {
       await _saveMeta();
@@ -241,6 +275,33 @@ class DownloadJob {
     return result;
   }
 
+  /// The server's file version (ETag or Last-Modified) the [part] is from.
+  static File _partTag(File part) => File('${part.path}.tag');
+
+  /// Deletes [file] (a partial file also loses its version) if it exists.
+  static void _dropPart(File file) {
+    for (final f in [file, if (file.path.endsWith('.part')) _partTag(file)]) {
+      if (f.existsSync()) f.deleteSync();
+    }
+  }
+
+  /// Bytes of [part] to resume from; drops it when it can't be resumed.
+  static int _resumeOffset(File part, BookTrack t) {
+    if (!part.existsSync()) return 0;
+    final length = part.lengthSync();
+    if (t.size > 0 && length <= t.size && _partTag(part).existsSync()) {
+      return length;
+    }
+    _dropPart(part);
+    return 0;
+  }
+
+  /// True when a 206's Content-Range starts at [offset].
+  static bool _rangeStartsAt(String? contentRange, int offset) =>
+      contentRange != null &&
+      RegExp(r'^bytes\s+(\d+)-').firstMatch(contentRange)?.group(1) ==
+          '$offset';
+
   Future<void> _saveMeta() async {
     final meta = sessionMeta;
     if (meta == null) return;
@@ -257,8 +318,10 @@ class DownloadJob {
   /// Requests one file, retrying once and then over the default network.
   Future<http.StreamedResponse> _requestDownload(
     BookTrack t,
-    _QueueRun run,
-  ) async {
+    _QueueRun run, {
+    int from = 0,
+    String? ifRange,
+  }) async {
     for (var attempt = 1; ; attempt++) {
       // Abortable so a timed-out or canceled request releases its
       // connection.
@@ -268,6 +331,8 @@ class DownloadJob {
         Uri.parse('$serverUrl/api/items/$libraryItemId/file/${t.ino}/download'),
         abortTrigger: Future.any([abort.future, _cancel.future]),
       )..headers.addAll(_authHeaders);
+      if (from > 0) request.headers['range'] = 'bytes=$from-';
+      if (from > 0 && ifRange != null) request.headers['if-range'] = ifRange;
       try {
         return await Future.any([
           _client!.send(request).timeout(const Duration(seconds: 30)),
