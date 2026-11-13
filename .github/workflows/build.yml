@@ -27,6 +27,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    environment: release
     permissions:
       contents: write
 
@@ -38,7 +39,13 @@ jobs:
       INPUT_BUILD_NUMBER: ${{ inputs.build_number }}
 
     steps:
-      - uses: actions/checkout@v7
+      - name: Only master can go to Play
+        if: inputs.play_track != 'none' && github.ref != 'refs/heads/master'
+        run: |
+          echo "::error::play_track must be none when building from $GITHUB_REF (only refs/heads/master can upload to Play)"
+          exit 1
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Resolve and validate the version
         run: |
@@ -51,13 +58,27 @@ jobs:
           echo "BUILD_NAME=$BUILD_NAME" >> "$GITHUB_ENV"
           echo "BUILD_NUMBER=$BUILD_NUMBER" >> "$GITHUB_ENV"
 
-      - uses: subosito/flutter-action@v2
+      - name: Check the release tag is free
+        if: github.ref == 'refs/heads/master'
+        run: |
+          tag="v$BUILD_NAME+$BUILD_NUMBER"
+          rc=0; git ls-remote --exit-code --tags origin "refs/tags/$tag" > /dev/null || rc=$?
+          if [ "$rc" = 0 ]; then echo "::error::Tag $tag already exists; bump the build number"; exit 1; fi
+          [ "$rc" = 2 ] || { echo "::error::Could not check tag $tag (git ls-remote exit $rc)"; exit 1; }
+
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           flutter-version: 3.47.9
           channel: stable
           cache: true
 
       - run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze --no-fatal-infos
+
+      - name: Unit and widget tests
+        run: flutter test --test-randomize-ordering-seed random
 
       - name: Decode keystore
         env:
@@ -94,7 +115,7 @@ jobs:
         run: rm -f "$ANDROID_KEYSTORE_PATH"
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: abs-wear-${{ env.BUILD_NAME }}+${{ env.BUILD_NUMBER }}
           path: |
@@ -103,17 +124,19 @@ jobs:
 
       - name: Upload to Google Play
         if: inputs.play_track != 'none'
-        uses: r0adkll/upload-google-play@v1
+        uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5 # v1.1.5
         with:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
           packageName: dev.koit.abs_wear
           releaseFiles: build/app/outputs/bundle/productionRelease/*.aab
+          mappingFile: build/app/outputs/mapping/productionRelease/mapping.txt
           releaseName: ${{ env.BUILD_NAME }} (${{ env.BUILD_NUMBER }})
           track: ${{ inputs.play_track }}
           status: ${{ inputs.play_status }}
 
       - name: Create release
-        uses: ncipollo/release-action@v1
+        if: github.ref == 'refs/heads/master'
+        uses: ncipollo/release-action@339a81892b84b4eeb0f6e744e4574d79d0d9b8dd # v1.21.0
         with:
           tag: v${{ env.BUILD_NAME }}+${{ env.BUILD_NUMBER }}
           commit: ${{ github.sha }}
