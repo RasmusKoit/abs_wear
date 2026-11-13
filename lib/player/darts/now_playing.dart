@@ -90,7 +90,7 @@ class NowPlaying extends ChangeNotifier {
       notifyListeners();
       return false;
     }
-    // Syncs (or saves offline progress) while the book is open.
+    // Saves each minute; posts every 10th while playing; reconnects offline.
     _syncTimer = Timer.periodic(
       const Duration(minutes: 1),
       (_) => unawaited(controller.periodicSync()),
@@ -122,7 +122,8 @@ class NowPlaying extends ChangeNotifier {
   static Future<void> settled() async {
     final controller = instance._controller;
     if (controller != null && controller.isLoaded) {
-      await controller.periodicSync().timeout(
+      // The library shows server progress: post now, not on the 10th tick.
+      await controller.periodicSync(post: true).timeout(
         const Duration(seconds: 25),
         onTimeout: () {},
       );
