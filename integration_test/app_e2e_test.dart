@@ -4,18 +4,22 @@
 // --dart-define values read from tool/abs_test_server/.env).
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:abs_wear/app/app.dart';
 import 'package:abs_wear/l10n/l10n.dart';
 import 'package:abs_wear/library/view/browse_page.dart';
 import 'package:abs_wear/library/view/downloads_page.dart';
+import 'package:abs_wear/library/view/library_page.dart';
 import 'package:abs_wear/player/player.dart';
+import 'package:abs_wear/player/view/headphone_prompt.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:integration_test/integration_test.dart';
 import 'package:just_audio_background/just_audio_background.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 const absUrl = String.fromEnvironment('ABS_URL');
@@ -36,6 +40,23 @@ Future<void> pumpUntil(
     if (finder.evaluate().isNotEmpty) return;
   }
   throw TimeoutException('Timed out waiting for $finder', timeout);
+}
+
+/// Taps Play and, if the headphone prompt asks, picks the watch speaker.
+Future<void> tapPlay(WidgetTester tester) async {
+  await tester.tap(find.byIcon(Icons.play_arrow));
+  final speaker = find.byTooltip('Play on the watch speaker');
+  final end = DateTime.now().add(const Duration(seconds: 10));
+  while (DateTime.now().isBefore(end)) {
+    await tester.pump(const Duration(milliseconds: 200));
+    if (speaker.evaluate().isNotEmpty) {
+      await tester.tap(speaker);
+      await tester.pump(const Duration(milliseconds: 500));
+      return;
+    }
+    // Playing or loading: no prompt (headphones, or speaker already picked).
+    if (find.byIcon(Icons.play_arrow).evaluate().isEmpty) return;
+  }
 }
 
 /// Keeps pumping frames for [duration] (animations need real frames).
@@ -291,6 +312,36 @@ Future<double> episodeProgress(String title) async {
       .toDouble();
 }
 
+/// [title] on the library's shelf, not on the now-playing card.
+Finder shelf(String title) => find.byElementPredicate(
+  (e) =>
+      e.widget is Text &&
+      (e.widget as Text).data == title &&
+      e.findAncestorWidgetOfExactType<NowPlayingCard>() == null,
+  description: '"$title" on the shelf',
+);
+
+/// The now-playing card on the library page.
+final Finder nowPlayingCard = find.byType(NowPlayingCard);
+
+/// [matching] inside the now-playing card.
+Finder onCard(Finder matching) =>
+    find.descendant(of: nowPlayingCard, matching: matching);
+
+/// Pumps frames until [finder] matches nothing, or [timeout] passes.
+Future<void> pumpUntilGone(
+  WidgetTester tester,
+  Finder finder, {
+  Duration timeout = const Duration(seconds: 60),
+}) async {
+  final end = DateTime.now().add(timeout);
+  while (DateTime.now().isBefore(end)) {
+    await tester.pump(const Duration(milliseconds: 200));
+    if (finder.evaluate().isEmpty) return;
+  }
+  throw TimeoutException('Timed out waiting for $finder to go', timeout);
+}
+
 /// Scrolls [finder] into view (watch screens are tiny) and taps it.
 Future<void> scrollAndTap(WidgetTester tester, Finder finder) async {
   await tester.ensureVisible(finder);
@@ -344,29 +395,81 @@ void main() {
     );
   });
 
+  /// The book and downloads outlive their pages: none may leak into a test.
+  Future<void> stopPlaybackAndDownloads() async {
+    await NowPlaying.instance.stop();
+    await DownloadManager.instance.cancelAll();
+  }
+
   setUp(() async {
+    await stopPlaybackAndDownloads();
     // Start every test logged out.
     final prefs = await SharedPreferences.getInstance();
     await prefs.clear();
     await resetServerProgress();
+    // Each test starts as a fresh app: the speaker choice is forgotten.
+    resetHeadphonePrompt();
   });
 
-  testWidgets('backing out without playing keeps progress', (tester) async {
+  tearDown(stopPlaybackAndDownloads);
+
+  testWidgets('backing out keeps the book open, and closing keeps progress', (
+    tester,
+  ) async {
     await logInAndOpenLibrary(tester);
-    await scrollAndTap(tester, find.text('Single File Book'));
+    await scrollAndTap(tester, shelf('Single File Book'));
     await pumpUntil(tester, find.textContaining('Chapter One'));
     await tester.binding.handlePopRoute();
     await pumpUntil(tester, find.text('Continue Listening'));
-    // Wait for the player's final sync itself (not a fixed delay): the
-    // page disposes after the transition, then closes the session.
-    await pumpFor(tester, const Duration(milliseconds: 500));
-    await tester.runAsync(() => AudioPlayerController.lastClose);
-    // The library refreshes right after the close (and may reorder).
+
+    // The book stays open, paused, on the now-playing card.
+    await pumpUntil(tester, onCard(find.text('Single File Book')));
+    expect(onCard(find.byTooltip('Play')), findsOneWidget);
+    await pumpFor(tester, const Duration(seconds: 1));
+    expect(await serverProgress('Single File Book'), closeTo(45, 1));
+
+    // Closing it (as opening another book does) saves the same position.
+    await tester.runAsync(NowPlaying.instance.stop);
     await pumpFor(tester, const Duration(milliseconds: 300));
+    expect(nowPlayingCard, findsNothing);
+    expect(await serverProgress('Single File Book'), closeTo(45, 1));
     await pumpUntil(tester, find.byIcon(Icons.refresh));
-    await scrollAndTap(tester, find.text('Single File Book'));
+    await scrollAndTap(tester, shelf('Single File Book'));
     // Still 45s in (Chapter One), not reset to 0 -> 00:00:15 left.
     await pumpUntil(tester, find.text('00:00:15'));
+  });
+
+  testWidgets('playback goes on after leaving the player', (tester) async {
+    await logInAndOpenLibrary(tester);
+    await scrollAndTap(tester, shelf('Single File Book'));
+    await pumpUntil(tester, find.byIcon(Icons.play_arrow));
+    await tapPlay(tester);
+    await pumpUntil(tester, find.text('00:00:13'));
+    final controller = NowPlaying.instance.controller!;
+
+    await tester.binding.handlePopRoute();
+    await pumpUntil(tester, onCard(find.byTooltip('Pause')));
+    // Still playing: the position moves on with the player closed.
+    final before = controller.bookPosition;
+    await pumpFor(tester, const Duration(seconds: 2));
+    expect(controller.bookPosition, greaterThan(before + 1));
+
+    // Pause and play from the card.
+    await scrollAndTap(tester, onCard(find.byTooltip('Pause')));
+    await pumpUntil(tester, onCard(find.byTooltip('Play')));
+    expect(controller.player.playing, isFalse);
+    await scrollAndTap(tester, onCard(find.byTooltip('Play')));
+    await pumpUntil(tester, onCard(find.byTooltip('Pause')));
+    await scrollAndTap(tester, onCard(find.byTooltip('Pause')));
+    await pumpUntil(tester, onCard(find.byTooltip('Play')));
+    final paused = controller.bookPosition;
+
+    // The card reopens the same book where it was, without a new session.
+    await scrollAndTap(tester, onCard(find.text('Single File Book')));
+    await pumpUntil(tester, find.byIcon(Icons.play_arrow));
+    await pumpUntil(tester, find.textContaining('Chapter One'));
+    expect(NowPlaying.instance.controller, same(controller));
+    expect(controller.bookPosition, closeTo(paused, 0.5));
   });
 
   testWidgets('rejects a URL without a scheme', (tester) async {
@@ -470,10 +573,10 @@ void main() {
   testWidgets('opens a single-file book and plays it', (tester) async {
     await logInAndOpenLibrary(tester);
 
-    await scrollAndTap(tester, find.text('Single File Book'));
+    await scrollAndTap(tester, shelf('Single File Book'));
     await pumpUntil(tester, find.byIcon(Icons.play_arrow));
 
-    await tester.tap(find.byIcon(Icons.play_arrow));
+    await tapPlay(tester);
     await pumpUntil(tester, find.byIcon(Icons.pause));
     // Seeded progress is 45s, inside "Chapter One" (0-60s). Titles use
     // TextScroll, which repeats overflowing text, so match on a substring.
@@ -490,9 +593,45 @@ void main() {
     expect(await serverProgress('Single File Book'), greaterThan(47));
   });
 
-  testWidgets('shows title and chapter before playback starts', (tester) async {
+  testWidgets('Play without headphones asks once per session', (tester) async {
     await logInAndOpenLibrary(tester);
     await scrollAndTap(tester, find.text('Single File Book'));
+    await pumpUntil(tester, find.byIcon(Icons.play_arrow));
+    // The emulator has no Bluetooth headphones.
+    await tester.tap(find.byIcon(Icons.play_arrow));
+    await pumpUntil(tester, find.text('No headphones connected.'));
+    expect(find.byTooltip('Connect headphones'), findsOneWidget);
+    await tester.tap(find.byTooltip('Play on the watch speaker'));
+    await pumpUntil(tester, find.byIcon(Icons.pause));
+    await tester.tap(find.byIcon(Icons.pause));
+    await pumpUntil(tester, find.byIcon(Icons.play_arrow));
+    // The speaker choice is remembered.
+    await tester.tap(find.byIcon(Icons.play_arrow));
+    await pumpUntil(tester, find.byIcon(Icons.pause));
+    expect(find.text('No headphones connected.'), findsNothing);
+    await tester.tap(find.byIcon(Icons.pause));
+    await pumpUntil(tester, find.byIcon(Icons.play_arrow));
+  });
+
+  testWidgets('Play on the now-playing card asks for headphones too', (
+    tester,
+  ) async {
+    await logInAndOpenLibrary(tester);
+    await scrollAndTap(tester, shelf('Single File Book'));
+    await pumpUntil(tester, find.textContaining('Chapter One'));
+    await tester.binding.handlePopRoute();
+    await pumpUntil(tester, onCard(find.byTooltip('Play')));
+    await scrollAndTap(tester, onCard(find.byTooltip('Play')));
+    await pumpUntil(tester, find.text('No headphones connected.'));
+    await tester.tap(find.byTooltip('Play on the watch speaker'));
+    await pumpUntil(tester, onCard(find.byTooltip('Pause')));
+    await scrollAndTap(tester, onCard(find.byTooltip('Pause')));
+    await pumpUntil(tester, onCard(find.byTooltip('Play')));
+  });
+
+  testWidgets('shows title and chapter before playback starts', (tester) async {
+    await logInAndOpenLibrary(tester);
+    await scrollAndTap(tester, shelf('Single File Book'));
     await pumpUntil(tester, find.textContaining('Chapter One'));
   });
 
@@ -500,7 +639,7 @@ void main() {
     tester,
   ) async {
     await logInAndOpenLibrary(tester);
-    await scrollAndTap(tester, find.text('Multi File Book'));
+    await scrollAndTap(tester, shelf('Multi File Book'));
     await pumpUntil(tester, find.byIcon(Icons.play_arrow));
     // Part 1 is 0-45s; skipping to the next chapter must land in Part 2,
     // which lives in the second audio file.
@@ -510,25 +649,25 @@ void main() {
     await tester.tap(find.byIcon(Icons.skip_next));
     await pumpUntil(tester, find.textContaining('Part 3'));
 
-    await tester.tap(find.byIcon(Icons.play_arrow));
+    await tapPlay(tester);
     await pumpUntil(tester, find.byIcon(Icons.pause));
   });
 
   testWidgets('multi-file book plays across a file boundary', (tester) async {
     await logInAndOpenLibrary(tester);
-    await scrollAndTap(tester, find.text('Multi File Book'));
+    await scrollAndTap(tester, shelf('Multi File Book'));
     await pumpUntil(tester, find.byIcon(Icons.play_arrow));
     // Seeded at 34s in Part 1 (file 1 ends at 45s). Playing on must reach
     // Part 2 in the second file by itself.
     await pumpUntil(tester, find.textContaining('Part 1'));
-    await tester.tap(find.byIcon(Icons.play_arrow));
+    await tapPlay(tester);
     await pumpUntil(tester, find.textContaining('Part 2'));
     expect(find.byIcon(Icons.pause), findsOneWidget);
   });
 
   testWidgets('a downloaded book plays without the server', (tester) async {
     await logInAndOpenLibrary(tester);
-    await scrollAndTap(tester, find.text('No Chapters Book'));
+    await scrollAndTap(tester, shelf('No Chapters Book'));
     await pumpUntil(tester, find.byIcon(Icons.play_arrow));
     await tester.fling(find.byType(PageView), const Offset(0, -300), 1000);
     await pumpUntil(tester, find.byIcon(Icons.download_rounded));
@@ -567,26 +706,39 @@ void main() {
     await pumpUntil(tester, find.byIcon(Icons.play_arrow));
     // Seeded at 25% of 10 min = 150 s; 450 s left (no chapters).
     await pumpUntil(tester, find.text('00:07:30'));
-    await tester.tap(find.byIcon(Icons.play_arrow));
+    await tapPlay(tester);
     await pumpUntil(tester, find.text('00:07:27'));
 
-    // Clean up the download for the other tests.
+    // Offline the files are all the player has: delete is disabled.
     await tester.tap(find.byIcon(Icons.pause));
     await tester.fling(find.byType(PageView), const Offset(0, -300), 1000);
     await pumpUntil(tester, find.byIcon(Icons.delete_forever_rounded));
-    await scrollAndTap(tester, find.byIcon(Icons.delete_forever_rounded));
-    await pumpUntil(tester, find.byIcon(Icons.check_rounded));
-    await tester.tap(find.byIcon(Icons.check_rounded));
-    await pumpUntil(tester, find.byIcon(Icons.download_rounded));
+    final delete = tester.widget<IconButton>(
+      find.ancestor(
+        of: find.byIcon(Icons.delete_forever_rounded),
+        matching: find.byType(IconButton),
+      ),
+    );
+    expect(delete.onPressed, isNull);
+
+    // Clean up the download for the other tests: close the player, then
+    // remove its files.
+    await tester.pumpWidget(const SizedBox());
+    await tester.runAsync(() async {
+      await NowPlaying.instance.stop();
+      final docs = await getApplicationDocumentsDirectory();
+      final dir = Directory('${docs.path}/$id');
+      if (dir.existsSync()) dir.deleteSync(recursive: true);
+    });
   });
 
   testWidgets('downloads a multi-file book with progress', (tester) async {
     await logInAndOpenLibrary(tester);
-    await scrollAndTap(tester, find.text('Multi File Book'));
+    await scrollAndTap(tester, shelf('Multi File Book'));
     await pumpUntil(tester, find.byIcon(Icons.play_arrow));
 
     // Play a few seconds past the seeded 34s position.
-    await tester.tap(find.byIcon(Icons.play_arrow));
+    await tapPlay(tester);
     await pumpUntil(tester, find.byIcon(Icons.pause));
     await pumpFor(tester, const Duration(seconds: 6));
 
@@ -609,6 +761,42 @@ void main() {
     expect(find.byIcon(Icons.delete_forever_rounded), findsNothing);
   });
 
+  testWidgets('a download goes on after leaving the player', (tester) async {
+    await logInAndOpenLibrary(tester);
+    await scrollAndTap(tester, shelf('Multi File Book'));
+    await pumpUntil(tester, find.byIcon(Icons.play_arrow));
+    await tester.fling(find.byType(PageView), const Offset(0, -300), 1000);
+    await pumpUntil(tester, find.byIcon(Icons.download_rounded));
+    await scrollAndTap(tester, find.byIcon(Icons.download_rounded));
+    await pumpFor(tester, const Duration(milliseconds: 300));
+    expect(DownloadManager.instance.jobs, hasLength(1));
+
+    // A back swipe right away leaves the download running.
+    await tester.binding.handlePopRoute();
+    await pumpUntil(tester, find.text('Continue Listening'));
+    await pumpUntil(tester, find.text('Downloads'));
+    await scrollAndTap(tester, find.text('Downloads'));
+    final inDownloads = find.descendant(
+      of: find.byType(DownloadsPage),
+      matching: find.text('Multi File Book'),
+    );
+    await pumpUntil(tester, inDownloads);
+    // Finished, not canceled: the progress ring goes and the book is listed.
+    await pumpUntilGone(tester, find.byTooltip('Cancel download'));
+    expect(DownloadManager.instance.jobs, isEmpty);
+    await pumpUntil(tester, inDownloads);
+
+    // Clean up the download for the other tests.
+    await tester.tap(inDownloads);
+    await pumpUntil(tester, find.byIcon(Icons.play_arrow));
+    await tester.fling(find.byType(PageView), const Offset(0, -300), 1000);
+    await pumpUntil(tester, find.byIcon(Icons.delete_forever_rounded));
+    await scrollAndTap(tester, find.byIcon(Icons.delete_forever_rounded));
+    await pumpUntil(tester, find.byIcon(Icons.check_rounded));
+    await tester.tap(find.byIcon(Icons.check_rounded));
+    await pumpUntil(tester, find.byIcon(Icons.download_rounded));
+  });
+
   testWidgets('switches to the podcast library and plays episodes', (
     tester,
   ) async {
@@ -622,11 +810,11 @@ void main() {
     await pumpUntil(tester, find.text('Episode 1'));
     await pumpUntil(tester, find.byIcon(Icons.refresh));
     expect(find.text('All podcasts'), findsOneWidget);
-    await scrollAndTap(tester, find.text('Episode 1'));
+    await scrollAndTap(tester, shelf('Episode 1'));
     await pumpUntil(tester, find.byIcon(Icons.play_arrow));
     // 5 s into a 30 s episode.
     await pumpUntil(tester, find.text('00:00:25'));
-    await tester.tap(find.byIcon(Icons.play_arrow));
+    await tapPlay(tester);
     await pumpUntil(tester, find.text('00:00:22'));
     await tester.tap(find.byIcon(Icons.pause));
     await pumpUntil(tester, find.byIcon(Icons.play_arrow));
@@ -652,7 +840,7 @@ void main() {
     await pumpUntil(tester, find.byIcon(Icons.play_arrow));
     await pumpUntil(tester, find.text('00:00:30'));
     expect(find.textContaining('Episode 2'), findsWidgets);
-    await tester.tap(find.byIcon(Icons.play_arrow));
+    await tapPlay(tester);
     // Well past 2 s, so the saved position clears the check below.
     await pumpUntil(tester, find.text('00:00:25'));
     await tester.tap(find.byIcon(Icons.pause));
@@ -665,7 +853,7 @@ void main() {
 
   testWidgets('sets playback speed and a sleep timer', (tester) async {
     await logInAndOpenLibrary(tester);
-    await scrollAndTap(tester, find.text('Single File Book'));
+    await scrollAndTap(tester, shelf('Single File Book'));
     await pumpUntil(tester, find.byIcon(Icons.play_arrow));
     await tester.fling(find.byType(PageView), const Offset(0, -300), 1000);
     await pumpUntil(tester, find.text('1x'));
@@ -700,7 +888,7 @@ void main() {
     await tester.binding.handlePopRoute();
     await pumpUntil(tester, find.text('Continue Listening'));
     await pumpFor(tester, const Duration(seconds: 1));
-    await scrollAndTap(tester, find.text('Multi File Book'));
+    await scrollAndTap(tester, shelf('Multi File Book'));
     await pumpUntil(tester, find.byIcon(Icons.play_arrow));
     await tester.fling(find.byType(PageView), const Offset(0, -300), 1000);
     await pumpUntil(tester, find.text('1.5x'));
@@ -712,9 +900,9 @@ void main() {
     tester,
   ) async {
     await logInAndOpenLibrary(tester);
-    await scrollAndTap(tester, find.text('Single File Book'));
+    await scrollAndTap(tester, shelf('Single File Book'));
     await pumpUntil(tester, find.byIcon(Icons.play_arrow));
-    await tester.tap(find.byIcon(Icons.play_arrow));
+    await tapPlay(tester);
     await pumpUntil(tester, find.text('00:00:13'));
 
     // The same message MainActivity sends when the watch dims.

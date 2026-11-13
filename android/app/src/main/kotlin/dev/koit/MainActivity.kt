@@ -154,6 +154,8 @@ class MainActivity : AudioServiceActivity() {
             }
         // "Continue on phone" sign-in through the Wear OS companion.
         RemoteAuth.register(flutterEngine, context)
+        // Headphone check before Play.
+        AudioOutput.register(flutterEngine, context)
         ContinueTile.register(flutterEngine, context)
         currentActivity = WeakReference(this)
         val downloads = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "download_keep_alive")
@@ -172,6 +174,10 @@ class MainActivity : AudioServiceActivity() {
                 }
                 "progress" -> {
                     DownloadService.progress(call.argument<Int>("percent") ?: 0)
+                    result.success(null)
+                }
+                "title" -> {
+                    DownloadService.retitle(call.argument<String>("title") ?: "")
                     result.success(null)
                 }
                 "useDefaultNetwork" -> {

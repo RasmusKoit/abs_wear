@@ -189,7 +189,7 @@ class _EpisodesPageState extends State<EpisodesPage> {
     );
     // Show the progress just made, once the player has saved it.
     await Future<void>.delayed(const Duration(milliseconds: 500));
-    await AudioPlayerController.lastClose;
+    await NowPlaying.settled();
     if (mounted) unawaited(_loadProgress());
   }
 

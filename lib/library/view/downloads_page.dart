@@ -31,13 +31,22 @@ class _DownloadsPageState extends State<DownloadsPage> {
   @override
   void initState() {
     super.initState();
+    DownloadManager.instance.addListener(_onDownloadsChanged);
     unawaited(_load());
   }
 
   @override
   void dispose() {
+    DownloadManager.instance.removeListener(_onDownloadsChanged);
     _scrollController.dispose();
     super.dispose();
+  }
+
+  /// A download was queued or finished: a finished one is listed now.
+  void _onDownloadsChanged() {
+    if (!mounted) return;
+    setState(() {});
+    unawaited(_load());
   }
 
   Future<void> _load() async {
@@ -73,6 +82,7 @@ class _DownloadsPageState extends State<DownloadsPage> {
     final l10n = context.l10n;
     final theme = Theme.of(context);
     final items = _items;
+    final jobs = DownloadManager.instance.jobs;
     return CrownScrollbar(
       controller: _scrollController,
       child: Scaffold(
@@ -88,7 +98,7 @@ class _DownloadsPageState extends State<DownloadsPage> {
             ? Center(
                 child: CircularProgressIndicator(semanticsLabel: l10n.loading),
               )
-            : items.isEmpty
+            : items.isEmpty && jobs.isEmpty
             ? Center(
                 child: Text(l10n.noDownloads, style: theme.textTheme.bodySmall),
               )
@@ -96,9 +106,17 @@ class _DownloadsPageState extends State<DownloadsPage> {
                 controller: _scrollController,
                 padding: const EdgeInsets.fromLTRB(28, 4, 24, 48),
                 itemExtent: BookTile.height,
-                itemCount: items.length,
+                itemCount: jobs.length + items.length,
                 itemBuilder: (context, index) {
-                  final item = items[index];
+                  // Running and queued downloads first.
+                  if (index < jobs.length) {
+                    final job = jobs[index];
+                    return _ActiveDownloadTile(
+                      key: ValueKey('job/${job.key}'),
+                      job: job,
+                    );
+                  }
+                  final item = items[index - jobs.length];
                   return _DownloadTile(
                     key: ValueKey('${item.itemId}/${item.episodeId}'),
                     item: item,
@@ -182,6 +200,63 @@ class _DownloadTile extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// A running or queued download; tapping its progress ring cancels it.
+class _ActiveDownloadTile extends StatelessWidget {
+  const _ActiveDownloadTile({required this.job, super.key});
+
+  final DownloadJob job;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final theme = Theme.of(context);
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            job.title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodySmall,
+          ),
+        ),
+        ValueListenableBuilder<double?>(
+          valueListenable: job.progress,
+          builder: (context, progress, _) => IconButton(
+            tooltip: l10n.cancelDownload,
+            onPressed: () => DownloadManager.instance.cancel(job.key),
+            icon: SizedBox.square(
+              dimension: 24,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  // Spins while queued behind another book.
+                  SizedBox.square(
+                    dimension: 24,
+                    child: CircularProgressIndicator(
+                      value: progress,
+                      strokeWidth: 2.5,
+                      color: theme.colorScheme.secondary,
+                      semanticsValue: progress == null
+                          ? null
+                          : '${(progress * 100).floor()}%',
+                    ),
+                  ),
+                  Icon(
+                    Icons.close_rounded,
+                    size: 14,
+                    color: theme.colorScheme.secondary,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

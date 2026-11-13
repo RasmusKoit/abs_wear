@@ -4,9 +4,11 @@ import 'dart:io';
 
 import 'package:abs_wear/app/continue_tile.dart';
 import 'package:abs_wear/library/view/library_page.dart';
+import 'package:abs_wear/login/data/auth_session.dart';
 import 'package:abs_wear/login/view/login_page.dart';
 import 'package:abs_wear/player/player.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -35,6 +37,7 @@ void main() {
   late Directory root;
   late List<String> requests;
   late List<String> bodies;
+  late List<http.Request> sent;
   late Map<String, FutureOr<http.Response> Function()> routes;
   late http.Client client;
 
@@ -43,10 +46,12 @@ void main() {
     PathProviderPlatform.instance = _FakePathProvider(root.path);
     requests = [];
     bodies = [];
+    sent = [];
     routes = {};
     client = MockClient((request) async {
       final key = '${request.method} ${request.url.path}';
       requests.add(key);
+      sent.add(request);
       bodies.add(request.body);
       return await routes[key]?.call() ?? http.Response('', 404);
     });
@@ -340,6 +345,171 @@ void main() {
       expect(find.text('Hello bob'), findsOneWidget);
     });
 
+    testWidgets('a cut short logout revokes its own token on its server', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues({
+        'serverUrl': 'http://other.test',
+        'pendingLogout': <String>[_server, 'tok'],
+      });
+      final revokes = <http.Request>[];
+      final client = MockClient((request) async {
+        if (request.url.path == '/logout') revokes.add(request);
+        return http.Response('', 200);
+      });
+
+      await http.runWithClient(() async {
+        await tester.pumpApp(const LoginPage());
+        await tester.pumpAndSettle();
+      }, () => client);
+
+      expect(revokes, hasLength(1));
+      expect(revokes.single.method, 'POST');
+      expect(revokes.single.url.toString(), '$_server/logout');
+      expect(revokes.single.headers['Authorization'], 'Bearer tok');
+    });
+
+    for (final failure in <String, FutureOr<http.Response> Function()>{
+      'refused': () => http.Response('', 500),
+      'unreachable': () => throw const SocketException('offline'),
+    }.entries) {
+      testWidgets('a cut short logout ends even if the revoke is '
+          '${failure.key}', (tester) async {
+        SharedPreferences.setMockInitialValues({
+          'serverUrl': _server,
+          'username': 'alice',
+          'pendingLogout': <String>[_server, 'tok'],
+        });
+        routes['POST /logout'] = failure.value;
+
+        await http.runWithClient(() async {
+          await tester.pumpApp(const LoginPage());
+          await tester.pumpAndSettle();
+        }, () => client);
+
+        expect(requests, ['POST /logout']);
+        // Best effort: not retried on every start.
+        final prefs = await SharedPreferences.getInstance();
+        expect(prefs.getStringList('pendingLogout'), isNull);
+        expect(find.text('Next'), findsOneWidget);
+      });
+    }
+
+    testWidgets('a malformed pending logout is dropped', (tester) async {
+      SharedPreferences.setMockInitialValues({
+        'serverUrl': _server,
+        'username': 'alice',
+        'token': 'tok',
+        'defaultLibraryId': 'lib1',
+        'pendingLogout': <String>['tok'],
+      });
+      final download = Directory('${root.path}/docs/li_2')
+        ..createSync(recursive: true);
+
+      await http.runWithClient(() async {
+        await tester.pumpApp(const LoginPage());
+        await tester.pumpAndSettle();
+      }, () => client);
+
+      expect(requests, isNot(contains('POST /logout')));
+      expect(download.existsSync(), isTrue);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getStringList('pendingLogout'), isNull);
+      expect(prefs.getString('token'), 'tok');
+      expect(find.text('Hello alice'), findsOneWidget);
+    });
+
+    testWidgets('a login that gets the same token drops its pending logout', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues({
+        'serverUrl': _server,
+        'username': 'alice',
+        'pendingLogout': <String>[_server, 'tok'],
+      });
+      final revoke = Completer<http.Response>();
+      routes['POST /logout'] = () => revoke.future;
+      routes['GET /status'] = () => ok({
+        'authMethods': ['local'],
+      });
+      routes['POST /login'] = () => ok({
+        'user': {'token': 'tok'},
+        'userDefaultLibraryId': 'lib1',
+      });
+      routes['GET /api/libraries'] = () => ok({
+        'libraries': [
+          {'id': 'lib1', 'mediaType': 'book'},
+        ],
+      });
+
+      await http.runWithClient(() async {
+        await tester.pumpApp(const LoginPage());
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Next'));
+        await tester.pumpAndSettle();
+        await tester.enterText(find.byType(TextFormField).at(0), 'alice');
+        await tester.tap(find.text('Next'));
+        await tester.pumpAndSettle();
+        await tester.enterText(find.byType(TextFormField).at(0), 'pw');
+        await tester.tap(find.text('Login'));
+        await tester.pumpAndSettle();
+      }, () => client);
+
+      // Dropped before the old revoke ended, so a kill now keeps the session.
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getStringList('pendingLogout'), isNull);
+      expect(prefs.getString('token'), 'tok');
+      expect(find.text('Hello alice'), findsOneWidget);
+
+      revoke.complete(ok({}));
+      await tester.pumpAndSettle();
+      expect(prefs.getStringList('pendingLogout'), isNull);
+    });
+
+    testWidgets("a finished revoke keeps a newer logout's marker", (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues({
+        'serverUrl': _server,
+        'pendingLogout': <String>[_server, 'tok'],
+      });
+      final revoke = Completer<http.Response>();
+      routes['POST /logout'] = () => revoke.future;
+
+      await http.runWithClient(() async {
+        await tester.pumpApp(const LoginPage());
+        await tester.pumpAndSettle();
+      }, () => client);
+      expect(requests, ['POST /logout']);
+
+      // A newer logout replaced the marker while the old revoke ran.
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList('pendingLogout', [_server, 'tok2']);
+      revoke.complete(ok({}));
+      await tester.pumpAndSettle();
+
+      expect(prefs.getStringList('pendingLogout'), [_server, 'tok2']);
+    });
+
+    testWidgets('an expired session logs out without revoking', (tester) async {
+      final download = Directory('${root.path}/docs/li_2')
+        ..createSync(recursive: true);
+      await tester.pumpApp(const LoginPage());
+      await tester.pumpAndSettle();
+      expect(find.text('Hello alice'), findsOneWidget);
+
+      await http.runWithClient(() => state(tester).logout(), () => client);
+      await tester.pumpAndSettle();
+
+      expect(requests, isNot(contains('POST /logout')));
+      // Downloads stay for the same user's next login.
+      expect(download.existsSync(), isTrue);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString('token'), isNull);
+      expect(prefs.getStringList('pendingLogout'), isNull);
+      expect(find.text('Next'), findsOneWidget);
+    });
+
     testWidgets('keeps listening time the push could not report', (
       tester,
     ) async {
@@ -408,6 +578,138 @@ void main() {
         expect(ping.url.toString(), '$_server/ping');
         expect(ping.headers['Authorization'], 'Bearer tok');
       }
+    });
+  });
+
+  group('tokens', () {
+    const toast = MethodChannel('toast');
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    late List<String> toasts;
+
+    setUp(() {
+      toasts = [];
+      messenger.setMockMethodCallHandler(toast, (call) async {
+        toasts.add((call.arguments as Map)['message'] as String);
+        return null;
+      });
+      routes['GET /status'] = () => ok({
+        'authMethods': ['local'],
+      });
+      routes['GET /api/libraries'] = () => ok({
+        'libraries': [
+          {'id': 'lib1', 'mediaType': 'book'},
+        ],
+      });
+    });
+
+    tearDown(() {
+      messenger.setMockMethodCallHandler(toast, null);
+      AuthSession.instance.clear();
+    });
+
+    Future<void> logIn(WidgetTester tester) => http.runWithClient(() async {
+      await tester.pumpApp(const LoginPage());
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextFormField).at(0), _server);
+      await tester.tap(find.text('Next'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextFormField).at(0), 'alice');
+      await tester.tap(find.text('Next'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextFormField).at(0), 'pw');
+      await tester.tap(find.text('Login'));
+      await tester.pumpAndSettle();
+    }, () => client);
+
+    testWidgets('login asks for refresh tokens and keeps both', (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      routes['POST /login'] = () => ok({
+        'user': {'accessToken': 'acc', 'refreshToken': 'ref', 'token': 'old'},
+      });
+
+      await logIn(tester);
+
+      final login = sent.firstWhere((r) => r.url.path == '/login');
+      expect(login.headers['x-return-tokens'], 'true');
+      final libraries = sent.firstWhere((r) => r.url.path == '/api/libraries');
+      expect(libraries.headers['Authorization'], 'Bearer acc');
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString('token'), 'acc');
+      expect(prefs.getString('refreshToken'), 'ref');
+      expect(AuthSession.instance.refreshToken, 'ref');
+      expect(find.text('Hello alice'), findsOneWidget);
+    });
+
+    testWidgets('a login without a usable token says so', (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      routes['POST /login'] = () => ok({
+        'user': {'username': 'alice'},
+      });
+
+      await logIn(tester);
+
+      expect(toasts, ['The server sent no usable login token.']);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString('token'), isNull);
+      expect(find.text('Hello alice'), findsNothing);
+    });
+
+    testWidgets('an install with only a legacy token still restores', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues({
+        'serverUrl': _server,
+        'username': 'alice',
+        'token': 'legacy',
+        'defaultLibraryId': 'lib1',
+      });
+
+      await http.runWithClient(() async {
+        await tester.pumpApp(const LoginPage());
+        await tester.pumpAndSettle();
+      }, () => client);
+
+      expect(find.text('Hello alice'), findsOneWidget);
+      expect(AuthSession.instance.accessToken, 'legacy');
+      expect(AuthSession.instance.refreshToken, isNull);
+    });
+
+    testWidgets('logout revokes the refresh token', (tester) async {
+      fakeCrown();
+      Directory('${root.path}/docs').createSync();
+      SharedPreferences.setMockInitialValues({
+        'serverUrl': _server,
+        'username': 'alice',
+        'token': 'acc',
+        'refreshToken': 'ref',
+        'defaultLibraryId': 'lib1',
+      });
+      routes['POST /logout'] = () => ok({});
+      await http.runWithClient(() async {
+        await tester.pumpApp(const LoginPage());
+        await tester.pumpAndSettle();
+      }, () => client);
+
+      await tester.runAsync(() async {
+        await http.runWithClient(
+          () => state(tester).logout(deleteDownloads: true),
+          () => client,
+        );
+        while (!requests.contains('POST /logout')) {
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+        }
+      });
+      await tester.pumpAndSettle();
+
+      final request = sent.firstWhere((r) => r.url.path == '/logout');
+      expect(request.headers['x-refresh-token'], 'ref');
+      expect(request.headers['Authorization'], 'Bearer acc');
+
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString('token'), isNull);
+      expect(prefs.getString('refreshToken'), isNull);
+      expect(AuthSession.instance.accessToken, isEmpty);
     });
   });
 

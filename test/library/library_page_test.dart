@@ -365,4 +365,59 @@ void main() {
       ]);
     });
   });
+
+  testWidgets('opening a book while another plays shows its player', (
+    tester,
+  ) async {
+    final now = NowPlaying.instance..create = _StartingController.new;
+    addTearDown(() async {
+      await tester.runAsync(now.stop);
+      now.create = AudioPlayerController.new;
+    });
+    libraries();
+    continueListening([book('li_1', 'Dune', 'Frank Herbert')]);
+    await withServer(() async {
+      await tester.runAsync(() async {
+        now.open(
+          libraryItemId: 'li_0',
+          serverUrl: _server,
+          token: 't',
+          user: 'u',
+        );
+      });
+      await tester.pumpAppInRealZone(page);
+      await tester.settleRealZone(done: shelfLoaded);
+      expect(find.byType(NowPlayingCard), findsOneWidget);
+
+      // The player opens the book from initState, inside a build.
+      await tester.tapInRealZone(find.text('Dune'));
+      await tester.settleRealZone(
+        done: () => find.byType(PlayerPage).evaluate().isNotEmpty,
+      );
+    });
+
+    expect(tester.takeException(), isNull);
+    expect(find.byType(PlayerPage), findsOneWidget);
+    expect(now.controller?.libraryItemId, 'li_1');
+  });
+}
+
+/// A controller whose session never finishes starting (no player needed).
+class _StartingController extends AudioPlayerController {
+  _StartingController()
+    : super(client: MockClient((_) async => http.Response('', 404)));
+
+  @override
+  Future<bool> setupPlayer(
+    String libItemId,
+    String srvUrl,
+    String authToken, {
+    String userName = '',
+    String? episodeId,
+  }) {
+    libraryItemId = libItemId;
+    serverUrl = srvUrl;
+    user = userName;
+    return Completer<bool>().future;
+  }
 }

@@ -9,7 +9,7 @@ import 'package:flutter/services.dart';
 /// DownloadService.kt.
 ///
 /// The native side is global; the latest [start] owns it, so a download
-/// that ends late (its player already closed) can't stop a newer one.
+/// queue that ends late can't stop a newer one.
 abstract final class DownloadKeepAlive {
   static const _channel = MethodChannel('download_keep_alive');
   static DownloadKeepAliveHandle? _owner;
@@ -59,6 +59,12 @@ abstract final class DownloadKeepAlive {
     if (percent == _percent) return;
     _percent = percent;
     unawaited(_invoke('progress', {'percent': percent}));
+  }
+
+  /// Shows [title] (the next queued book) in the notification.
+  static void retitle(String title) {
+    _percent = -1;
+    unawaited(_invoke('title', {'title': title}));
   }
 
   /// Routes over the default network again (the server isn't reachable over
