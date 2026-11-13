@@ -15,6 +15,7 @@ void main() {
   late bool headphones;
 
   setUp(() {
+    resetHeadphonePrompt();
     calls = [];
     headphones = false;
     messenger.setMockMethodCallHandler(channel, (call) async {
@@ -68,6 +69,37 @@ void main() {
     await tester.pumpAndSettle();
     expect(answers, [true]);
     expect(calls.last, 'unwatch');
+  });
+
+  testWidgets('the speaker choice sticks until headphones are seen', (
+    tester,
+  ) async {
+    final answers = await pumpCheck(tester);
+    await tester.tap(find.byTooltip('Play on the watch speaker'));
+    await tester.pumpAndSettle();
+    // Asked once only.
+    await tester.tap(find.text('Play'));
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(answers, [true, true]);
+    // Headphones seen once: asks again after they go.
+    headphones = true;
+    await tester.tap(find.text('Play'));
+    await tester.pumpAndSettle();
+    headphones = false;
+    await tester.tap(find.text('Play'));
+    await tester.pumpAndSettle();
+    expect(find.text('No headphones connected.'), findsOneWidget);
+    expect(answers, [true, true, true]);
+  });
+
+  testWidgets('connecting does not count as a speaker choice', (tester) async {
+    await pumpCheck(tester);
+    await simulatePlatformCall('audio_output', 'changed', true);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Play'));
+    await tester.pumpAndSettle();
+    expect(find.text('No headphones connected.'), findsOneWidget);
   });
 
   testWidgets('connect opens Bluetooth settings and keeps the prompt', (

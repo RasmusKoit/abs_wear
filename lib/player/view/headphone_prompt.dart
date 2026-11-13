@@ -4,9 +4,20 @@ import 'package:abs_wear/l10n/l10n.dart';
 import 'package:abs_wear/player/darts/audio_output.dart';
 import 'package:flutter/material.dart';
 
+// Speaker picked: no prompt until headphones are seen or the app restarts.
+bool _speakerChosen = false;
+
+/// Forgets the speaker choice, as an app restart does.
+@visibleForTesting
+void resetHeadphonePrompt() => _speakerChosen = false;
+
 /// True to play: headphones on, speaker chosen, or connected while asking.
 Future<bool> confirmAudioOutput(BuildContext context) async {
-  if (await AudioOutput.hasHeadphones()) return true;
+  if (await AudioOutput.hasHeadphones()) {
+    _speakerChosen = false;
+    return true;
+  }
+  if (_speakerChosen) return true;
   if (!context.mounted) return false;
   final play = await showDialog<bool>(
     context: context,
@@ -34,11 +45,12 @@ class _HeadphonePromptState extends State<_HeadphonePrompt> {
   }
 
   // Pops once: a later pop would close the page under the closing dialog.
-  void _close() {
+  void _close({bool speaker = false}) {
     if (_changes == null || !mounted) return;
     if (!(ModalRoute.of(context)?.isCurrent ?? false)) return;
     unawaited(_changes!.cancel());
     _changes = null;
+    if (speaker) _speakerChosen = true;
     Navigator.pop(context, true);
   }
 
@@ -70,7 +82,7 @@ class _HeadphonePromptState extends State<_HeadphonePrompt> {
         IconButton(
           tooltip: l10n.playOnSpeaker,
           icon: const Icon(Icons.volume_up_rounded),
-          onPressed: _close,
+          onPressed: () => _close(speaker: true),
         ),
       ],
     );

@@ -10,6 +10,7 @@ import 'package:abs_wear/l10n/l10n.dart';
 import 'package:abs_wear/library/view/browse_page.dart';
 import 'package:abs_wear/library/view/downloads_page.dart';
 import 'package:abs_wear/player/player.dart';
+import 'package:abs_wear/player/view/headphone_prompt.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -36,6 +37,23 @@ Future<void> pumpUntil(
     if (finder.evaluate().isNotEmpty) return;
   }
   throw TimeoutException('Timed out waiting for $finder', timeout);
+}
+
+/// Taps Play and, if the headphone prompt asks, picks the watch speaker.
+Future<void> tapPlay(WidgetTester tester) async {
+  await tester.tap(find.byIcon(Icons.play_arrow));
+  final speaker = find.byTooltip('Play on the watch speaker');
+  final end = DateTime.now().add(const Duration(seconds: 10));
+  while (DateTime.now().isBefore(end)) {
+    await tester.pump(const Duration(milliseconds: 200));
+    if (speaker.evaluate().isNotEmpty) {
+      await tester.tap(speaker);
+      await tester.pump(const Duration(milliseconds: 500));
+      return;
+    }
+    // Playing or loading: no prompt (headphones, or speaker already picked).
+    if (find.byIcon(Icons.play_arrow).evaluate().isEmpty) return;
+  }
 }
 
 /// Keeps pumping frames for [duration] (animations need real frames).
@@ -349,6 +367,8 @@ void main() {
     final prefs = await SharedPreferences.getInstance();
     await prefs.clear();
     await resetServerProgress();
+    // Each test starts as a fresh app: the speaker choice is forgotten.
+    resetHeadphonePrompt();
   });
 
   testWidgets('backing out without playing keeps progress', (tester) async {
@@ -473,7 +493,7 @@ void main() {
     await scrollAndTap(tester, find.text('Single File Book'));
     await pumpUntil(tester, find.byIcon(Icons.play_arrow));
 
-    await tester.tap(find.byIcon(Icons.play_arrow));
+    await tapPlay(tester);
     await pumpUntil(tester, find.byIcon(Icons.pause));
     // Seeded progress is 45s, inside "Chapter One" (0-60s). Titles use
     // TextScroll, which repeats overflowing text, so match on a substring.
@@ -488,6 +508,26 @@ void main() {
     await pumpUntil(tester, find.byIcon(Icons.play_arrow));
     await pumpFor(tester, const Duration(seconds: 2));
     expect(await serverProgress('Single File Book'), greaterThan(47));
+  });
+
+  testWidgets('Play without headphones asks once per session', (tester) async {
+    await logInAndOpenLibrary(tester);
+    await scrollAndTap(tester, find.text('Single File Book'));
+    await pumpUntil(tester, find.byIcon(Icons.play_arrow));
+    // The emulator has no Bluetooth headphones.
+    await tester.tap(find.byIcon(Icons.play_arrow));
+    await pumpUntil(tester, find.text('No headphones connected.'));
+    expect(find.byTooltip('Connect headphones'), findsOneWidget);
+    await tester.tap(find.byTooltip('Play on the watch speaker'));
+    await pumpUntil(tester, find.byIcon(Icons.pause));
+    await tester.tap(find.byIcon(Icons.pause));
+    await pumpUntil(tester, find.byIcon(Icons.play_arrow));
+    // The speaker choice is remembered.
+    await tester.tap(find.byIcon(Icons.play_arrow));
+    await pumpUntil(tester, find.byIcon(Icons.pause));
+    expect(find.text('No headphones connected.'), findsNothing);
+    await tester.tap(find.byIcon(Icons.pause));
+    await pumpUntil(tester, find.byIcon(Icons.play_arrow));
   });
 
   testWidgets('shows title and chapter before playback starts', (tester) async {
@@ -510,7 +550,7 @@ void main() {
     await tester.tap(find.byIcon(Icons.skip_next));
     await pumpUntil(tester, find.textContaining('Part 3'));
 
-    await tester.tap(find.byIcon(Icons.play_arrow));
+    await tapPlay(tester);
     await pumpUntil(tester, find.byIcon(Icons.pause));
   });
 
@@ -521,7 +561,7 @@ void main() {
     // Seeded at 34s in Part 1 (file 1 ends at 45s). Playing on must reach
     // Part 2 in the second file by itself.
     await pumpUntil(tester, find.textContaining('Part 1'));
-    await tester.tap(find.byIcon(Icons.play_arrow));
+    await tapPlay(tester);
     await pumpUntil(tester, find.textContaining('Part 2'));
     expect(find.byIcon(Icons.pause), findsOneWidget);
   });
@@ -567,7 +607,7 @@ void main() {
     await pumpUntil(tester, find.byIcon(Icons.play_arrow));
     // Seeded at 25% of 10 min = 150 s; 450 s left (no chapters).
     await pumpUntil(tester, find.text('00:07:30'));
-    await tester.tap(find.byIcon(Icons.play_arrow));
+    await tapPlay(tester);
     await pumpUntil(tester, find.text('00:07:27'));
 
     // Clean up the download for the other tests.
@@ -586,7 +626,7 @@ void main() {
     await pumpUntil(tester, find.byIcon(Icons.play_arrow));
 
     // Play a few seconds past the seeded 34s position.
-    await tester.tap(find.byIcon(Icons.play_arrow));
+    await tapPlay(tester);
     await pumpUntil(tester, find.byIcon(Icons.pause));
     await pumpFor(tester, const Duration(seconds: 6));
 
@@ -626,7 +666,7 @@ void main() {
     await pumpUntil(tester, find.byIcon(Icons.play_arrow));
     // 5 s into a 30 s episode.
     await pumpUntil(tester, find.text('00:00:25'));
-    await tester.tap(find.byIcon(Icons.play_arrow));
+    await tapPlay(tester);
     await pumpUntil(tester, find.text('00:00:22'));
     await tester.tap(find.byIcon(Icons.pause));
     await pumpUntil(tester, find.byIcon(Icons.play_arrow));
@@ -652,7 +692,7 @@ void main() {
     await pumpUntil(tester, find.byIcon(Icons.play_arrow));
     await pumpUntil(tester, find.text('00:00:30'));
     expect(find.textContaining('Episode 2'), findsWidgets);
-    await tester.tap(find.byIcon(Icons.play_arrow));
+    await tapPlay(tester);
     // Well past 2 s, so the saved position clears the check below.
     await pumpUntil(tester, find.text('00:00:25'));
     await tester.tap(find.byIcon(Icons.pause));
@@ -714,7 +754,7 @@ void main() {
     await logInAndOpenLibrary(tester);
     await scrollAndTap(tester, find.text('Single File Book'));
     await pumpUntil(tester, find.byIcon(Icons.play_arrow));
-    await tester.tap(find.byIcon(Icons.play_arrow));
+    await tapPlay(tester);
     await pumpUntil(tester, find.text('00:00:13'));
 
     // The same message MainActivity sends when the watch dims.
