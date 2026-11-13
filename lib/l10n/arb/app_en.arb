@@ -92,6 +92,10 @@
     "@sessionExpired": {
         "description": "Token rejected by server"
     },
+    "noUsableToken": "The server sent no usable login token.",
+    "@noUsableToken": {
+        "description": "Login: the response held neither an access token nor a legacy token"
+    },
     "logoutConfirm": "Log out? Downloaded books are removed.",
     "@logoutConfirm": {
         "description": "Logout confirmation"
@@ -173,6 +177,18 @@
     "deleteDownloadConfirm": "Delete the downloaded book from the watch?",
     "@deleteDownloadConfirm": {
         "description": "Confirm deleting a download"
+    },
+    "noHeadphones": "No headphones connected.",
+    "@noHeadphones": {
+        "description": "Shown on Play when no Bluetooth headphones are connected"
+    },
+    "connectHeadphones": "Connect headphones",
+    "@connectHeadphones": {
+        "description": "Headphone prompt: opens the Bluetooth settings to connect headphones"
+    },
+    "playOnSpeaker": "Play on the watch speaker",
+    "@playOnSpeaker": {
+        "description": "Headphone prompt: plays on the watch's own speaker anyway"
     },
     "volumeUp": "Volume up",
     "@volumeUp": {

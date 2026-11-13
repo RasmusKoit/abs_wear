@@ -2,8 +2,10 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:abs_wear/app/continue_tile.dart';
 import 'package:abs_wear/library/data/json_cache.dart';
 import 'package:abs_wear/library/view/library_page.dart';
+import 'package:abs_wear/player/player.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -281,4 +283,141 @@ void main() {
       expect(await openAndWait(tester), LibraryResult.libraryMissing);
     });
   });
+
+  group('Continue listening tile', () {
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    late List<String> calls;
+    late Map<String, Object?>? pending;
+    PlayerPage? player;
+
+    setUp(() {
+      calls = [];
+      pending = null;
+      player = null;
+      messenger.setMockMethodCallHandler(ContinueTile.channel, (call) async {
+        calls.add(call.method);
+        if (call.method != 'take') return null;
+        final open = pending;
+        pending = null;
+        return open;
+      });
+    });
+
+    tearDown(
+      () => messenger.setMockMethodCallHandler(ContinueTile.channel, null),
+    );
+
+    // The player closes again when its session fails, so keep what opened.
+    bool Function() playerShows(WidgetTester tester) => () {
+      final found = find.byType(PlayerPage, skipOffstage: false);
+      if (found.evaluate().isNotEmpty) player ??= tester.widget(found);
+      return player != null;
+    };
+
+    testWidgets('a tap at start opens the player for that book', (
+      tester,
+    ) async {
+      pending = {'id': 'pod_1', 'episodeId': 'ep_1'};
+      continueListening([book('li_1', 'Dune', 'Frank Herbert')]);
+      await withServer(() async {
+        await tester.pumpAppInRealZone(page);
+        await tester.settleRealZone(done: playerShows(tester));
+      });
+
+      expect(player?.libraryItemId, 'pod_1');
+      expect(player?.episodeId, 'ep_1');
+      await tester.runAsync(() => tester.pumpWidget(const SizedBox()));
+    });
+
+    testWidgets('a tap while running opens the player', (tester) async {
+      continueListening([book('li_1', 'Dune', 'Frank Herbert')]);
+      await withServer(() async {
+        await tester.pumpAppInRealZone(page);
+        await tester.settleRealZone(done: shelfLoaded);
+        expect(playerShows(tester)(), isFalse);
+
+        pending = {'id': 'li_1'};
+        await tester.runAsync(
+          () => simulatePlatformCall(ContinueTile.channel.name, 'open'),
+        );
+        await tester.settleRealZone(done: playerShows(tester));
+      });
+
+      expect(player?.libraryItemId, 'li_1');
+      expect(player?.episodeId, isNull);
+      await tester.runAsync(() => tester.pumpWidget(const SizedBox()));
+    });
+
+    testWidgets('a new shelf refreshes the tile', (tester) async {
+      continueListening([book('li_1', 'Dune', 'Frank Herbert')]);
+      await withServer(() async {
+        await tester.pumpAppInRealZone(page);
+        await tester.settleRealZone(done: () => calls.contains('refresh'));
+      });
+
+      expect(calls, contains('refresh'));
+      final saved = await tester.runAsync(
+        () => JsonCache.read('shelf_${'$_server|u'.hashCode}_lib1'),
+      );
+      expect(saved, [
+        {'i': 'li_1', 't': 'Dune', 'a': 'Frank Herbert'},
+      ]);
+    });
+  });
+
+  testWidgets('opening a book while another plays shows its player', (
+    tester,
+  ) async {
+    final now = NowPlaying.instance..create = _StartingController.new;
+    addTearDown(() async {
+      await tester.runAsync(now.stop);
+      now.create = AudioPlayerController.new;
+    });
+    libraries();
+    continueListening([book('li_1', 'Dune', 'Frank Herbert')]);
+    await withServer(() async {
+      await tester.runAsync(() async {
+        now.open(
+          libraryItemId: 'li_0',
+          serverUrl: _server,
+          token: 't',
+          user: 'u',
+        );
+      });
+      await tester.pumpAppInRealZone(page);
+      await tester.settleRealZone(done: shelfLoaded);
+      expect(find.byType(NowPlayingCard), findsOneWidget);
+
+      // The player opens the book from initState, inside a build.
+      await tester.tapInRealZone(find.text('Dune'));
+      await tester.settleRealZone(
+        done: () => find.byType(PlayerPage).evaluate().isNotEmpty,
+      );
+    });
+
+    expect(tester.takeException(), isNull);
+    expect(find.byType(PlayerPage), findsOneWidget);
+    expect(now.controller?.libraryItemId, 'li_1');
+  });
+}
+
+/// A controller whose session never finishes starting (no player needed).
+class _StartingController extends AudioPlayerController {
+  _StartingController()
+    : super(client: MockClient((_) async => http.Response('', 404)));
+
+  @override
+  Future<bool> setupPlayer(
+    String libItemId,
+    String srvUrl,
+    String authToken, {
+    String userName = '',
+    String? episodeId,
+  }) {
+    libraryItemId = libItemId;
+    serverUrl = srvUrl;
+    user = userName;
+    return Completer<bool>().future;
+  }
 }

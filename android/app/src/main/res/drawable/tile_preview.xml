@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Tile picker preview: a dark round screen with a label, a two-line title and an author. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="192dp"
+    android:height="192dp"
+    android:viewportWidth="192"
+    android:viewportHeight="192">
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M96,0a96,96 0,1 1,0 192a96,96 0,1 1,0 -192z" />
+    <path
+        android:fillColor="#FFB0B0B0"
+        android:pathData="M64,62h64a4,4 0,0 1,0 8h-64a4,4 0,0 1,0 -8z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M44,84h104a6,6 0,0 1,0 12h-104a6,6 0,0 1,0 -12z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M58,104h76a6,6 0,0 1,0 12h-76a6,6 0,0 1,0 -12z" />
+    <path
+        android:fillColor="#FFB0B0B0"
+        android:pathData="M72,126h48a4,4 0,0 1,0 8h-48a4,4 0,0 1,0 -8z" />
+</vector>

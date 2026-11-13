@@ -69,6 +69,13 @@ class DownloadService : Service() {
             instance?.showNotification()
         }
 
+        /** The next queued book, under the same service and wake lock. */
+        fun retitle(title: String) {
+            this.title = title
+            percent = 0
+            instance?.showNotification()
+        }
+
         fun stop(context: Context) {
             context.stopService(Intent(context, DownloadService::class.java))
         }

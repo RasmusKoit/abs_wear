@@ -7,7 +7,10 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
-import 'package:abs_wear/player/darts/download_keep_alive.dart';
+import 'package:abs_wear/ambient_mode/view/ambient_mode_listener.dart';
+import 'package:abs_wear/app/app_visibility.dart';
+import 'package:abs_wear/login/data/auth_session.dart';
+import 'package:abs_wear/player/darts/download_manager.dart';
 import 'package:abs_wear/player/darts/network_lock.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/foundation.dart';
@@ -109,21 +112,23 @@ class BookChapter {
 
 enum DownloadResult { done, noSpace, failed, canceled }
 
-/// Thrown inside [AudioPlayerController.downloadBook] when the user cancels.
-class _DownloadCanceled implements Exception {
-  const _DownloadCanceled();
-}
-
 class AudioPlayerController extends ChangeNotifier {
-  AudioPlayerController({http.Client? client})
+  /// Tests pass a fake-time [sleepClock].
+  AudioPlayerController({http.Client? client, Stopwatch? sleepClock})
     : _client = client ?? _newClient(),
-      _injectedClient = client;
+      _injectedClient = client,
+      _sleepClock = sleepClock ?? Stopwatch() {
+    DownloadManager.instance.addListener(_notify);
+    _downloadSub = DownloadManager.instance.finished.listen(_onDownloaded);
+  }
 
   static http.Client _newClient() =>
       IOClient(HttpClient()..idleTimeout = _idleTimeout);
 
-  /// A client passed in (tests): used for downloads too, never replaced.
+  /// A client passed in (tests): used for downloads too.
   final http.Client? _injectedClient;
+
+  late final StreamSubscription<(String, DownloadResult)> _downloadSub;
 
   /// Shorter than the server's keep-alive (Node's default is 5 s), so a
   /// request never goes out on a connection the server is closing ("Connection
@@ -220,11 +225,15 @@ class AudioPlayerController extends ChangeNotifier {
   double _lastSyncedTime = 0;
 
   bool isLoaded = false;
-  bool isDownloading = false;
+
+  /// This book's download is queued or running in [DownloadManager].
+  bool get isDownloading => _downloadJob != null;
+
+  DownloadJob? get _downloadJob => DownloadManager.instance.jobFor(_folderName);
 
   /// Playing a downloaded book without a server session (no network).
-  /// Progress is kept on the watch and sent the next time the book opens
-  /// online.
+  /// Progress is kept on the watch; [periodicSync] and pauses retry the
+  /// server and send it once a session starts.
   bool isOffline = false;
 
   /// What [_startOffline] needs to rebuild the session without the
@@ -267,8 +276,11 @@ class AudioPlayerController extends ChangeNotifier {
     return _unverified;
   }
 
-  /// 0..1 while downloading, null otherwise.
-  final ValueNotifier<double?> downloadProgress = ValueNotifier(null);
+  /// 0..1 while downloading, null while queued or not downloading.
+  ValueListenable<double?> get downloadProgress =>
+      _downloadJob?.progress ?? _noProgress;
+
+  static final ValueNotifier<double?> _noProgress = ValueNotifier(null);
 
   /// Playback speeds offered; the choice is kept for all books.
   static const speeds = [0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5];
@@ -311,9 +323,16 @@ class AudioPlayerController extends ChangeNotifier {
 
   /// Listening time left before playback pauses; null when off. Counts
   /// down only while audio is actually heard (not paused or buffering).
+  /// Updated each second only while the app is on screen and not ambient.
   final ValueNotifier<Duration?> sleepRemaining = ValueNotifier(null);
+
+  /// Fires when the listening time is up.
   Timer? _sleepTimer;
-  final Stopwatch _sleepClock = Stopwatch();
+
+  /// Refreshes [sleepRemaining] each second.
+  Timer? _sleepTick;
+  bool _watchingDisplay = false;
+  final Stopwatch _sleepClock;
   Duration _sleepTarget = Duration.zero;
 
   /// Index in [sleepOptions] of the running timer; -1 when off.
@@ -327,8 +346,7 @@ class AudioPlayerController extends ChangeNotifier {
 
   /// Starts the timer with [sleepOptions] at [choice], or turns it off.
   void setSleepTimer(int? choice) {
-    _sleepTimer?.cancel();
-    _sleepTimer = null;
+    _stopSleepTimers();
     _sleepClock
       ..stop()
       ..reset();
@@ -340,25 +358,83 @@ class AudioPlayerController extends ChangeNotifier {
     }
     _sleepTarget = sleepOptions[choice];
     sleepRemaining.value = _sleepTarget;
-    if (_audible) {
+    if (_audible) _sleepAudible(audible: true);
+  }
+
+  /// Tests run it in place of playing audio, which they can't do.
+  @visibleForTesting
+  void debugSleepAudible({required bool audible}) =>
+      _sleepAudible(audible: audible);
+
+  /// Counts the sleep timer down while audio plays; paused, nothing runs.
+  void _sleepAudible({required bool audible}) {
+    if (_sleepChoice < 0 || _closed) return;
+    if (audible) {
       _sleepClock.start();
-      _startSleepTick();
+      _sleepTimer ??= Timer(_sleepLeft, _onSleepDue);
+      if (!_watchingDisplay) {
+        _watchingDisplay = true;
+        AppVisibility.instance
+          ..ensureInitialized()
+          ..addListener(_updateSleepTick);
+        AmbientModeListener.instance.addListener(_updateSleepTick);
+      }
+      _updateSleepTick();
+    } else {
+      _sleepClock.stop();
+      _showSleepLeft();
+      _stopSleepTimers();
     }
   }
 
-  /// Counts the sleep timer down while audio plays; paused, the clock and
-  /// the tick stop (no wakeups while nothing changes). The clock measures
-  /// time; the tick only shows it (late ticks don't slow the timer down).
-  void _startSleepTick() {
-    _sleepTimer ??= Timer.periodic(const Duration(seconds: 1), (_) {
-      final left = _sleepTarget - _sleepClock.elapsed;
-      if (left > Duration.zero) {
-        sleepRemaining.value = Duration(seconds: left.inSeconds + 1);
-        return;
-      }
-      setSleepTimer(null);
-      unawaited(player.pause());
-    });
+  Duration get _sleepLeft => _sleepTarget - _sleepClock.elapsed;
+
+  void _onSleepDue() {
+    _sleepTimer = null;
+    final left = _sleepLeft;
+    if (left > Duration.zero) {
+      _sleepTimer = Timer(left, _onSleepDue);
+      return;
+    }
+    setSleepTimer(null);
+    unawaited(player.pause());
+  }
+
+  /// Ticks the display only while it can be seen at full refresh.
+  void _updateSleepTick() {
+    final visible =
+        _sleepTimer != null &&
+        AppVisibility.instance.value &&
+        !AmbientModeListener.instance.value;
+    if (!visible) {
+      _sleepTick?.cancel();
+      _sleepTick = null;
+      return;
+    }
+    _showSleepLeft();
+    _sleepTick ??= Timer.periodic(
+      const Duration(seconds: 1),
+      (_) => _showSleepLeft(),
+    );
+  }
+
+  void _showSleepLeft() {
+    final left = _sleepLeft;
+    if (_closed || _sleepChoice < 0 || left <= Duration.zero) return;
+    sleepRemaining.value = Duration(
+      seconds: (left.inMicroseconds / Duration.microsecondsPerSecond).ceil(),
+    );
+  }
+
+  void _stopSleepTimers() {
+    _sleepTimer?.cancel();
+    _sleepTimer = null;
+    _sleepTick?.cancel();
+    _sleepTick = null;
+    if (!_watchingDisplay) return;
+    _watchingDisplay = false;
+    AppVisibility.instance.removeListener(_updateSleepTick);
+    AmbientModeListener.instance.removeListener(_updateSleepTick);
   }
 
   bool get _audible =>
@@ -373,7 +449,14 @@ class AudioPlayerController extends ChangeNotifier {
 
   bool get _audioLoaded => player.processingState != ProcessingState.idle;
 
-  Map<String, String> get _authHeaders => {'Authorization': 'Bearer $token'};
+  Map<String, String> get _authHeaders => {
+    'Authorization': 'Bearer ${AuthSession.instance.current(token)}',
+  };
+
+  /// Runs [request] (using [_authHeaders]), again after a refresh on a 401.
+  Future<R> _authed<R extends http.BaseResponse>(
+    Future<R> Function() request,
+  ) => AuthSession.instance.send(token, (_) => request());
 
   /// Position in the whole book, across all audio files. While audio is
   /// loaded this also records the last known position, so a stop, error or
@@ -423,6 +506,22 @@ class AudioPlayerController extends ChangeNotifier {
   /// Called when playback fails (e.g. network loss); the page shows the
   /// localized message.
   void Function()? onPlaybackError;
+
+  /// The token in the streamed sources' headers; null when none needs one.
+  String? _sourceToken;
+
+  /// Reloads the streamed sources with a new token before theirs expires.
+  Timer? _renewTimer;
+
+  /// How long before expiry streamed sources get a new token.
+  static const _renewMargin = Duration(minutes: 2);
+
+  /// The source token an expiry error was already recovered from (no loops).
+  String? _recoveredFrom;
+
+  /// The token the streamed sources use; read by tests.
+  @visibleForTesting
+  String? get sourceToken => _sourceToken;
 
   /// Serialises syncs so overlapping calls don't double-report time.
   Future<void> _syncChain = Future.value();
@@ -524,7 +623,7 @@ class AudioPlayerController extends ChangeNotifier {
           unawaited(_saveSessionMeta());
           // Downloads from before covers were saved get theirs now.
           final dir = await localDirPath();
-          if (_hasCover && !_coverFile(dir).existsSync()) {
+          if (_hasCover && !coverFileIn(dir).existsSync()) {
             unawaited(_downloadCover(dir));
           }
         }
@@ -582,6 +681,9 @@ class AudioPlayerController extends ChangeNotifier {
     if (local != null) {
       _pendingPosition = _lastSyncedTime = local.time;
       _carriedListening = local.listened;
+    } else {
+      // The cached position isn't new: don't save it with today's time.
+      _savedTime = _pendingPosition;
     }
     isOffline = true;
     await _loadSources(initialTime: _pendingPosition);
@@ -659,10 +761,13 @@ class AudioPlayerController extends ChangeNotifier {
     await lastClose;
     final dir = await _localProgressDir();
     if (!dir.existsSync()) return;
-    final headers = {
-      'Authorization': 'Bearer $token',
+    Map<String, String> headers() => {
+      'Authorization': 'Bearer ${AuthSession.instance.current(token)}',
       'Content-Type': 'application/json',
     };
+    Future<R> authed<R extends http.BaseResponse>(
+      Future<R> Function() request,
+    ) => AuthSession.instance.send(token, (_) => request());
     final client = http.Client();
     try {
       for (final file in dir.listSync().whereType<File>()) {
@@ -678,9 +783,11 @@ class AudioPlayerController extends ChangeNotifier {
           final key = _keyFor(serverUrl, user, mediaPath);
           if (_openKeys.containsKey(key)) continue;
           final url = Uri.parse('$serverUrl/api/me/progress/$mediaPath');
-          final current = await client
-              .get(url, headers: headers)
-              .timeout(const Duration(seconds: 10));
+          final current = await authed(
+            () => client
+                .get(url, headers: headers())
+                .timeout(const Duration(seconds: 10)),
+          );
           // Without an answer the server may have newer progress: keep the
           // file pending and try again on the next push.
           if (current.statusCode != 200 && current.statusCode != 404) {
@@ -695,18 +802,20 @@ class AudioPlayerController extends ChangeNotifier {
           if (serverUpdated <= (json['updatedAt'] as num).toInt()) {
             final time = (json['currentTime'] as num).toDouble();
             final duration = (json['duration'] as num?)?.toDouble() ?? 0;
-            final response = await client
-                .patch(
-                  url,
-                  headers: headers,
-                  body: jsonEncode({
-                    'currentTime': time,
-                    if (duration > 0) 'duration': duration,
-                    if (duration > 0)
-                      'progress': (time / duration).clamp(0.0, 1.0),
-                  }),
-                )
-                .timeout(const Duration(seconds: 10));
+            final response = await authed(
+              () => client
+                  .patch(
+                    url,
+                    headers: headers(),
+                    body: jsonEncode({
+                      'currentTime': time,
+                      if (duration > 0) 'duration': duration,
+                      if (duration > 0)
+                        'progress': (time / duration).clamp(0.0, 1.0),
+                    }),
+                  )
+                  .timeout(const Duration(seconds: 10)),
+            );
             if (response.statusCode != 200) continue;
             updated = {...json, 'pending': false};
           } else {
@@ -853,12 +962,14 @@ class AudioPlayerController extends ChangeNotifier {
     Duration timeout,
   ) async {
     try {
-      final response = await _client
-          .get(
-            Uri.parse('$serverUrl/api/me/progress/$_mediaPath'),
-            headers: _authHeaders,
-          )
-          .timeout(timeout);
+      final response = await _authed(
+        () => _client
+            .get(
+              Uri.parse('$serverUrl/api/me/progress/$_mediaPath'),
+              headers: _authHeaders,
+            )
+            .timeout(timeout),
+      );
       if (response.statusCode == 404) return (lastUpdate: 0, time: null);
       if (response.statusCode != 200) return null;
       final json = jsonDecode(response.body) as Map<String, dynamic>;
@@ -922,16 +1033,7 @@ class AudioPlayerController extends ChangeNotifier {
     audible ? _listenClock.start() : _listenClock.stop();
     // Listening on the watch now: its progress is the latest.
     if (state.playing) _unverified = null;
-    if (_sleepChoice >= 0) {
-      if (audible) {
-        _sleepClock.start();
-        _startSleepTick();
-      } else {
-        _sleepClock.stop();
-        _sleepTimer?.cancel();
-        _sleepTimer = null;
-      }
-    }
+    _sleepAudible(audible: audible);
     // Keep the network up while streaming, also while loading with the
     // screen off.
     unawaited(NetworkLock.set(hold: state.playing && _streaming));
@@ -959,12 +1061,13 @@ class AudioPlayerController extends ChangeNotifier {
     } on Object {
       // No newer event (in-app pauses already carry the position).
     }
-    if (!_closed) await syncOpenSession();
+    if (!_closed) await (isOffline ? _reconnect() : syncOpenSession());
   }
 
   void _onPlayerError(PlayerException e) {
     debugPrint('Playback error: ${e.code} ${e.message}');
     if (_closed) return;
+    final play = player.playing || _wasPlaying;
     // The player is idle now, so bookPosition would return a stale cached
     // value; the error event carries the real position.
     final index = e.index ?? player.currentIndex ?? 0;
@@ -974,8 +1077,94 @@ class AudioPlayerController extends ChangeNotifier {
     }
     _needsReload = true;
     unawaited(player.pause());
+    final source = _sourceToken;
+    if (source != null &&
+        source != _recoveredFrom &&
+        AuthSession.instance.isStale(source, margin: _staleMargin)) {
+      // Most likely a 401 on an expired token: renew and carry on quietly.
+      _recoveredFrom = source;
+      unawaited(_recoverSources(source, play: play));
+      _notify();
+      return;
+    }
     onPlaybackError?.call();
     _notify();
+  }
+
+  /// Leeway for the watch's clock running behind the server's.
+  static const _staleMargin = Duration(seconds: 30);
+
+  /// Test hook for a playback error from the native player.
+  @visibleForTesting
+  void debugPlayerError(PlayerException e) => _onPlayerError(e);
+
+  /// Test hook for the renewal timer firing.
+  @visibleForTesting
+  Future<void> debugRenewSources() => _renewSources();
+
+  /// Whether a renewal is scheduled; read by tests.
+  @visibleForTesting
+  bool get renewalScheduled => _renewTimer?.isActive ?? false;
+
+  void _scheduleRenewal() {
+    _renewTimer?.cancel();
+    _renewTimer = null;
+    final source = _sourceToken;
+    if (source == null || _closed) return;
+    final due = AuthSession.instance.renewIn(source, margin: _renewMargin);
+    if (due == null) return;
+    _renewTimer = Timer(due, () => unawaited(_renewSources()));
+  }
+
+  /// Reloads the streamed sources at the same position with a renewed token.
+  Future<void> _renewSources() async {
+    final source = _sourceToken;
+    if (_closed || source == null) return;
+    String? fresh;
+    try {
+      fresh = await AuthSession.instance.freshToken(
+        source,
+        margin: _renewMargin,
+      );
+    } on Object catch (e) {
+      debugPrint('Could not renew the stream token: $e');
+      // Offline for now: try again shortly, the 401 recovery is the backstop.
+      if (!_closed && _sourceToken == source) {
+        _renewTimer = Timer(
+          const Duration(minutes: 1),
+          () => unawaited(_renewSources()),
+        );
+      }
+      return;
+    }
+    if (_closed || fresh == null || fresh == source) return;
+    // Replaced meanwhile, or idle after an error: the next load renews it.
+    if (_sourceToken != source || _reloading || _needsReload) return;
+    await reloadSources();
+  }
+
+  /// After an expiry error: renews the token and reloads where it stopped.
+  Future<void> _recoverSources(String source, {required bool play}) async {
+    String? fresh;
+    try {
+      fresh = await AuthSession.instance.freshToken(
+        source,
+        margin: _renewMargin,
+      );
+    } on Object catch (e) {
+      debugPrint('Could not renew the stream token: $e');
+    }
+    if (_closed) return;
+    if (fresh == null || fresh == source) {
+      // Can't renew (offline, or logged out on the server): the usual error.
+      onPlaybackError?.call();
+      _notify();
+      return;
+    }
+    // A Play tap meanwhile already reloaded.
+    if (!_needsReload || _reloading) return;
+    _playAfterReload = play;
+    await reloadSources();
   }
 
   /// Closes a session that was started after the player was closed,
@@ -991,21 +1180,23 @@ class AudioPlayerController extends ChangeNotifier {
     if (id.isEmpty) return;
     final client = http.Client();
     try {
-      await client
-          .post(
-            Uri.parse('$serverUrl/api/session/$id/close'),
-            headers: {..._authHeaders, 'Content-Type': 'application/json'},
-            body: jsonEncode(
-              position == null
-                  ? const <String, Object?>{}
-                  : {
-                      'currentTime': position,
-                      'timeListened': 0,
-                      'duration': duration,
-                    },
-            ),
-          )
-          .timeout(const Duration(seconds: 20));
+      await _authed(
+        () => client
+            .post(
+              Uri.parse('$serverUrl/api/session/$id/close'),
+              headers: {..._authHeaders, 'Content-Type': 'application/json'},
+              body: jsonEncode(
+                position == null
+                    ? const <String, Object?>{}
+                    : {
+                        'currentTime': position,
+                        'timeListened': 0,
+                        'duration': duration,
+                      },
+              ),
+            )
+            .timeout(const Duration(seconds: 20)),
+      );
     } on Object catch (e) {
       debugPrint('Could not close session $id: $e');
     } finally {
@@ -1160,16 +1351,36 @@ class AudioPlayerController extends ChangeNotifier {
     required bool directPlay,
     Duration timeout = const Duration(seconds: 20),
   }) async {
-    return await _client
-        .post(
-          Uri.parse(
-            '$serverUrl/api/items/$libraryItemId/play'
-            '${episodeId == null ? '' : '/$episodeId'}',
-          ),
-          headers: {..._authHeaders, 'Content-Type': 'application/json'},
-          body: await _deviceInfoBody(directPlay: directPlay),
-        )
-        .timeout(timeout);
+    final body = await _deviceInfoBody(directPlay: directPlay);
+    final play = _authed(
+      () => _client.post(
+        Uri.parse(
+          '$serverUrl/api/items/$libraryItemId/play'
+          '${episodeId == null ? '' : '/$episodeId'}',
+        ),
+        headers: {..._authHeaders, 'Content-Type': 'application/json'},
+        body: body,
+      ),
+    );
+    try {
+      return await play.timeout(timeout);
+    } on TimeoutException {
+      // The request still runs: a session it starts late is closed.
+      unawaited(_closeLateSession(play));
+      rethrow;
+    }
+  }
+
+  /// Closes the session a timed-out /play started, leaving progress as is.
+  Future<void> _closeLateSession(Future<http.Response> play) async {
+    try {
+      final response = await play;
+      if (response.statusCode != 200) return;
+      final id = (jsonDecode(response.body) as Map<String, dynamic>)['id'];
+      if (id is String) await _closeSessionAt(id, null);
+    } on Object catch (e) {
+      debugPrint('Late session not closed: $e');
+    }
   }
 
   Future<String> _deviceInfoBody({required bool directPlay}) async {
@@ -1194,21 +1405,18 @@ class AudioPlayerController extends ChangeNotifier {
     });
   }
 
+  /// Each episode of a podcast gets its own folder.
+  String get _folderName =>
+      episodeId == null ? libraryItemId : '${libraryItemId}_$episodeId';
+
   Future<String> localDirPath() async {
     final docs = await getApplicationDocumentsDirectory();
-    // Each episode of a podcast gets its own folder.
-    return '${docs.path}/'
-        '${episodeId == null ? libraryItemId : '${libraryItemId}_$episodeId'}';
+    return '${docs.path}/$_folderName';
   }
 
   /// Local file for a track. Named by index and inode, not the original
   /// basename, so multi-disc books (CD1/01.mp3, CD2/01.mp3) don't collide.
-  File _localFile(String dir, BookTrack track) {
-    final dot = track.filename.lastIndexOf('.');
-    final ext = dot >= 0 ? track.filename.substring(dot) : '';
-    final index = track.index.toString().padLeft(3, '0');
-    return File('$dir/${index}_${track.ino}$ext');
-  }
+  File _localFile(String dir, BookTrack track) => localTrackFile(dir, track);
 
   /// True when every audio file of the book is on the device.
   Future<bool> isDownloaded() async {
@@ -1247,7 +1455,11 @@ class AudioPlayerController extends ChangeNotifier {
     // one, else from the server (the header keeps the token out of the URL).
     // None when there is no cover, or offline without a saved copy (each
     // failed fetch would be retried and logged on every track change).
-    final coverFile = _coverFile(dir);
+    // Direct-play files are under /api and need a valid token; HLS is not.
+    final current = AuthSession.instance.current(token);
+    final sourceToken = !local && playing.any((t) => !t.isHls) ? current : null;
+    final sourceHeaders = {'Authorization': 'Bearer $current'};
+    final coverFile = coverFileIn(dir);
     final cover = coverFile.existsSync()
         ? Uri.file(coverFile.path)
         : _hasCover && !isOffline
@@ -1259,7 +1471,7 @@ class AudioPlayerController extends ChangeNotifier {
           local
               ? Uri.file(_localFile(dir, t).path)
               : Uri.parse('$serverUrl${t.contentUrl}'),
-          headers: local || (t.isHls && _https) ? null : _authHeaders,
+          headers: local || (t.isHls && _https) ? null : sourceHeaders,
           tag: MediaItem(
             id: '$_mediaPath/${t.index}',
             title: bookTitle,
@@ -1268,11 +1480,13 @@ class AudioPlayerController extends ChangeNotifier {
             artUri: cover,
             artHeaders: cover == null || cover.scheme == 'file'
                 ? null
-                : _authHeaders,
+                : sourceHeaders,
           ),
         ),
     ];
     _playing = playing;
+    _sourceToken = sourceToken;
+    _scheduleRenewal();
     _pendingPosition = initialTime;
     if (!local) {
       // Seeks made while waiting only move the pending position; the audio
@@ -1415,12 +1629,15 @@ class AudioPlayerController extends ChangeNotifier {
     _notify();
   }
 
-  Future<void> seekRelative(double seconds) =>
-      seekToBookTime(bookPosition + seconds);
+  Future<void> seekRelative(double seconds) {
+    _syncAfterSkip();
+    return seekToBookTime(bookPosition + seconds);
+  }
 
   Future<void> seekToNextChapter() async {
     final i = chapterIndexAt(bookPosition);
     if (i < chapters.length - 1) {
+      _syncAfterSkip();
       await seekToBookTime(chapters[i + 1].start);
     }
   }
@@ -1428,6 +1645,7 @@ class AudioPlayerController extends ChangeNotifier {
   /// Restarts the current chapter, or goes to the previous one when within
   /// the first 3 seconds of a chapter.
   Future<void> seekToPreviousChapter() async {
+    _syncAfterSkip();
     final pos = bookPosition;
     final i = chapterIndexAt(pos);
     if (i < 0) {
@@ -1449,6 +1667,9 @@ class AudioPlayerController extends ChangeNotifier {
     final seconds = (end - pos).clamp(0, double.infinity) / speed;
     return Duration(seconds: seconds.floor());
   }
+
+  /// Whether [togglePlayPause] would start playback (not pause or cancel).
+  bool get toggleWouldPlay => !player.playing && !(_playAfterReload ?? false);
 
   /// Pausing syncs progress through the player state listener.
   Future<void> togglePlayPause() async {
@@ -1513,18 +1734,55 @@ class AudioPlayerController extends ChangeNotifier {
   @visibleForTesting
   DateTime? get retryAt => _retryAt;
 
-  /// Periodic sync: skipped while paused with nothing new to report, or
-  /// while paused and backing off after failed syncs.
-  Future<void> periodicSync() {
-    if (!player.playing) {
+  /// Overrides [AudioPlayer.playing] in tests, which can't play audio.
+  @visibleForTesting
+  bool? debugPlaying;
+
+  /// Periodic ticks (one a minute) between server posts while playing.
+  static const postEveryTicks = 10;
+  int _ticksSincePost = 0;
+
+  /// How long after the last of a run of skips its position is posted.
+  static const skipSyncDelay = Duration(seconds: 3);
+  Timer? _skipSyncTimer;
+
+  /// Posts the position [skipSyncDelay] after the last skip.
+  void _syncAfterSkip() {
+    _skipSyncTimer?.cancel();
+    _skipSyncTimer = Timer(skipSyncDelay, () {
+      _skipSyncTimer = null;
+      if (!_closed) unawaited(syncOpenSession());
+    });
+  }
+
+  /// Saves the position as pending on the watch between server posts.
+  Future<void> _saveProgressLocally() async {
+    if (_closed || sessionId.isEmpty || _unsettled != null) return;
+    final listened =
+        _listenClock.elapsed - _reportedListening + _carriedListening;
+    await _savePendingProgress(bookPosition, listened);
+  }
+
+  /// Offline: tries to reconnect. Playing: posts every [postEveryTicks]
+  /// ticks (each one with [post]); paused: news, no backoff.
+  Future<void> periodicSync({bool post = false}) {
+    if (isOffline) return _reconnect();
+    final playing = debugPlaying ?? player.playing;
+    if (!playing) {
       final retryAt = _retryAt;
       if (retryAt != null && DateTime.now().isBefore(retryAt)) {
         return Future.value();
       }
     }
     if (_unsettled != null) return _verifyLocalProgress();
+    if (playing &&
+        !post &&
+        sessionId.isNotEmpty &&
+        ++_ticksSincePost < postEveryTicks) {
+      return _syncChain = _syncChain.then((_) => _saveProgressLocally());
+    }
     final idle =
-        !player.playing &&
+        !playing &&
         bookPosition == _lastSyncedTime &&
         _listenClock.elapsed == _reportedListening;
     return idle ? Future.value() : syncOpenSession();
@@ -1538,6 +1796,75 @@ class AudioPlayerController extends ChangeNotifier {
     return _syncChain = _syncChain.then(
       (_) => _sync(close: close, position: position),
     );
+  }
+
+  bool _reconnecting = false;
+
+  /// How long a reconnect waits for /play; shorter in tests.
+  @visibleForTesting
+  static Duration reconnectTimeout = const Duration(seconds: 10);
+
+  /// Offline: keeps progress on the watch, then tries (with the sync
+  /// backoff) to start a server session and go back online.
+  Future<void> _reconnect() async {
+    await syncOpenSession();
+    final retryAt = _retryAt;
+    if (!isOffline ||
+        _closed ||
+        _reconnecting ||
+        (retryAt != null && DateTime.now().isBefore(retryAt))) {
+      return;
+    }
+    _reconnecting = true;
+    try {
+      Map<String, dynamic>? session;
+      try {
+        final response = await _postPlay(
+          directPlay: _directPlay,
+          timeout: reconnectTimeout,
+        );
+        if (response.statusCode == 200) {
+          session = jsonDecode(response.body) as Map<String, dynamic>;
+        }
+      } on Object catch (e) {
+        debugPrint('Still offline: $e');
+      }
+      if (session == null) {
+        _failedSyncs++;
+        _retryAt = DateTime.now().add(
+          Duration(minutes: min(30, 1 << min(_failedSyncs, 5))),
+        );
+        return;
+      }
+      final id = session['id'] as String;
+      final local = await _readLocalProgress();
+      // No await from here until adopted, so a close can't slip in between.
+      if (_closed) {
+        // Its close kept the progress on the watch.
+        unawaited(_closeSessionAt(id, null));
+        return;
+      }
+      sessionId = id;
+      isOffline = false;
+      _failedSyncs = 0;
+      _retryAt = null;
+      // The server's position: offline progress that differs gets sent.
+      _lastSyncedTime =
+          (session['currentTime'] as num?)?.toDouble() ?? _lastSyncedTime;
+      debugPrint('Back online with session $sessionId');
+      _notify();
+      // Paused where the watch last saved: the newer progress wins, as on open.
+      if (!player.playing) {
+        _unverified = (
+          time: local?.time ?? bookPosition,
+          updatedAt: local?.updatedAt ?? 0,
+        );
+      }
+      // Moved or playing since: the watch's progress is the latest.
+      await (_unsettled != null ? _verifyLocalProgress() : syncOpenSession());
+    } finally {
+      _reconnecting = false;
+    }
   }
 
   Future<void> _sync({required bool close, double? position}) async {
@@ -1560,6 +1887,12 @@ class AudioPlayerController extends ChangeNotifier {
       await _savePendingProgress(current, _carriedListening);
       return;
     }
+    _ticksSincePost = 0;
+    // A given position may predate a skip, which then still needs its post.
+    if (position == null) {
+      _skipSyncTimer?.cancel();
+      _skipSyncTimer = null;
+    }
     // Read once: listening while the request is in flight (a 404 restart
     // can take a minute) isn't in this body, so it goes to the next sync.
     final sentAt = _listenClock.elapsed;
@@ -1581,7 +1914,7 @@ class AudioPlayerController extends ChangeNotifier {
         .timeout(const Duration(seconds: 20));
     try {
       final id = sessionId;
-      var response = await post();
+      var response = await _authed(post);
       // The server forgot the session (e.g. it restarted): every later sync
       // would fail too, so start a new one and send the progress there, once
       // per sync. Not for a close: the pending file below keeps the position
@@ -1594,7 +1927,7 @@ class AudioPlayerController extends ChangeNotifier {
           !_closed &&
           (sessionId != id || await _restartSession()) &&
           !_closed) {
-        response = await post();
+        response = await _authed(post);
       }
       if (response.statusCode == 200) {
         synced = true;
@@ -1618,202 +1951,78 @@ class AudioPlayerController extends ChangeNotifier {
       // Keep the position on the watch until the server gets it (e.g. the
       // network dropped while listening to a downloaded book).
       await _savePendingProgress(current, listened);
-    } else if (await isDownloaded()) {
-      // Where offline play resumes next time.
+    } else if (isDownloading || await isDownloaded()) {
+      // Where offline play resumes, also for a download still running.
       await _writeLocalProgress(current, Duration.zero, pending: false);
     } else {
       await _clearLocalProgress();
     }
   }
 
-  /// Completes when the running download is canceled.
-  Completer<void>? _downloadCancel;
-
-  /// True while the download is bound to the watch's Wi-Fi.
-  bool _downloadOnWifi = false;
-
-  /// The running download's own client: opened after the network was
-  /// picked, so no pooled connection from before the switch is reused.
-  http.Client? _downloadClient;
-
-  void _closeDownloadClient() {
-    final client = _downloadClient;
-    _downloadClient = null;
-    if (client != null && client != _injectedClient) client.close();
-  }
-
   /// False once [close] was called.
   bool get isOpen => !_closed;
 
-  /// Stops the running download. Finished files are kept (the download can
-  /// resume, or the leftovers be deleted); the partial file is removed.
-  void cancelDownload() {
-    final cancel = _downloadCancel;
-    if (cancel != null && !cancel.isCompleted) cancel.complete();
-  }
+  /// Stops this book's download, queued or running; finished and partial
+  /// files stay, so a retry resumes.
+  void cancelDownload() => DownloadManager.instance.cancel(_folderName);
 
-  /// Downloads every audio file of the book, streaming each to disk and
-  /// reporting progress through [downloadProgress]. Finished files are kept
-  /// on failure, so a retry resumes with the next file.
-  ///
-  /// Keeps going with the screen off (see [DownloadKeepAlive]); the labels
-  /// are for its notification.
+  /// Queues the book in [DownloadManager]; labels are for its notification.
   Future<DownloadResult> downloadBook({
     String cancelLabel = 'Cancel',
     String channelName = 'Downloads',
   }) async {
-    if (isDownloading || tracks.isEmpty) return DownloadResult.failed;
-    isDownloading = true;
-    downloadProgress.value = 0;
-    final cancel = _downloadCancel = Completer<void>();
-    _notify();
-    // Byte progress only when every size is known; otherwise by file.
-    final sizesKnown = tracks.every((t) => t.size > 0);
-    final totalBytes = sizesKnown
-        ? tracks.fold<int>(0, (sum, t) => sum + t.size)
-        : 0;
-    var receivedBytes = 0;
-    var result = DownloadResult.failed;
-    File? part;
-    final keepAlive = DownloadKeepAlive.start(
-      title: bookTitle,
-      cancelLabel: cancelLabel,
-      channelName: channelName,
-      onCancel: cancelDownload,
+    if (tracks.isEmpty) return DownloadResult.failed;
+    final running = _downloadJob;
+    if (running != null) return await running.result;
+    return await DownloadManager.instance.enqueue(
+      DownloadJob(
+        key: _folderName,
+        dir: await localDirPath(),
+        title: bookTitle,
+        serverUrl: serverUrl,
+        token: token,
+        libraryItemId: libraryItemId,
+        episodeId: episodeId,
+        tracks: List.of(tracks),
+        hasCover: _hasCover,
+        sessionMeta: _sessionMeta,
+        cancelLabel: cancelLabel,
+        channelName: channelName,
+        client: _injectedClient,
+      ),
     );
-    try {
-      // Waiting for Wi-Fi takes up to a few seconds; a cancel ends it.
-      _downloadOnWifi = await Future.any([
-        keepAlive.onWifi,
-        cancel.future.then((_) => false),
-      ]);
-      if (cancel.isCompleted) throw const _DownloadCanceled();
-      _downloadClient = _injectedClient ?? _newClient();
-      final dir = Directory(await localDirPath())..createSync(recursive: true);
-      for (final (i, t) in tracks.indexed) {
-        if (cancel.isCompleted) throw const _DownloadCanceled();
-        final target = _localFile(dir.path, t);
-        // A finished file only exists after a complete download and rename.
-        if (target.existsSync() &&
-            (t.size == 0 || target.lengthSync() == t.size)) {
-          receivedBytes += t.size;
-          continue;
-        }
-        final response = await _requestDownload(t, cancel.future);
-        if (response.statusCode != 200) {
-          await response.stream.listen(null).cancel();
-          throw HttpException('HTTP ${response.statusCode} for ${t.filename}');
-        }
-        part = File('${target.path}.part');
-        // Synchronous writes fail right away when storage is full, instead
-        // of after the whole file was fetched.
-        final file = part.openSync(mode: FileMode.write);
-        final written = Completer<void>();
-        void fail(Object e, [StackTrace? s]) {
-          if (!written.isCompleted) written.completeError(e, s);
-        }
-
-        // Not `await for`: a cancel must end the wait for a stalled chunk.
-        unawaited(cancel.future.then((_) => fail(const _DownloadCanceled())));
-        // A stalled connection (Wi-Fi drop) must not hang forever.
-        final sub = response.stream
-            .timeout(const Duration(seconds: 30))
-            .listen(
-              (chunk) {
-                if (written.isCompleted) return;
-                try {
-                  if (_closed) throw const HttpException('Player closed');
-                  file.writeFromSync(chunk);
-                } on Object catch (e, s) {
-                  fail(e, s);
-                  return;
-                }
-                receivedBytes += chunk.length;
-                final progress = totalBytes > 0
-                    ? (receivedBytes / totalBytes).clamp(0.0, 1.0)
-                    : (i + 1) / tracks.length;
-                // Redraw per whole percent, not per network chunk.
-                if ((progress * 100).floor() !=
-                    ((downloadProgress.value ?? 0) * 100).floor()) {
-                  downloadProgress.value = progress;
-                  DownloadKeepAlive.progress(progress);
-                }
-              },
-              onError: fail,
-              onDone: () {
-                if (!written.isCompleted) written.complete();
-              },
-              cancelOnError: true,
-            );
-        try {
-          await written.future;
-        } finally {
-          await sub.cancel();
-          file.closeSync();
-        }
-        part.renameSync(target.path);
-        part = null;
-      }
-      result = DownloadResult.done;
-    } on _DownloadCanceled {
-      result = DownloadResult.canceled;
-    } on FileSystemException catch (e) {
-      debugPrint('Download failed: $e');
-      // ENOSPC is 28 on Linux/Android.
-      if (e.osError?.errorCode == 28) result = DownloadResult.noSpace;
-    } on Object catch (e) {
-      debugPrint('Download failed: $e');
-    } finally {
-      try {
-        if (part?.existsSync() ?? false) part!.deleteSync();
-      } on FileSystemException catch (e) {
-        debugPrint('Could not remove partial file: $e');
-      }
-      isDownloading = false;
-      _downloadCancel = null;
-      _downloadOnWifi = false;
-      _closeDownloadClient();
-      unawaited(keepAlive.stop());
-      if (!_closed) downloadProgress.value = null;
-      _notify();
-    }
-    if (result == DownloadResult.done && !_closed) {
-      await _saveSessionMeta();
-      await _downloadCover(await localDirPath());
-      await reloadSources();
-    }
-    return result;
   }
 
-  File _coverFile(String dir) => File('$dir/cover.jpg');
+  /// A download of this book finished: play the files from now on.
+  void _onDownloaded((String, DownloadResult) event) {
+    final (key, result) = event;
+    if (key != _folderName || result != DownloadResult.done) return;
+    if (_closed || !isLoaded) return;
+    unawaited(reloadSources());
+  }
 
   /// Saves the cover next to the audio, so the media notification shows it
   /// offline too. Best effort: a book without a cover is fine.
   Future<void> _downloadCover(String dir) async {
     if (!_hasCover) return;
-    final part = File('${_coverFile(dir).path}.part');
-    try {
-      final response = await _client
-          .get(
-            Uri.parse('$serverUrl/api/items/$libraryItemId/cover?width=400'),
-            headers: _authHeaders,
-          )
-          .timeout(const Duration(seconds: 20));
-      if (response.statusCode != 200 || response.bodyBytes.isEmpty) return;
-      // Renamed only when complete: a broken file would never be replaced.
-      await part.writeAsBytes(response.bodyBytes, flush: true);
-      await part.rename(_coverFile(dir).path);
-    } on Object catch (e) {
-      debugPrint('Could not save cover: $e');
-      try {
-        if (part.existsSync()) part.deleteSync();
-      } on FileSystemException {
-        // The folder may be gone (download deleted meanwhile).
-      }
-    }
+    await saveCover(
+      client: _client,
+      serverUrl: serverUrl,
+      token: token,
+      itemId: libraryItemId,
+      dir: dir,
+    );
   }
 
   Future<void> deleteDownload() async {
+    // Offline the files are all there is to play.
+    if (isOffline) return;
+    // A running download would write into the deleted folder.
+    final job = _downloadJob;
+    if (job != null) {
+      cancelDownload();
+      await job.result;
+    }
     final dir = Directory(await localDirPath());
     if (dir.existsSync()) dir.deleteSync(recursive: true);
     _notify(); // Show "not downloaded" before the slower reload.
@@ -1862,56 +2071,6 @@ class AudioPlayerController extends ChangeNotifier {
     _notify();
   }
 
-  /// Starts the download of one file. Retries once when the connection
-  /// drops before the response starts, which a reused keep-alive
-  /// connection can do.
-  ///
-  /// When the server can't be reached over the watch's Wi-Fi (e.g. only
-  /// through the phone's VPN), retries over the default network.
-  Future<http.StreamedResponse> _requestDownload(
-    BookTrack t,
-    Future<void> canceled,
-  ) async {
-    for (var attempt = 1; ; attempt++) {
-      // Abortable so a timed-out or canceled request releases its
-      // connection.
-      final abort = Completer<void>();
-      final request = http.AbortableRequest(
-        'GET',
-        Uri.parse('$serverUrl/api/items/$libraryItemId/file/${t.ino}/download'),
-        abortTrigger: Future.any([abort.future, canceled]),
-      )..headers.addAll(_authHeaders);
-      try {
-        return await Future.any([
-          _downloadClient!.send(request).timeout(const Duration(seconds: 30)),
-          canceled.then<http.StreamedResponse>(
-            (_) => throw const _DownloadCanceled(),
-          ),
-        ]);
-      } on _DownloadCanceled {
-        rethrow;
-      } on Object catch (e) {
-        if (e is TimeoutException) abort.complete();
-        final network = e is TimeoutException || e is http.ClientException;
-        if (!network || _closed) rethrow;
-        if (e is http.ClientException && attempt == 1) {
-          debugPrint('Download request failed, retrying: $e');
-          continue;
-        }
-        if (!_downloadOnWifi) rethrow;
-        debugPrint(
-          'Download over Wi-Fi failed, trying the default network: $e',
-        );
-        _downloadOnWifi = false;
-        await DownloadKeepAlive.useDefaultNetwork();
-        // New connections, over the default network.
-        _closeDownloadClient();
-        _downloadClient = _injectedClient ?? _newClient();
-        attempt = 0;
-      }
-    }
-  }
-
   /// Replaces the server session with a new one that streams the book as
   /// HLS where needed. The old session is closed at [position] only once
   /// the new one started, so when that fails the old one, still open, is
@@ -1955,8 +2114,10 @@ class AudioPlayerController extends ChangeNotifier {
   Future<void> close() {
     if (_closed) return _previousClose;
     _closed = true;
-    // Ends a running download now, releasing its service and wake lock.
-    cancelDownload();
+    _renewTimer?.cancel();
+    // A running download is left to finish: only a cancel or delete stops it.
+    DownloadManager.instance.removeListener(_notify);
+    unawaited(_downloadSub.cancel());
     // Chained, so a quick close can't let the next player start before a
     // slower earlier close saved its book's position. Errors are swallowed:
     // one failed close must not block the ones after it.
@@ -1973,6 +2134,7 @@ class AudioPlayerController extends ChangeNotifier {
       // the next book can start; the close request uses the recorded one.
       final position = bookPosition;
       _listenClock.stop();
+      _skipSyncTimer?.cancel();
       await _stateSub?.cancel();
       await _errorSub?.cancel();
       await player.dispose();
@@ -1999,8 +2161,7 @@ class AudioPlayerController extends ChangeNotifier {
         }
       }
       _client.close();
-      downloadProgress.dispose();
-      _sleepTimer?.cancel();
+      _stopSleepTimers();
       sleepRemaining.dispose();
       super.dispose();
     }

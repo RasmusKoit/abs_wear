@@ -6,6 +6,7 @@ import 'package:abs_wear/l10n/l10n.dart';
 import 'package:abs_wear/player/components/scrolling_text.dart';
 import 'package:abs_wear/player/components/time_left_widget.dart';
 import 'package:abs_wear/player/darts/audio_player.dart';
+import 'package:abs_wear/player/view/headphone_prompt.dart';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 
@@ -18,74 +19,23 @@ class PlayerViewPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final controller = playerController;
-    // Rebuild when the session loads/reloads and as playback moves, so the
-    // title and chapter show before playback starts.
-    return ListenableBuilder(
-      listenable: controller,
-      builder: (context, _) {
-        if (!controller.isLoaded) {
-          return Center(
-            child: CircularProgressIndicator(
-              semanticsLabel: context.l10n.loading,
-            ),
-          );
-        }
-        final ambient = AmbientModeListener.instance;
-        return ValueListenableBuilder<bool>(
-          valueListenable: ambient,
-          builder: (context, isAmbient, _) => isAmbient
-              // Ambient: redraw only on the system's (minutely) updates.
-              ? ValueListenableBuilder<int>(
-                  valueListenable: ambient.updates,
-                  builder: (context, tick, _) =>
-                      _ambientContent(theme, tick, ambient.burnInProtection),
-                )
-              : PlaybackTicker(
-                  playing: controller.player.playerStateStream.map(
-                    (state) => state.playing,
-                  ),
-                  changes: controller.player.playbackEventStream,
-                  builder: (context) => _content(context, theme),
+    return AmbientPlayerGate(
+      playerController: controller,
+      // Rebuild when the session loads/reloads and as playback moves, so
+      // the title and chapter show before playback starts.
+      child: ListenableBuilder(
+        listenable: controller,
+        builder: (context, _) => !controller.isLoaded
+            ? const _Loading()
+            : PlaybackTicker(
+                playing: controller.player.playerStateStream.map(
+                  (state) => state.playing,
                 ),
-        );
-      },
+                changes: controller.player.playbackEventStream,
+                builder: (context) => _content(context, theme),
+              ),
+      ),
     );
-  }
-
-  /// Always-on variant: no buttons (few lit pixels), minutes only (it
-  /// redraws about once a minute), shifted a little on each update when
-  /// the display needs burn-in protection.
-  Widget _ambientContent(ThemeData theme, int tick, bool burnIn) {
-    final controller = playerController;
-    final shift = burnIn ? Offset((tick % 3 - 1) * 4, (tick % 2) * 4) : null;
-    final content = Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 35),
-          child: ScrollingText(
-            text: controller.bookTitle,
-            style: theme.textTheme.labelMedium!,
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 30),
-          child: ScrollingText(
-            text: controller.chapterName,
-            style: theme.textTheme.labelSmall!,
-          ),
-        ),
-        const SizedBox(height: 12),
-        TimeLeftWidget(
-          timeLeft: controller.timeLeft,
-          seconds: false,
-          style: theme.textTheme.labelSmall!,
-        ),
-      ],
-    );
-    return shift == null
-        ? content
-        : Transform.translate(offset: shift, child: content);
   }
 
   Widget _content(BuildContext context, ThemeData theme) {
@@ -146,6 +96,94 @@ class PlayerViewPage extends StatelessWidget {
       ],
     );
   }
+}
+
+/// Shows [child], or [PlayerAmbientView] while ambient (unbuilding [child]).
+class AmbientPlayerGate extends StatelessWidget {
+  const AmbientPlayerGate({
+    required this.playerController,
+    required this.child,
+    super.key,
+  });
+
+  final AudioPlayerController playerController;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => ValueListenableBuilder<bool>(
+    valueListenable: AmbientModeListener.instance,
+    builder: (context, ambient, child) => ambient
+        ? PlayerAmbientView(playerController: playerController)
+        : child!,
+    child: child,
+  );
+}
+
+/// The always-on player layout, shown in ambient mode on every player page.
+class PlayerAmbientView extends StatelessWidget {
+  const PlayerAmbientView({required this.playerController, super.key});
+
+  final AudioPlayerController playerController;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final ambient = AmbientModeListener.instance;
+    return ListenableBuilder(
+      listenable: playerController,
+      builder: (context, _) => !playerController.isLoaded
+          ? const _Loading()
+          // Redraw only on the system's (minutely) updates.
+          : ValueListenableBuilder<int>(
+              valueListenable: ambient.updates,
+              builder: (context, tick, _) =>
+                  _content(theme, tick, ambient.burnInProtection),
+            ),
+    );
+  }
+
+  // No buttons, minutes only, shifted per update when burn-in matters.
+  Widget _content(ThemeData theme, int tick, bool burnIn) {
+    final controller = playerController;
+    final shift = burnIn ? Offset((tick % 3 - 1) * 4, (tick % 2) * 4) : null;
+    final content = Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 35),
+          child: ScrollingText(
+            text: controller.bookTitle,
+            style: theme.textTheme.labelMedium!,
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 30),
+          child: ScrollingText(
+            text: controller.chapterName,
+            style: theme.textTheme.labelSmall!,
+          ),
+        ),
+        const SizedBox(height: 12),
+        TimeLeftWidget(
+          timeLeft: controller.timeLeft,
+          seconds: false,
+          style: theme.textTheme.labelSmall!,
+        ),
+      ],
+    );
+    return shift == null
+        ? content
+        : Transform.translate(offset: shift, child: content);
+  }
+}
+
+class _Loading extends StatelessWidget {
+  const _Loading();
+
+  @override
+  Widget build(BuildContext context) => Center(
+    child: CircularProgressIndicator(semanticsLabel: context.l10n.loading),
+  );
 }
 
 /// Rebuilds [builder] once a second while [playing] is true and the app is
@@ -255,7 +293,7 @@ class _PlayPauseButton extends StatelessWidget {
         return IconButton(
           tooltip: playing ? context.l10n.pause : context.l10n.play,
           icon: Icon(playing ? Icons.pause : Icons.play_arrow),
-          onPressed: () => unawaited(controller.togglePlayPause()),
+          onPressed: () => unawaited(togglePlayChecked(context, controller)),
         );
       },
     );

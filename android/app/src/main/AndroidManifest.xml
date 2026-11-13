@@ -72,6 +72,21 @@
             android:foregroundServiceType="dataSync"
             android:exported="false" />
 
+        <!-- "Continue listening" tile -->
+        <service
+            android:name=".ContinueTileService"
+            android:label="@string/continue_listening"
+            android:icon="@mipmap/ic_launcher"
+            android:exported="true"
+            android:permission="com.google.android.wearable.permission.BIND_TILE_PROVIDER">
+            <intent-filter>
+                <action android:name="androidx.wear.tiles.action.BIND_TILE_PROVIDER" />
+            </intent-filter>
+            <meta-data
+                android:name="androidx.wear.tiles.PREVIEW"
+                android:resource="@drawable/tile_preview" />
+        </service>
+
         <!-- Add MediaButtonReceiver as a receiver -->
         <receiver
             android:name="com.ryanheise.audioservice.MediaButtonReceiver"
