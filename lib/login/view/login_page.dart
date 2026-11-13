@@ -9,6 +9,7 @@ import 'package:abs_wear/l10n/l10n.dart';
 import 'package:abs_wear/library/data/json_cache.dart';
 import 'package:abs_wear/library/data/library_api.dart';
 import 'package:abs_wear/library/view/library_page.dart';
+import 'package:abs_wear/login/data/auth_session.dart';
 import 'package:abs_wear/login/data/server_login.dart';
 import 'package:abs_wear/login/data/sso/phone_auth.dart';
 import 'package:abs_wear/login/data/sso/sso_login.dart';
@@ -132,7 +133,8 @@ class LoginPageState extends State<LoginPage> {
   Future<void> _restoreSession() async {
     final epoch = _sessionEpoch;
     final prefs = await SharedPreferences.getInstance();
-    final savedToken = prefs.getString('token');
+    final savedToken = prefs.getString(AuthSession.accessKey);
+    final savedRefresh = prefs.getString(AuthSession.refreshKey);
     final savedServerUrl = prefs.getString('serverUrl');
     final savedUsername = prefs.getString('username');
     final savedDefaultLibraryId = prefs.getString('defaultLibraryId');
@@ -143,6 +145,7 @@ class LoginPageState extends State<LoginPage> {
       }
       return;
     }
+    AuthSession.instance.start(savedServerUrl, savedToken, savedRefresh);
     var libraryId = savedDefaultLibraryId ?? '';
     if (libraryId.isEmpty) {
       // Older installs could save a token without a library; resolve one
@@ -161,7 +164,7 @@ class LoginPageState extends State<LoginPage> {
     if (!mounted || epoch != _sessionEpoch || _loggingIn) return;
     warmUp(savedServerUrl, savedToken);
     setState(() {
-      _token = savedToken;
+      _token = AuthSession.instance.current(savedToken);
       serverUrlController.text = savedServerUrl;
       usernameController.text = savedUsername ?? '';
       defaultLibraryId = libraryId;
@@ -194,7 +197,11 @@ class LoginPageState extends State<LoginPage> {
       final response = await http
           .post(
             Uri.parse('$url/login'),
-            headers: {'Content-Type': 'application/json'},
+            headers: {
+              'Content-Type': 'application/json',
+              // Asks Audiobookshelf 2.26+ for a refresh token too.
+              'x-return-tokens': 'true',
+            },
             body: jsonEncode({'username': username, 'password': password}),
           )
           .timeout(const Duration(seconds: 20));
@@ -211,6 +218,8 @@ class LoginPageState extends State<LoginPage> {
       await _completeLogin(url, data, username: username);
     } on TimeoutException {
       await _toast(l10n.serverTimeout);
+    } on MissingTokenException {
+      await _toast(l10n.noUsableToken);
     } on Object catch (e) {
       // Network errors are Exceptions, but bad responses throw TypeError
       // from the casts above; both should end in a message, not silence.
@@ -228,9 +237,8 @@ class LoginPageState extends State<LoginPage> {
     Map<String, dynamic> data, {
     required String username,
   }) async {
-    final user = data['user'] as Map<String, dynamic>;
-    // The legacy token: it doesn't expire, unlike user.accessToken.
-    final token = user['token'] as String;
+    final tokens = LoginTokens.fromLogin(data);
+    final token = tokens.access;
     // The library last picked on the watch by this user, else theirs
     // from the server.
     final picked = (await SharedPreferences.getInstance())
@@ -257,12 +265,19 @@ class LoginPageState extends State<LoginPage> {
     // Some servers hand out the same token on every login: drop a leftover
     // logout of it before saving it, so a kill in between can't make the
     // next start take this new session for that unfinished logout.
-    if (prefs.getStringList(_pendingLogoutKey)?.last == token) {
+    if (_pendingToken(prefs) == token) {
       await prefs.remove(_pendingLogoutKey);
     }
+    AuthSession.instance.start(url, token, tokens.refresh);
     await prefs.setString('serverUrl', url);
     await prefs.setString('username', username);
-    await prefs.setString('token', token);
+    await prefs.setString(AuthSession.accessKey, token);
+    final refresh = tokens.refresh;
+    if (refresh == null) {
+      await prefs.remove(AuthSession.refreshKey);
+    } else {
+      await prefs.setString(AuthSession.refreshKey, refresh);
+    }
     await prefs.setString('defaultLibraryId', libraryId);
     // Don't keep passwords in memory once they have done their job.
     passwordController.clear();
@@ -470,6 +485,7 @@ class LoginPageState extends State<LoginPage> {
       SsoException(error: SsoError.accessDenied) => l10n.ssoAccessDenied,
       SsoException(error: SsoError.noAccount) => l10n.ssoNoAccount,
       SsoException() => l10n.ssoFailed,
+      MissingTokenException() => l10n.noUsableToken,
       // A response the adapter didn't expect, not a network problem.
       TypeError() || FormatException() => l10n.ssoFailed,
       TimeoutException() => l10n.serverTimeout,
@@ -605,6 +621,7 @@ class LoginPageState extends State<LoginPage> {
         l10n.ssoRedirectNotAllowed(redirect),
       SsoException(error: SsoError.notEnabled) => l10n.ssoNotEnabled,
       SsoException(error: SsoError.noAccount) => l10n.ssoNoAccount,
+      MissingTokenException() => l10n.noUsableToken,
       SsoException() || TypeError() || FormatException() => l10n.ssoFailed,
       TimeoutException() => l10n.serverTimeout,
       _ => l10n.cannotReachServer,
@@ -624,6 +641,7 @@ class LoginPageState extends State<LoginPage> {
             SsoError.noAccount,
       ) =>
         false,
+      MissingTokenException() => false,
       _ => true,
     };
     if (mounted) {
@@ -641,12 +659,15 @@ class LoginPageState extends State<LoginPage> {
     String token, {
     List<String?> preferred = const [],
   }) async {
-    final response = await http
-        .get(
-          Uri.parse('$url/api/libraries'),
-          headers: {'Authorization': 'Bearer $token'},
-        )
-        .timeout(const Duration(seconds: 20));
+    final response = await AuthSession.instance.send(
+      token,
+      (token) => http
+          .get(
+            Uri.parse('$url/api/libraries'),
+            headers: {'Authorization': 'Bearer $token'},
+          )
+          .timeout(const Duration(seconds: 20)),
+    );
     if (response.statusCode != 200) return null;
     final body = jsonDecode(response.body) as Map<String, dynamic>;
     final libraries = (body['libraries'] as List)
@@ -661,17 +682,28 @@ class LoginPageState extends State<LoginPage> {
     return pick?['id'] as String?;
   }
 
-  /// Server and token of an explicit logout whose token isn't revoked yet.
+  /// Server, token and refresh token (if any) of an explicit logout whose
+  /// token isn't revoked yet.
   /// Set before the saved token is removed, so a logout cut short (the app
   /// killed meanwhile) is finished on the next start.
   static const _pendingLogoutKey = 'pendingLogout';
+
+  /// The token of the pending logout, if any.
+  static String? _pendingToken(SharedPreferences prefs) {
+    final pending = prefs.getStringList(_pendingLogoutKey);
+    return pending != null && pending.length >= 2 ? pending[1] : null;
+  }
 
   /// Forgets the session. With [deleteDownloads] (an explicit logout) the
   /// server is told to end the session (best effort; legacy API tokens may
   /// stay valid) and downloaded books are removed from the watch.
   Future<void> logout({bool deleteDownloads = false}) async {
     _sessionEpoch++;
-    final token = _token;
+    final auth = AuthSession.instance;
+    final token = auth.current(_token);
+    final refresh = auth.accessToken == token ? auth.refreshToken : null;
+    // First, so no refresh can save tokens again after this.
+    auth.clear();
     final url = serverUrlController.text;
     final user = usernameController.text;
     // This account's book and downloads; closing syncs while the token works.
@@ -682,9 +714,10 @@ class LoginPageState extends State<LoginPage> {
     final prefs = await SharedPreferences.getInstance();
     passwordController.clear();
     if (deleteDownloads && token.isNotEmpty) {
-      await prefs.setStringList(_pendingLogoutKey, [url, token]);
+      await prefs.setStringList(_pendingLogoutKey, [url, token, ?refresh]);
     }
-    await prefs.remove('token');
+    await prefs.remove(AuthSession.accessKey);
+    await prefs.remove(AuthSession.refreshKey);
     await prefs.remove('defaultLibraryId');
     if (mounted) {
       setState(() {
@@ -716,7 +749,7 @@ class LoginPageState extends State<LoginPage> {
           user,
         ).timeout(const Duration(seconds: 15), onTimeout: () {});
       }
-      unawaited(_revokeAndForget(prefs, url, token));
+      unawaited(_revokeAndForget(prefs, url, token, refresh));
       // What still couldn't be sent stays for this user's next login rather
       // than being lost; other accounts never read it.
       await AudioPlayerController.clearAllLocalProgress(keepPending: true);
@@ -744,10 +777,10 @@ class LoginPageState extends State<LoginPage> {
     SharedPreferences prefs,
     String url,
     String token,
+    String? refresh,
   ) async {
-    await _revokeToken(url, token);
-    final pending = prefs.getStringList(_pendingLogoutKey);
-    if (pending != null && pending.last == token) {
+    await _revokeToken(url, token, refresh);
+    if (_pendingToken(prefs) == token) {
       await prefs.remove(_pendingLogoutKey);
     }
   }
@@ -761,28 +794,40 @@ class LoginPageState extends State<LoginPage> {
     final prefs = await SharedPreferences.getInstance();
     final pending = prefs.getStringList(_pendingLogoutKey);
     if (pending == null) return;
-    if (pending.length != 2) {
+    if (pending.length != 2 && pending.length != 3) {
       await prefs.remove(_pendingLogoutKey);
       return;
     }
-    final saved = prefs.getString('token') ?? '';
-    if (saved.isEmpty || saved == pending.last) {
-      await prefs.remove('token');
+    final saved = prefs.getString(AuthSession.accessKey) ?? '';
+    if (saved.isEmpty || saved == pending[1]) {
+      await prefs.remove(AuthSession.accessKey);
+      await prefs.remove(AuthSession.refreshKey);
       await prefs.remove('defaultLibraryId');
       await prefs.remove('pickedLibrary');
       await _deleteDownloadsAndCache();
       await AudioPlayerController.clearAllLocalProgress(keepPending: true);
     }
-    unawaited(_revokeAndForget(prefs, pending.first, pending.last));
+    unawaited(
+      _revokeAndForget(
+        prefs,
+        pending[0],
+        pending[1],
+        pending.length == 3 ? pending[2] : null,
+      ),
+    );
   }
 
-  Future<void> _revokeToken(String url, String token) async {
+  Future<void> _revokeToken(String url, String token, String? refresh) async {
     if (token.isEmpty) return;
     try {
       await http
           .post(
             Uri.parse('$url/logout'),
-            headers: {'Authorization': 'Bearer $token'},
+            headers: {
+              'Authorization': 'Bearer $token',
+              // The server ends the session this refresh token belongs to.
+              'x-refresh-token': ?refresh,
+            },
           )
           .timeout(const Duration(seconds: 10));
     } on Object catch (e) {

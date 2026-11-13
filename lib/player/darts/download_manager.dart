@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:abs_wear/login/data/auth_session.dart';
 import 'package:abs_wear/player/darts/audio_player.dart';
 import 'package:abs_wear/player/darts/download_keep_alive.dart';
 import 'package:flutter/foundation.dart';
@@ -35,13 +36,19 @@ Future<void> saveCover({
 }) async {
   final part = File('${coverFileIn(dir).path}.part');
   try {
-    final response = await Future.any([
-      client
+    final request = AuthSession.instance.send(
+      token,
+      (token) => client
           .get(
             Uri.parse('$serverUrl/api/items/$itemId/cover?width=400'),
             headers: {'Authorization': 'Bearer $token'},
           )
           .timeout(const Duration(seconds: 20)),
+    );
+    // A cancel stops waiting for a token refresh, which others may share.
+    unawaited(request.then((_) {}, onError: (_) {}));
+    final response = await Future.any([
+      request,
       if (canceled != null)
         canceled.then<http.Response>((_) => throw const _DownloadCanceled()),
     ]);
@@ -84,6 +91,8 @@ class DownloadJob {
   final String dir;
   final String title;
   final String serverUrl;
+
+  /// The token at queue time; requests send its refreshed successor.
   final String token;
   final String libraryItemId;
   final String? episodeId;
@@ -127,8 +136,6 @@ class DownloadJob {
   /// Shorter than the server's keep-alive, like the player's client.
   static const _idleTimeout = Duration(seconds: 3);
 
-  Map<String, String> get _authHeaders => {'Authorization': 'Bearer $token'};
-
   /// Downloads every file; finished and partial files are kept so a retry
   /// resumes where it stopped.
   Future<DownloadResult> _run(_QueueRun run) async {
@@ -163,7 +170,7 @@ class DownloadJob {
           receivedBytes += t.size;
           continue;
         }
-        var response = await _requestDownload(
+        var response = await _authedDownload(
           t,
           run,
           from: offset,
@@ -174,7 +181,7 @@ class DownloadJob {
           await response.stream.listen(null).cancel();
           _dropPart(part);
           offset = 0;
-          response = await _requestDownload(t, run);
+          response = await _authedDownload(t, run);
         }
         if (response.statusCode == 206 &&
             !_rangeStartsAt(response.headers['content-range'], offset)) {
@@ -315,10 +322,33 @@ class DownloadJob {
     }
   }
 
+  /// [_requestDownload] with the current token, again after a refresh on a
+  /// 401; a cancel ends it at once, even while waiting for the refresh.
+  Future<http.StreamedResponse> _authedDownload(
+    BookTrack t,
+    _QueueRun run, {
+    int from = 0,
+    String? ifRange,
+  }) {
+    final request = AuthSession.instance.send(
+      token,
+      (token) => _requestDownload(t, run, token, from: from, ifRange: ifRange),
+    );
+    // A cancel stops waiting for a token refresh, which others may share.
+    unawaited(request.then((_) {}, onError: (_) {}));
+    return Future.any([
+      request,
+      _cancel.future.then<http.StreamedResponse>(
+        (_) => throw const _DownloadCanceled(),
+      ),
+    ]);
+  }
+
   /// Requests one file, retrying once and then over the default network.
   Future<http.StreamedResponse> _requestDownload(
     BookTrack t,
-    _QueueRun run, {
+    _QueueRun run,
+    String token, {
     int from = 0,
     String? ifRange,
   }) async {
@@ -330,7 +360,7 @@ class DownloadJob {
         'GET',
         Uri.parse('$serverUrl/api/items/$libraryItemId/file/${t.ino}/download'),
         abortTrigger: Future.any([abort.future, _cancel.future]),
-      )..headers.addAll(_authHeaders);
+      )..headers['Authorization'] = 'Bearer $token';
       if (from > 0) request.headers['range'] = 'bytes=$from-';
       if (from > 0 && ifRange != null) request.headers['if-range'] = ifRange;
       try {

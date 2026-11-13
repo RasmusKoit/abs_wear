@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:abs_wear/l10n/l10n.dart';
+import 'package:abs_wear/login/data/auth_session.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
@@ -183,6 +184,17 @@ void _discard(http.Client client, {required bool cover}) {
 /// GETs [url], retrying once on a connection error. Covers have their own
 /// connections, so lists never wait behind them.
 Future<http.Response> apiGet(
+  String url,
+  String token, {
+  String? accept,
+  bool cover = false,
+}) => AuthSession.instance.send(
+  token,
+  (token) => _apiGet(url, token, accept: accept, cover: cover),
+);
+
+/// [apiGet] without the retry after a token refresh.
+Future<http.Response> _apiGet(
   String url,
   String token, {
   String? accept,

@@ -48,7 +48,8 @@ class NowPlaying extends ChangeNotifier {
     required String user,
     String? episodeId,
   }) {
-    final key = [serverUrl, user, token, libraryItemId, episodeId].join('|');
+    // Not the token: a refreshed one still means the same login (see logout).
+    final key = [serverUrl, user, libraryItemId, episodeId].join('|');
     final current = _controller;
     if (current != null && current.isOpen && _key == key) {
       return (controller: current, ready: _ready, created: false);
@@ -123,10 +124,9 @@ class NowPlaying extends ChangeNotifier {
     final controller = instance._controller;
     if (controller != null && controller.isLoaded) {
       // The library shows server progress: post now, not on the 10th tick.
-      await controller.periodicSync(post: true).timeout(
-        const Duration(seconds: 25),
-        onTimeout: () {},
-      );
+      await controller
+          .periodicSync(post: true)
+          .timeout(const Duration(seconds: 25), onTimeout: () {});
     }
     await AudioPlayerController.lastClose;
   }

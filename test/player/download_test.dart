@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:abs_wear/login/data/auth_session.dart';
 import 'package:abs_wear/player/darts/audio_player.dart';
 import 'package:abs_wear/player/darts/download_keep_alive.dart';
 import 'package:abs_wear/player/darts/download_manager.dart';
@@ -10,6 +11,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class _FakePathProvider extends PathProviderPlatform
     with MockPlatformInterfaceMixin {
@@ -300,6 +302,80 @@ void main() {
       DownloadResult.canceled,
     );
     expect(calls.last, 'stop');
+  });
+
+  test('cancel while a 401 waits for a token refresh', () async {
+    AuthSession.instance.start('http://abs.test', 'acc1', 'ref1');
+    addTearDown(AuthSession.instance.clear);
+    final refresh = Completer<http.Response>();
+    final controller = controllerWith(
+      MockClient.streaming(
+        (request, _) async => http.StreamedResponse(Stream.value([]), 401),
+      ),
+    )..token = 'acc1';
+
+    final result = http.runWithClient(
+      controller.downloadBook,
+      () => MockClient((_) => refresh.future),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    controller.cancelDownload();
+    expect(
+      await result.timeout(const Duration(seconds: 2)),
+      DownloadResult.canceled,
+    );
+    expect(calls.last, 'stop');
+    refresh.complete(http.Response('', 503));
+  });
+
+  test('a queued book sends the token refreshed meanwhile', () async {
+    SharedPreferences.setMockInitialValues({});
+    AuthSession.instance.start('http://abs.test', 'acc1', 'ref1');
+    addTearDown(AuthSession.instance.clear);
+    final auth = <String, List<String?>>{};
+    final bodies = <String, StreamController<List<int>>>{};
+    final client = MockClient.streaming((request, _) async {
+      final path = request.url.path;
+      if (!path.endsWith('/download')) {
+        return http.StreamedResponse(const Stream.empty(), 404);
+      }
+      final item = path.split('/')[3];
+      (auth[item] ??= []).add(request.headers['authorization']);
+      if (request.headers['authorization'] == 'Bearer acc1') {
+        return http.StreamedResponse(const Stream.empty(), 401);
+      }
+      final body = bodies[item] = StreamController<List<int>>();
+      return http.StreamedResponse(body.stream, 200, contentLength: 1000);
+    });
+    final refreshes = <String?>[];
+    final refresh = MockClient((request) async {
+      refreshes.add(request.headers['x-refresh-token']);
+      return http.Response(
+        '{"user":{"accessToken":"acc2","refreshToken":"ref2"}}',
+        200,
+      );
+    });
+
+    await http.runWithClient(() async {
+      final first = controllerWith(client)..token = 'acc1';
+      final second = controllerWith(client, item: 'li_2')..token = 'acc1';
+      final results = [first.downloadBook(), second.downloadBook()];
+      await settle();
+      bodies['li_1']!.add(List.filled(1000, 1));
+      await bodies['li_1']!.close();
+      await settle();
+      bodies['li_2']!.add(List.filled(1000, 1));
+      await bodies['li_2']!.close();
+      expect(await Future.wait(results), [
+        DownloadResult.done,
+        DownloadResult.done,
+      ]);
+    }, () => refresh);
+
+    // One refresh after the 401; the queued book starts with the new token.
+    expect(refreshes, ['ref1']);
+    expect(auth['li_1'], ['Bearer acc1', 'Bearer acc2']);
+    expect(auth['li_2'], ['Bearer acc2']);
   });
 
   test('falls back to the default network when Wi-Fi fails', () async {

@@ -7,6 +7,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
+import 'package:abs_wear/login/data/auth_session.dart';
 import 'package:abs_wear/player/darts/download_manager.dart';
 import 'package:abs_wear/player/darts/network_lock.dart';
 import 'package:device_info_plus/device_info_plus.dart';
@@ -380,7 +381,14 @@ class AudioPlayerController extends ChangeNotifier {
 
   bool get _audioLoaded => player.processingState != ProcessingState.idle;
 
-  Map<String, String> get _authHeaders => {'Authorization': 'Bearer $token'};
+  Map<String, String> get _authHeaders => {
+    'Authorization': 'Bearer ${AuthSession.instance.current(token)}',
+  };
+
+  /// Runs [request] (using [_authHeaders]), again after a refresh on a 401.
+  Future<R> _authed<R extends http.BaseResponse>(
+    Future<R> Function() request,
+  ) => AuthSession.instance.send(token, (_) => request());
 
   /// Position in the whole book, across all audio files. While audio is
   /// loaded this also records the last known position, so a stop, error or
@@ -430,6 +438,22 @@ class AudioPlayerController extends ChangeNotifier {
   /// Called when playback fails (e.g. network loss); the page shows the
   /// localized message.
   void Function()? onPlaybackError;
+
+  /// The token in the streamed sources' headers; null when none needs one.
+  String? _sourceToken;
+
+  /// Reloads the streamed sources with a new token before theirs expires.
+  Timer? _renewTimer;
+
+  /// How long before expiry streamed sources get a new token.
+  static const _renewMargin = Duration(minutes: 2);
+
+  /// The source token an expiry error was already recovered from (no loops).
+  String? _recoveredFrom;
+
+  /// The token the streamed sources use; read by tests.
+  @visibleForTesting
+  String? get sourceToken => _sourceToken;
 
   /// Serialises syncs so overlapping calls don't double-report time.
   Future<void> _syncChain = Future.value();
@@ -669,10 +693,13 @@ class AudioPlayerController extends ChangeNotifier {
     await lastClose;
     final dir = await _localProgressDir();
     if (!dir.existsSync()) return;
-    final headers = {
-      'Authorization': 'Bearer $token',
+    Map<String, String> headers() => {
+      'Authorization': 'Bearer ${AuthSession.instance.current(token)}',
       'Content-Type': 'application/json',
     };
+    Future<R> authed<R extends http.BaseResponse>(
+      Future<R> Function() request,
+    ) => AuthSession.instance.send(token, (_) => request());
     final client = http.Client();
     try {
       for (final file in dir.listSync().whereType<File>()) {
@@ -688,9 +715,11 @@ class AudioPlayerController extends ChangeNotifier {
           final key = _keyFor(serverUrl, user, mediaPath);
           if (_openKeys.containsKey(key)) continue;
           final url = Uri.parse('$serverUrl/api/me/progress/$mediaPath');
-          final current = await client
-              .get(url, headers: headers)
-              .timeout(const Duration(seconds: 10));
+          final current = await authed(
+            () => client
+                .get(url, headers: headers())
+                .timeout(const Duration(seconds: 10)),
+          );
           // Without an answer the server may have newer progress: keep the
           // file pending and try again on the next push.
           if (current.statusCode != 200 && current.statusCode != 404) {
@@ -705,18 +734,20 @@ class AudioPlayerController extends ChangeNotifier {
           if (serverUpdated <= (json['updatedAt'] as num).toInt()) {
             final time = (json['currentTime'] as num).toDouble();
             final duration = (json['duration'] as num?)?.toDouble() ?? 0;
-            final response = await client
-                .patch(
-                  url,
-                  headers: headers,
-                  body: jsonEncode({
-                    'currentTime': time,
-                    if (duration > 0) 'duration': duration,
-                    if (duration > 0)
-                      'progress': (time / duration).clamp(0.0, 1.0),
-                  }),
-                )
-                .timeout(const Duration(seconds: 10));
+            final response = await authed(
+              () => client
+                  .patch(
+                    url,
+                    headers: headers(),
+                    body: jsonEncode({
+                      'currentTime': time,
+                      if (duration > 0) 'duration': duration,
+                      if (duration > 0)
+                        'progress': (time / duration).clamp(0.0, 1.0),
+                    }),
+                  )
+                  .timeout(const Duration(seconds: 10)),
+            );
             if (response.statusCode != 200) continue;
             updated = {...json, 'pending': false};
           } else {
@@ -863,12 +894,14 @@ class AudioPlayerController extends ChangeNotifier {
     Duration timeout,
   ) async {
     try {
-      final response = await _client
-          .get(
-            Uri.parse('$serverUrl/api/me/progress/$_mediaPath'),
-            headers: _authHeaders,
-          )
-          .timeout(timeout);
+      final response = await _authed(
+        () => _client
+            .get(
+              Uri.parse('$serverUrl/api/me/progress/$_mediaPath'),
+              headers: _authHeaders,
+            )
+            .timeout(timeout),
+      );
       if (response.statusCode == 404) return (lastUpdate: 0, time: null);
       if (response.statusCode != 200) return null;
       final json = jsonDecode(response.body) as Map<String, dynamic>;
@@ -975,6 +1008,7 @@ class AudioPlayerController extends ChangeNotifier {
   void _onPlayerError(PlayerException e) {
     debugPrint('Playback error: ${e.code} ${e.message}');
     if (_closed) return;
+    final play = player.playing || _wasPlaying;
     // The player is idle now, so bookPosition would return a stale cached
     // value; the error event carries the real position.
     final index = e.index ?? player.currentIndex ?? 0;
@@ -984,8 +1018,94 @@ class AudioPlayerController extends ChangeNotifier {
     }
     _needsReload = true;
     unawaited(player.pause());
+    final source = _sourceToken;
+    if (source != null &&
+        source != _recoveredFrom &&
+        AuthSession.instance.isStale(source, margin: _staleMargin)) {
+      // Most likely a 401 on an expired token: renew and carry on quietly.
+      _recoveredFrom = source;
+      unawaited(_recoverSources(source, play: play));
+      _notify();
+      return;
+    }
     onPlaybackError?.call();
     _notify();
+  }
+
+  /// Leeway for the watch's clock running behind the server's.
+  static const _staleMargin = Duration(seconds: 30);
+
+  /// Test hook for a playback error from the native player.
+  @visibleForTesting
+  void debugPlayerError(PlayerException e) => _onPlayerError(e);
+
+  /// Test hook for the renewal timer firing.
+  @visibleForTesting
+  Future<void> debugRenewSources() => _renewSources();
+
+  /// Whether a renewal is scheduled; read by tests.
+  @visibleForTesting
+  bool get renewalScheduled => _renewTimer?.isActive ?? false;
+
+  void _scheduleRenewal() {
+    _renewTimer?.cancel();
+    _renewTimer = null;
+    final source = _sourceToken;
+    if (source == null || _closed) return;
+    final due = AuthSession.instance.renewIn(source, margin: _renewMargin);
+    if (due == null) return;
+    _renewTimer = Timer(due, () => unawaited(_renewSources()));
+  }
+
+  /// Reloads the streamed sources at the same position with a renewed token.
+  Future<void> _renewSources() async {
+    final source = _sourceToken;
+    if (_closed || source == null) return;
+    String? fresh;
+    try {
+      fresh = await AuthSession.instance.freshToken(
+        source,
+        margin: _renewMargin,
+      );
+    } on Object catch (e) {
+      debugPrint('Could not renew the stream token: $e');
+      // Offline for now: try again shortly, the 401 recovery is the backstop.
+      if (!_closed && _sourceToken == source) {
+        _renewTimer = Timer(
+          const Duration(minutes: 1),
+          () => unawaited(_renewSources()),
+        );
+      }
+      return;
+    }
+    if (_closed || fresh == null || fresh == source) return;
+    // Replaced meanwhile, or idle after an error: the next load renews it.
+    if (_sourceToken != source || _reloading || _needsReload) return;
+    await reloadSources();
+  }
+
+  /// After an expiry error: renews the token and reloads where it stopped.
+  Future<void> _recoverSources(String source, {required bool play}) async {
+    String? fresh;
+    try {
+      fresh = await AuthSession.instance.freshToken(
+        source,
+        margin: _renewMargin,
+      );
+    } on Object catch (e) {
+      debugPrint('Could not renew the stream token: $e');
+    }
+    if (_closed) return;
+    if (fresh == null || fresh == source) {
+      // Can't renew (offline, or logged out on the server): the usual error.
+      onPlaybackError?.call();
+      _notify();
+      return;
+    }
+    // A Play tap meanwhile already reloaded.
+    if (!_needsReload || _reloading) return;
+    _playAfterReload = play;
+    await reloadSources();
   }
 
   /// Closes a session that was started after the player was closed,
@@ -1001,21 +1121,23 @@ class AudioPlayerController extends ChangeNotifier {
     if (id.isEmpty) return;
     final client = http.Client();
     try {
-      await client
-          .post(
-            Uri.parse('$serverUrl/api/session/$id/close'),
-            headers: {..._authHeaders, 'Content-Type': 'application/json'},
-            body: jsonEncode(
-              position == null
-                  ? const <String, Object?>{}
-                  : {
-                      'currentTime': position,
-                      'timeListened': 0,
-                      'duration': duration,
-                    },
-            ),
-          )
-          .timeout(const Duration(seconds: 20));
+      await _authed(
+        () => client
+            .post(
+              Uri.parse('$serverUrl/api/session/$id/close'),
+              headers: {..._authHeaders, 'Content-Type': 'application/json'},
+              body: jsonEncode(
+                position == null
+                    ? const <String, Object?>{}
+                    : {
+                        'currentTime': position,
+                        'timeListened': 0,
+                        'duration': duration,
+                      },
+              ),
+            )
+            .timeout(const Duration(seconds: 20)),
+      );
     } on Object catch (e) {
       debugPrint('Could not close session $id: $e');
     } finally {
@@ -1170,13 +1292,16 @@ class AudioPlayerController extends ChangeNotifier {
     required bool directPlay,
     Duration timeout = const Duration(seconds: 20),
   }) async {
-    final play = _client.post(
-      Uri.parse(
-        '$serverUrl/api/items/$libraryItemId/play'
-        '${episodeId == null ? '' : '/$episodeId'}',
+    final body = await _deviceInfoBody(directPlay: directPlay);
+    final play = _authed(
+      () => _client.post(
+        Uri.parse(
+          '$serverUrl/api/items/$libraryItemId/play'
+          '${episodeId == null ? '' : '/$episodeId'}',
+        ),
+        headers: {..._authHeaders, 'Content-Type': 'application/json'},
+        body: body,
       ),
-      headers: {..._authHeaders, 'Content-Type': 'application/json'},
-      body: await _deviceInfoBody(directPlay: directPlay),
     );
     try {
       return await play.timeout(timeout);
@@ -1271,6 +1396,10 @@ class AudioPlayerController extends ChangeNotifier {
     // one, else from the server (the header keeps the token out of the URL).
     // None when there is no cover, or offline without a saved copy (each
     // failed fetch would be retried and logged on every track change).
+    // Direct-play files are under /api and need a valid token; HLS is not.
+    final current = AuthSession.instance.current(token);
+    final sourceToken = !local && playing.any((t) => !t.isHls) ? current : null;
+    final sourceHeaders = {'Authorization': 'Bearer $current'};
     final coverFile = coverFileIn(dir);
     final cover = coverFile.existsSync()
         ? Uri.file(coverFile.path)
@@ -1283,7 +1412,7 @@ class AudioPlayerController extends ChangeNotifier {
           local
               ? Uri.file(_localFile(dir, t).path)
               : Uri.parse('$serverUrl${t.contentUrl}'),
-          headers: local || (t.isHls && _https) ? null : _authHeaders,
+          headers: local || (t.isHls && _https) ? null : sourceHeaders,
           tag: MediaItem(
             id: '$_mediaPath/${t.index}',
             title: bookTitle,
@@ -1292,11 +1421,13 @@ class AudioPlayerController extends ChangeNotifier {
             artUri: cover,
             artHeaders: cover == null || cover.scheme == 'file'
                 ? null
-                : _authHeaders,
+                : sourceHeaders,
           ),
         ),
     ];
     _playing = playing;
+    _sourceToken = sourceToken;
+    _scheduleRenewal();
     _pendingPosition = initialTime;
     if (!local) {
       // Seeks made while waiting only move the pending position; the audio
@@ -1721,7 +1852,7 @@ class AudioPlayerController extends ChangeNotifier {
         .timeout(const Duration(seconds: 20));
     try {
       final id = sessionId;
-      var response = await post();
+      var response = await _authed(post);
       // The server forgot the session (e.g. it restarted): every later sync
       // would fail too, so start a new one and send the progress there, once
       // per sync. Not for a close: the pending file below keeps the position
@@ -1734,7 +1865,7 @@ class AudioPlayerController extends ChangeNotifier {
           !_closed &&
           (sessionId != id || await _restartSession()) &&
           !_closed) {
-        response = await post();
+        response = await _authed(post);
       }
       if (response.statusCode == 200) {
         synced = true;
@@ -1921,6 +2052,7 @@ class AudioPlayerController extends ChangeNotifier {
   Future<void> close() {
     if (_closed) return _previousClose;
     _closed = true;
+    _renewTimer?.cancel();
     // A running download is left to finish: only a cancel or delete stops it.
     DownloadManager.instance.removeListener(_notify);
     unawaited(_downloadSub.cancel());
