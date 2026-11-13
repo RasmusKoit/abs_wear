@@ -65,9 +65,7 @@ class _ControlViewPageState extends State<ControlViewPage> {
       cancelLabel: l10n.cancel,
       channelName: l10n.downloads,
     );
-    // Leaving the player cancels the download; no toast on another page.
-    // (Not `mounted`: this page may have been rebuilt meanwhile.)
-    if (!_controller.isOpen) return;
+    // The download outlives this page; the system toast shows anywhere.
     unawaited(
       _toast(switch (result) {
         DownloadResult.done => l10n.downloadDone,
@@ -269,10 +267,12 @@ class _ControlViewPageState extends State<ControlViewPage> {
                 ),
               ),
             ),
-            Text(
-              '${((progress ?? 0) * 100).floor()}%',
-              style: theme.textTheme.labelSmall,
-            ),
+            // Queued behind another book: a spinning ring, no percentage.
+            if (progress != null)
+              Text(
+                '${(progress * 100).floor()}%',
+                style: theme.textTheme.labelSmall,
+              ),
           ],
         ),
       );
@@ -288,7 +288,10 @@ class _ControlViewPageState extends State<ControlViewPage> {
     final delete = IconButton(
       tooltip: l10n.deleteDownload,
       icon: Icon(Icons.delete_forever_rounded, color: theme.colorScheme.error),
-      onPressed: () => unawaited(_confirmDelete()),
+      // Offline the player needs its files; enabled once back online.
+      onPressed: _controller.isOffline
+          ? null
+          : () => unawaited(_confirmDelete()),
     );
     if (_local == _LocalState.complete) {
       return Row(

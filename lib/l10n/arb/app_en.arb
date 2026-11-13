@@ -92,6 +92,10 @@
     "@sessionExpired": {
         "description": "Token rejected by server"
     },
+    "noUsableToken": "The server sent no usable login token.",
+    "@noUsableToken": {
+        "description": "Login: the response held neither an access token nor a legacy token"
+    },
     "logoutConfirm": "Log out? Downloaded books are removed.",
     "@logoutConfirm": {
         "description": "Logout confirmation"
