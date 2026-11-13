@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:abs_wear/app/toast.dart';
 import 'package:abs_wear/l10n/l10n.dart';
 import 'package:abs_wear/player/darts/audio_player.dart';
+import 'package:abs_wear/player/volume.dart';
 import 'package:flutter/material.dart';
 import 'package:volume_controller/volume_controller.dart';
 
@@ -52,9 +53,7 @@ class _ControlViewPageState extends State<ControlViewPage> {
   }
 
   Future<void> _changeVolume(double delta) async {
-    final current = await _volume.getVolume();
-    final next = (current + delta).clamp(0.0, 1.0);
-    await _volume.setVolume(next);
+    final next = await changeVolume(delta);
     if (mounted) setState(() => _currentVolume = next);
   }
 
@@ -66,9 +65,7 @@ class _ControlViewPageState extends State<ControlViewPage> {
       cancelLabel: l10n.cancel,
       channelName: l10n.downloads,
     );
-    // Leaving the player cancels the download; no toast on another page.
-    // (Not `mounted`: this page may have been rebuilt meanwhile.)
-    if (!_controller.isOpen) return;
+    // The download outlives this page; the system toast shows anywhere.
     unawaited(
       _toast(switch (result) {
         DownloadResult.done => l10n.downloadDone,
@@ -121,12 +118,6 @@ class _ControlViewPageState extends State<ControlViewPage> {
     return '${two(left.inMinutes)}:${two(left.inSeconds % 60)}';
   }
 
-  IconData get _volumeIcon {
-    if (_currentVolume <= 0) return Icons.volume_off_rounded;
-    if (_currentVolume < 0.5) return Icons.volume_down_rounded;
-    return Icons.volume_up_rounded;
-  }
-
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
@@ -158,7 +149,7 @@ class _ControlViewPageState extends State<ControlViewPage> {
                   Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(_volumeIcon, size: 20),
+                      Icon(volumeIcon(_currentVolume), size: 20),
                       Text(
                         '${(_currentVolume * 100).round()}%',
                         style: theme.textTheme.labelSmall,
@@ -276,10 +267,12 @@ class _ControlViewPageState extends State<ControlViewPage> {
                 ),
               ),
             ),
-            Text(
-              '${((progress ?? 0) * 100).floor()}%',
-              style: theme.textTheme.labelSmall,
-            ),
+            // Queued behind another book: a spinning ring, no percentage.
+            if (progress != null)
+              Text(
+                '${(progress * 100).floor()}%',
+                style: theme.textTheme.labelSmall,
+              ),
           ],
         ),
       );
@@ -295,7 +288,10 @@ class _ControlViewPageState extends State<ControlViewPage> {
     final delete = IconButton(
       tooltip: l10n.deleteDownload,
       icon: Icon(Icons.delete_forever_rounded, color: theme.colorScheme.error),
-      onPressed: () => unawaited(_confirmDelete()),
+      // Offline the player needs its files; enabled once back online.
+      onPressed: _controller.isOffline
+          ? null
+          : () => unawaited(_confirmDelete()),
     );
     if (_local == _LocalState.complete) {
       return Row(

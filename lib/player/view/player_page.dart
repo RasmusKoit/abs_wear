@@ -1,10 +1,10 @@
 import 'dart:async';
 
 import 'package:abs_wear/app/toast.dart';
-import 'package:abs_wear/app/view/crown_scrollbar.dart';
 import 'package:abs_wear/app/view/overscroll_to_previous_page.dart';
 import 'package:abs_wear/l10n/l10n.dart';
 import 'package:abs_wear/player/player.dart';
+import 'package:abs_wear/player/view/crown_volume.dart';
 import 'package:flutter/material.dart';
 
 class PlayerPage extends StatefulWidget {
@@ -32,26 +32,29 @@ class PlayerPage extends StatefulWidget {
 
 class _PlayerPageState extends State<PlayerPage> {
   final PageController _pageController = PageController();
-  final AudioPlayerController _playerController = AudioPlayerController();
-  Timer? _syncTimer;
+  late final AudioPlayerController _playerController;
 
   @override
   void initState() {
     super.initState();
-    unawaited(_init());
-  }
-
-  Future<void> _init() async {
-    _playerController.onPlaybackError = () {
-      if (mounted) unawaited(showToast(context.l10n.playbackError));
-    };
-    final ok = await _playerController.setupPlayer(
-      widget.libraryItemId,
-      widget.serverUrl,
-      widget.token,
-      userName: widget.user,
+    // Attaches to the book when it is the one already playing.
+    final opened = NowPlaying.instance.open(
+      libraryItemId: widget.libraryItemId,
+      serverUrl: widget.serverUrl,
+      token: widget.token,
+      user: widget.user,
       episodeId: widget.episodeId,
     );
+    _playerController = opened.controller..onPlaybackError = _onPlaybackError;
+    unawaited(_init(opened.ready, created: opened.created));
+  }
+
+  void _onPlaybackError() {
+    if (mounted) unawaited(showToast(context.l10n.playbackError));
+  }
+
+  Future<void> _init(Future<bool> ready, {required bool created}) async {
+    final ok = await ready;
     if (!mounted) return;
     final l10n = context.l10n;
     if (!ok) {
@@ -61,29 +64,24 @@ class _PlayerPageState extends State<PlayerPage> {
       if (route != null) Navigator.of(context).removeRoute(route);
       return;
     }
-    if (_playerController.isOffline) {
+    if (created && _playerController.isOffline) {
       unawaited(showToast(l10n.playingOffline));
     }
-    // Keep the server's progress in sync while the player is open.
-    // Offline, this saves progress on the watch instead.
-    _syncTimer = Timer.periodic(
-      const Duration(minutes: 1),
-      (_) => unawaited(_playerController.periodicSync()),
-    );
   }
 
   @override
   void dispose() {
-    _syncTimer?.cancel();
-    // Saves the final position, then releases the player.
-    unawaited(_playerController.close());
+    // Playback and downloads go on; only this page's toasts stop.
+    if (_playerController.onPlaybackError == _onPlaybackError) {
+      _playerController.onPlaybackError = null;
+    }
     _pageController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return CrownScrollbar(
+    return CrownVolume(
       controller: _pageController,
       child: Scaffold(
         body: PageView(
@@ -93,7 +91,10 @@ class _PlayerPageState extends State<PlayerPage> {
             PlayerViewPage(playerController: _playerController),
             OverscrollToPreviousPage(
               controller: _pageController,
-              child: ControlViewPage(playerController: _playerController),
+              child: AmbientPlayerGate(
+                playerController: _playerController,
+                child: ControlViewPage(playerController: _playerController),
+              ),
             ),
           ],
         ),

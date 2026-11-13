@@ -20,6 +20,7 @@
     "fillAllFields": "Täida kõik väljad.",
     "noLibraries": "Selles serveris pole raamatukogusid.",
     "sessionExpired": "Seanss aegus. Logi uuesti sisse.",
+    "noUsableToken": "Server ei saatnud kasutatavat sisselogimisvõtit.",
     "logoutConfirm": "Kas logida välja? Allalaaditud raamatud kustutatakse.",
     "cancel": "Tühista",
     "nothingInProgress": "Pooleli pole midagi.",

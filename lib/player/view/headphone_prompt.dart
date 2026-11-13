@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:abs_wear/l10n/l10n.dart';
 import 'package:abs_wear/player/darts/audio_output.dart';
+import 'package:abs_wear/player/darts/audio_player.dart';
 import 'package:flutter/material.dart';
 
 // Speaker picked: no prompt until headphones are seen or the app restarts.
@@ -24,6 +25,18 @@ Future<bool> confirmAudioOutput(BuildContext context) async {
     builder: (context) => const _HeadphonePrompt(),
   );
   return play ?? false;
+}
+
+/// Play/pause for on-screen buttons; media buttons skip the headphone check.
+Future<void> togglePlayChecked(
+  BuildContext context,
+  AudioPlayerController controller,
+) async {
+  if (controller.toggleWouldPlay &&
+      (!await confirmAudioOutput(context) || !controller.toggleWouldPlay)) {
+    return;
+  }
+  await controller.togglePlayPause();
 }
 
 class _HeadphonePrompt extends StatefulWidget {

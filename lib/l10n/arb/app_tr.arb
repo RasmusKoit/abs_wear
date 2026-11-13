@@ -20,6 +20,7 @@
     "fillAllFields": "Tüm alanları doldurun.",
     "noLibraries": "Bu sunucuda kitaplık yok.",
     "sessionExpired": "Oturum sona erdi. Tekrar giriş yapın.",
+    "noUsableToken": "Sunucu geçerli bir giriş belirteci göndermedi.",
     "logoutConfirm": "Çıkış yapılsın mı? İndirilen kitaplar silinir.",
     "cancel": "İptal",
     "nothingInProgress": "Devam eden bir şey yok.",

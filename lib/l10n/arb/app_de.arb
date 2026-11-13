@@ -20,6 +20,7 @@
     "fillAllFields": "Bitte alle Felder ausfüllen.",
     "noLibraries": "Keine Buchbibliotheken auf diesem Server.",
     "sessionExpired": "Sitzung abgelaufen. Bitte neu anmelden.",
+    "noUsableToken": "Der Server hat kein gültiges Anmelde-Token gesendet.",
     "logoutConfirm": "Abmelden? Heruntergeladene Bücher werden entfernt.",
     "cancel": "Abbrechen",
     "nothingInProgress": "Nichts angefangen.",

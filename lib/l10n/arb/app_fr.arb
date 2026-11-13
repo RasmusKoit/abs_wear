@@ -20,6 +20,7 @@
     "fillAllFields": "Remplissez tous les champs.",
     "noLibraries": "Aucune bibliothèque de livres sur ce serveur.",
     "sessionExpired": "Session expirée. Reconnectez-vous.",
+    "noUsableToken": "Le serveur n'a envoyé aucun jeton de connexion valide.",
     "logoutConfirm": "Se déconnecter ? Les livres téléchargés seront supprimés.",
     "cancel": "Annuler",
     "nothingInProgress": "Rien en cours.",

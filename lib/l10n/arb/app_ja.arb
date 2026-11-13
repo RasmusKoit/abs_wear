@@ -20,6 +20,7 @@
     "fillAllFields": "すべての項目を入力してください。",
     "noLibraries": "このサーバーに書籍ライブラリがありません。",
     "sessionExpired": "セッションが切れました。再ログインしてください。",
+    "noUsableToken": "サーバーから有効なログイントークンが届きませんでした。",
     "logoutConfirm": "ログアウトしますか？ダウンロードした本は削除されます。",
     "cancel": "キャンセル",
     "nothingInProgress": "聴きかけの本はありません。",

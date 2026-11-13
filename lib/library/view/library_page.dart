@@ -10,6 +10,7 @@ import 'package:abs_wear/library/view/browse_page.dart';
 import 'package:abs_wear/library/view/downloads_page.dart';
 import 'package:abs_wear/library/view/libraries_page.dart';
 import 'package:abs_wear/player/player.dart';
+import 'package:abs_wear/player/view/headphone_prompt.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -63,11 +64,13 @@ class _LibraryPageState extends State<LibraryPage> {
   @override
   void initState() {
     super.initState();
+    DownloadManager.instance.addListener(_onDownloadsChanged);
     unawaited(_showCachedThenRefresh());
   }
 
   @override
   void dispose() {
+    DownloadManager.instance.removeListener(_onDownloadsChanged);
     _scrollController.dispose();
     super.dispose();
   }
@@ -192,6 +195,13 @@ class _LibraryPageState extends State<LibraryPage> {
   /// works offline).
   bool _hasDownloads = false;
 
+  /// A download was queued or finished, maybe from a closed player.
+  void _onDownloadsChanged() {
+    if (!mounted) return;
+    setState(() {});
+    unawaited(_refreshDownloads());
+  }
+
   Future<void> _refreshDownloads() async {
     try {
       final items = await listDownloads(widget.serverUrl);
@@ -213,7 +223,7 @@ class _LibraryPageState extends State<LibraryPage> {
       ),
     );
     await Future<void>.delayed(const Duration(milliseconds: 500));
-    await AudioPlayerController.lastClose;
+    await NowPlaying.settled();
     if (!mounted) return;
     unawaited(_refreshDownloads());
     unawaited(_refresh());
@@ -232,10 +242,30 @@ class _LibraryPageState extends State<LibraryPage> {
         ),
       ),
     );
-    // Progress changed while listening; reload once the player has sent
-    // its final position (it closes after the page transition).
+    // Progress changed while listening; reload once it was sent.
     await Future<void>.delayed(const Duration(milliseconds: 500));
-    await AudioPlayerController.lastClose;
+    await NowPlaying.settled();
+    if (!mounted) return;
+    unawaited(_refresh());
+    unawaited(_refreshDownloads());
+  }
+
+  /// Back to the book playing in the background.
+  Future<void> _openNowPlaying(AudioPlayerController playing) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute<void>(
+        builder: (context) => PlayerPage(
+          token: playing.token,
+          serverUrl: playing.serverUrl,
+          libraryItemId: playing.libraryItemId,
+          episodeId: playing.episodeId,
+          user: playing.user,
+        ),
+      ),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 500));
+    await NowPlaying.settled();
     if (!mounted) return;
     unawaited(_refresh());
     unawaited(_refreshDownloads());
@@ -260,7 +290,7 @@ class _LibraryPageState extends State<LibraryPage> {
       return;
     }
     // A book opened from the list may still be saving its position.
-    await AudioPlayerController.lastClose;
+    await NowPlaying.settled();
     if (!mounted) return;
     unawaited(_refresh());
     // A book may have been downloaded or deleted from the list.
@@ -317,6 +347,22 @@ class _LibraryPageState extends State<LibraryPage> {
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
           child: Column(
             children: [
+              ListenableBuilder(
+                listenable: NowPlaying.instance,
+                builder: (context, _) {
+                  final playing = NowPlaying.instance.controller;
+                  // Only this account's book (a logout closes it anyway).
+                  if (playing == null ||
+                      playing.serverUrl != widget.serverUrl ||
+                      playing.user != widget.user) {
+                    return const SizedBox.shrink();
+                  }
+                  return NowPlayingCard(
+                    controller: playing,
+                    onTap: () => unawaited(_openNowPlaying(playing)),
+                  );
+                },
+              ),
               Text(l10n.continueListening),
               ..._shelf(l10n, theme),
               Card(
@@ -329,7 +375,7 @@ class _LibraryPageState extends State<LibraryPage> {
                   onTap: () => unawaited(_browse()),
                 ),
               ),
-              if (_hasDownloads)
+              if (_hasDownloads || DownloadManager.instance.jobs.isNotEmpty)
                 Card(
                   child: ListTile(
                     title: Text(
@@ -459,6 +505,56 @@ class _BookCard extends StatelessWidget {
                 ],
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The book open in the background: tap to open it, or play/pause here.
+class NowPlayingCard extends StatelessWidget {
+  const NowPlayingCard({
+    required this.controller,
+    required this.onTap,
+    super.key,
+  });
+
+  final AudioPlayerController controller;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final theme = Theme.of(context);
+    return ListenableBuilder(
+      listenable: controller,
+      builder: (context, _) => Card(
+        clipBehavior: Clip.antiAlias,
+        child: ListTile(
+          contentPadding: const EdgeInsets.only(left: 12, right: 4),
+          title: Text(
+            controller.isLoaded ? controller.bookTitle : l10n.loading,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodySmall,
+          ),
+          onTap: onTap,
+          trailing: StreamBuilder<bool>(
+            stream: controller.player.playingStream,
+            initialData: controller.player.playing,
+            builder: (context, snapshot) {
+              final playing = snapshot.data ?? false;
+              return IconButton(
+                tooltip: playing ? l10n.pause : l10n.play,
+                icon: Icon(
+                  playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                ),
+                onPressed: controller.isLoaded
+                    ? () => unawaited(togglePlayChecked(context, controller))
+                    : null,
+              );
+            },
           ),
         ),
       ),

@@ -20,6 +20,7 @@
     "fillAllFields": "请填写所有字段。",
     "noLibraries": "此服务器上没有书库。",
     "sessionExpired": "会话已过期，请重新登录。",
+    "noUsableToken": "服务器未返回可用的登录令牌。",
     "logoutConfirm": "退出登录？已下载的书将被删除。",
     "cancel": "取消",
     "nothingInProgress": "没有正在收听的内容。",

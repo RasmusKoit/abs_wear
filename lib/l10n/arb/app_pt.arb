@@ -20,6 +20,7 @@
     "fillAllFields": "Preencha todos os campos.",
     "noLibraries": "Nenhuma biblioteca de livros neste servidor.",
     "sessionExpired": "Sessão expirada. Entre novamente.",
+    "noUsableToken": "O servidor não enviou um token de login válido.",
     "logoutConfirm": "Sair? Os livros baixados serão removidos.",
     "cancel": "Cancelar",
     "nothingInProgress": "Nada em andamento.",
