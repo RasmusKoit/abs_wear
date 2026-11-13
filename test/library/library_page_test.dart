@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:abs_wear/app/continue_tile.dart';
 import 'package:abs_wear/library/data/json_cache.dart';
 import 'package:abs_wear/library/view/library_page.dart';
 import 'package:abs_wear/player/player.dart';
@@ -280,6 +281,88 @@ void main() {
       routes['GET $_shelfPath'] = () async => http.Response('', 404);
 
       expect(await openAndWait(tester), LibraryResult.libraryMissing);
+    });
+  });
+
+  group('Continue listening tile', () {
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    late List<String> calls;
+    late Map<String, Object?>? pending;
+    PlayerPage? player;
+
+    setUp(() {
+      calls = [];
+      pending = null;
+      player = null;
+      messenger.setMockMethodCallHandler(ContinueTile.channel, (call) async {
+        calls.add(call.method);
+        if (call.method != 'take') return null;
+        final open = pending;
+        pending = null;
+        return open;
+      });
+    });
+
+    tearDown(
+      () => messenger.setMockMethodCallHandler(ContinueTile.channel, null),
+    );
+
+    // The player closes again when its session fails, so keep what opened.
+    bool Function() playerShows(WidgetTester tester) => () {
+      final found = find.byType(PlayerPage, skipOffstage: false);
+      if (found.evaluate().isNotEmpty) player ??= tester.widget(found);
+      return player != null;
+    };
+
+    testWidgets('a tap at start opens the player for that book', (
+      tester,
+    ) async {
+      pending = {'id': 'pod_1', 'episodeId': 'ep_1'};
+      continueListening([book('li_1', 'Dune', 'Frank Herbert')]);
+      await withServer(() async {
+        await tester.pumpAppInRealZone(page);
+        await tester.settleRealZone(done: playerShows(tester));
+      });
+
+      expect(player?.libraryItemId, 'pod_1');
+      expect(player?.episodeId, 'ep_1');
+      await tester.runAsync(() => tester.pumpWidget(const SizedBox()));
+    });
+
+    testWidgets('a tap while running opens the player', (tester) async {
+      continueListening([book('li_1', 'Dune', 'Frank Herbert')]);
+      await withServer(() async {
+        await tester.pumpAppInRealZone(page);
+        await tester.settleRealZone(done: shelfLoaded);
+        expect(playerShows(tester)(), isFalse);
+
+        pending = {'id': 'li_1'};
+        await tester.runAsync(
+          () => simulatePlatformCall(ContinueTile.channel.name, 'open'),
+        );
+        await tester.settleRealZone(done: playerShows(tester));
+      });
+
+      expect(player?.libraryItemId, 'li_1');
+      expect(player?.episodeId, isNull);
+      await tester.runAsync(() => tester.pumpWidget(const SizedBox()));
+    });
+
+    testWidgets('a new shelf refreshes the tile', (tester) async {
+      continueListening([book('li_1', 'Dune', 'Frank Herbert')]);
+      await withServer(() async {
+        await tester.pumpAppInRealZone(page);
+        await tester.settleRealZone(done: () => calls.contains('refresh'));
+      });
+
+      expect(calls, contains('refresh'));
+      final saved = await tester.runAsync(
+        () => JsonCache.read('shelf_${'$_server|u'.hashCode}_lib1'),
+      );
+      expect(saved, [
+        {'i': 'li_1', 't': 'Dune', 'a': 'Frank Herbert'},
+      ]);
     });
   });
 
