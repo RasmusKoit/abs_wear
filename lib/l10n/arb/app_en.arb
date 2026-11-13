@@ -126,6 +126,26 @@
     "@offlineSavedList": {
         "description": "Shown when cached data is displayed"
     },
+    "search": "Search",
+    "@search": {
+        "description": "Opens library search, and the search page title"
+    },
+    "searchLabel": "Title",
+    "@searchLabel": {
+        "description": "Search field label: what the search matches"
+    },
+    "noMatches": "No matches.",
+    "@noMatches": {
+        "description": "Library search found nothing"
+    },
+    "sortByTitle": "By title",
+    "@sortByTitle": {
+        "description": "Library list sort toggle: sorted A to Z by title (tap to change)"
+    },
+    "sortByAdded": "Newest first",
+    "@sortByAdded": {
+        "description": "Library list sort toggle: most recently added first (tap to change)"
+    },
     "download": "Download",
     "@download": {
         "description": "Download the book for offline listening"

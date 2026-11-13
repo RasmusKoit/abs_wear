@@ -595,7 +595,7 @@ void main() {
 
   testWidgets('Play without headphones asks once per session', (tester) async {
     await logInAndOpenLibrary(tester);
-    await scrollAndTap(tester, find.text('Single File Book'));
+    await scrollAndTap(tester, shelf('Single File Book'));
     await pumpUntil(tester, find.byIcon(Icons.play_arrow));
     // The emulator has no Bluetooth headphones.
     await tester.tap(find.byIcon(Icons.play_arrow));
