@@ -158,6 +158,18 @@
     "@deleteDownloadConfirm": {
         "description": "Confirm deleting a download"
     },
+    "noHeadphones": "No headphones connected.",
+    "@noHeadphones": {
+        "description": "Shown on Play when no Bluetooth headphones are connected"
+    },
+    "connectHeadphones": "Connect headphones",
+    "@connectHeadphones": {
+        "description": "Headphone prompt: opens the Bluetooth settings to connect headphones"
+    },
+    "playOnSpeaker": "Play on the watch speaker",
+    "@playOnSpeaker": {
+        "description": "Headphone prompt: plays on the watch's own speaker anyway"
+    },
     "volumeUp": "Volume up",
     "@volumeUp": {
         "description": "Increase volume"

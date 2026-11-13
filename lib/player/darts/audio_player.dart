@@ -1668,6 +1668,9 @@ class AudioPlayerController extends ChangeNotifier {
     return Duration(seconds: seconds.floor());
   }
 
+  /// Whether [togglePlayPause] would start playback (not pause or cancel).
+  bool get toggleWouldPlay => !player.playing && !(_playAfterReload ?? false);
+
   /// Pausing syncs progress through the player state listener.
   Future<void> togglePlayPause() async {
     // A tap on the watch makes its progress the latest (a reload below

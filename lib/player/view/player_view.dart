@@ -6,6 +6,7 @@ import 'package:abs_wear/l10n/l10n.dart';
 import 'package:abs_wear/player/components/scrolling_text.dart';
 import 'package:abs_wear/player/components/time_left_widget.dart';
 import 'package:abs_wear/player/darts/audio_player.dart';
+import 'package:abs_wear/player/view/headphone_prompt.dart';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 
@@ -292,7 +293,7 @@ class _PlayPauseButton extends StatelessWidget {
         return IconButton(
           tooltip: playing ? context.l10n.pause : context.l10n.play,
           icon: Icon(playing ? Icons.pause : Icons.play_arrow),
-          onPressed: () => unawaited(controller.togglePlayPause()),
+          onPressed: () => unawaited(togglePlayChecked(context, controller)),
         );
       },
     );

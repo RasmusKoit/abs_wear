@@ -10,6 +10,7 @@ import 'package:abs_wear/library/view/browse_page.dart';
 import 'package:abs_wear/library/view/downloads_page.dart';
 import 'package:abs_wear/library/view/libraries_page.dart';
 import 'package:abs_wear/player/player.dart';
+import 'package:abs_wear/player/view/headphone_prompt.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -550,7 +551,7 @@ class NowPlayingCard extends StatelessWidget {
                   playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
                 ),
                 onPressed: controller.isLoaded
-                    ? () => unawaited(controller.togglePlayPause())
+                    ? () => unawaited(togglePlayChecked(context, controller))
                     : null,
               );
             },
