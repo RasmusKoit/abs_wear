@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:abs_wear/player/darts/audio_player.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/scheduler.dart';
 
 /// App-wide owner of the playing book's controller; pages attach and detach.
 class NowPlaying extends ChangeNotifier {
@@ -17,6 +18,24 @@ class NowPlaying extends ChangeNotifier {
   String? _key;
   Future<bool> _ready = Future.value(false);
   Timer? _syncTimer;
+
+  bool _notifyQueued = false;
+
+  /// Opened from a page's initState: notify after the frame, not mid-build.
+  @override
+  void notifyListeners() {
+    final scheduler = SchedulerBinding.instance;
+    if (scheduler.schedulerPhase != SchedulerPhase.persistentCallbacks) {
+      super.notifyListeners();
+      return;
+    }
+    if (_notifyQueued) return;
+    _notifyQueued = true;
+    scheduler.addPostFrameCallback((_) {
+      _notifyQueued = false;
+      super.notifyListeners();
+    });
+  }
 
   /// The open book's controller, while loading or loaded.
   AudioPlayerController? get controller => _controller;
