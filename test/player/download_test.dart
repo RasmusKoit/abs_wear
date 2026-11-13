@@ -4,12 +4,14 @@ import 'dart:io';
 import 'package:abs_wear/login/data/auth_session.dart';
 import 'package:abs_wear/player/darts/audio_player.dart';
 import 'package:abs_wear/player/darts/download_keep_alive.dart';
+import 'package:abs_wear/player/darts/download_manager.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class _FakePathProvider extends PathProviderPlatform
     with MockPlatformInterfaceMixin {
@@ -46,62 +48,244 @@ void main() {
         });
   });
 
-  tearDown(() {
+  tearDown(() async {
+    // The queue is global: nothing may run into the next test.
+    await DownloadManager.instance.cancelAll();
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(_channel, null);
     docs.deleteSync(recursive: true);
   });
 
-  AudioPlayerController controllerWith(http.Client client) =>
-      AudioPlayerController(client: client)
-        ..serverUrl = 'http://abs.test'
-        ..libraryItemId = 'li_1'
-        ..tracks = const [
-          BookTrack(
-            index: 1,
-            startOffset: 0,
-            duration: 60,
-            contentUrl: '/api/items/li_1/file/111',
-            filename: 'book.mp3',
-            ino: '111',
-            size: 1000,
-          ),
-        ];
+  AudioPlayerController controllerWith(
+    http.Client client, {
+    String item = 'li_1',
+  }) => AudioPlayerController(client: client)
+    ..serverUrl = 'http://abs.test'
+    ..libraryItemId = item
+    ..bookTitle = 'Book $item'
+    ..tracks = [
+      BookTrack(
+        index: 1,
+        startOffset: 0,
+        duration: 60,
+        contentUrl: '/api/items/$item/file/111',
+        filename: 'book.mp3',
+        ino: '111',
+        size: 1000,
+      ),
+    ];
+
+  /// Answers each file with a body the test feeds; covers with 404.
+  ({http.Client client, Map<String, StreamController<List<int>>> bodies})
+  feedable() {
+    final bodies = <String, StreamController<List<int>>>{};
+    final client = MockClient.streaming((request, _) async {
+      final path = request.url.path;
+      if (path.endsWith('/cover')) {
+        return http.StreamedResponse(const Stream.empty(), 404);
+      }
+      final body = bodies[path.split('/')[3]] = StreamController<List<int>>();
+      return http.StreamedResponse(body.stream, 200, contentLength: 1000);
+    });
+    return (client: client, bodies: bodies);
+  }
+
+  Future<void> settle() =>
+      Future<void>.delayed(const Duration(milliseconds: 50));
 
   List<String> filesIn(Directory dir) => dir.existsSync()
       ? dir.listSync(recursive: true).map((e) => e.path).toList()
       : const [];
 
-  test(
-    'cancel stops a stalled download and removes the partial file',
-    () async {
-      final body = StreamController<List<int>>();
+  test('cancel stops a stalled download and keeps the partial file', () async {
+    final body = StreamController<List<int>>();
+    final controller = controllerWith(
+      MockClient.streaming((request, _) async {
+        return http.StreamedResponse(body.stream, 200, contentLength: 1000);
+      }),
+    );
+
+    final result = controller.downloadBook();
+    // Some bytes arrive, then the connection stalls.
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    body.add(List.filled(400, 1));
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    expect(controller.isDownloading, isTrue);
+    expect(controller.downloadProgress.value, closeTo(0.4, 0.01));
+
+    controller.cancelDownload();
+    expect(
+      await result.timeout(const Duration(seconds: 2)),
+      DownloadResult.canceled,
+    );
+    expect(controller.isDownloading, isFalse);
+    expect(controller.downloadProgress.value, isNull);
+    final parts = filesIn(docs).where((f) => f.endsWith('.part'));
+    expect(parts, hasLength(1));
+    expect(File(parts.single).lengthSync(), 400);
+    expect(calls, containsAllInOrder(['start', 'progress', 'stop']));
+    await body.close();
+  });
+
+  group('resume', () {
+    late File part;
+    late File tag;
+    late File target;
+
+    setUp(() {
+      final dir = Directory('${docs.path}/li_1')..createSync(recursive: true);
+      target = File('${dir.path}/001_111.mp3');
+      part = File('${target.path}.part');
+      tag = File('${part.path}.tag');
+    });
+
+    void savePart(int length) {
+      part.writeAsBytesSync(List.filled(length, 1));
+      tag.writeAsStringSync('W/"v1"');
+    }
+
+    test('206 appends to the kept partial file', () async {
+      savePart(400);
+      final ranges = <String?>[];
+      final ifRanges = <String?>[];
       final controller = controllerWith(
         MockClient.streaming((request, _) async {
-          return http.StreamedResponse(body.stream, 200, contentLength: 1000);
+          if (request.url.path.endsWith('/download')) {
+            ranges.add(request.headers['range']);
+            ifRanges.add(request.headers['if-range']);
+          }
+          return http.StreamedResponse(
+            Stream.value(List.filled(600, 2)),
+            206,
+            headers: {'content-range': 'bytes 400-999/1000'},
+          );
         }),
       );
 
-      final result = controller.downloadBook();
-      // Some bytes arrive, then the connection stalls.
-      await Future<void>.delayed(const Duration(milliseconds: 50));
-      body.add(List.filled(400, 1));
-      await Future<void>.delayed(const Duration(milliseconds: 50));
-      expect(controller.isDownloading, isTrue);
-      expect(controller.downloadProgress.value, closeTo(0.4, 0.01));
+      expect(await controller.downloadBook(), DownloadResult.done);
+      expect(ranges, ['bytes=400-']);
+      expect(ifRanges, ['W/"v1"']);
+      expect(part.existsSync(), isFalse);
+      expect(tag.existsSync(), isFalse);
+      final bytes = target.readAsBytesSync();
+      expect(bytes, [...List.filled(400, 1), ...List.filled(600, 2)]);
+    });
 
-      controller.cancelDownload();
-      expect(
-        await result.timeout(const Duration(seconds: 2)),
-        DownloadResult.canceled,
+    test('200 (Range ignored) restarts the file from zero', () async {
+      savePart(400);
+      final controller = controllerWith(
+        MockClient.streaming((request, _) async {
+          return http.StreamedResponse(Stream.value(List.filled(1000, 3)), 200);
+        }),
       );
-      expect(controller.isDownloading, isFalse);
-      expect(controller.downloadProgress.value, isNull);
-      expect(filesIn(docs).where((f) => f.endsWith('.part')), isEmpty);
-      expect(calls, containsAllInOrder(['start', 'progress', 'stop']));
-      await body.close();
-    },
-  );
+
+      expect(await controller.downloadBook(), DownloadResult.done);
+      expect(target.readAsBytesSync(), List.filled(1000, 3));
+    });
+
+    test('an oversized partial file is dropped, not resumed', () async {
+      savePart(1500);
+      final ranges = <String?>[];
+      final controller = controllerWith(
+        MockClient.streaming((request, _) async {
+          if (request.url.path.endsWith('/download')) {
+            ranges.add(request.headers['range']);
+          }
+          return http.StreamedResponse(Stream.value(List.filled(1000, 3)), 200);
+        }),
+      );
+
+      expect(await controller.downloadBook(), DownloadResult.done);
+      expect(ranges, [null]);
+      expect(target.readAsBytesSync(), List.filled(1000, 3));
+    });
+
+    test('416 for a stale partial file restarts from zero', () async {
+      savePart(400);
+      final ranges = <String?>[];
+      final controller = controllerWith(
+        MockClient.streaming((request, _) async {
+          if (request.url.path.endsWith('/download')) {
+            ranges.add(request.headers['range']);
+          }
+          if (request.headers['range'] != null) {
+            return http.StreamedResponse(const Stream.empty(), 416);
+          }
+          return http.StreamedResponse(Stream.value(List.filled(1000, 3)), 200);
+        }),
+      );
+
+      expect(await controller.downloadBook(), DownloadResult.done);
+      expect(ranges, ['bytes=400-', null]);
+      expect(target.readAsBytesSync(), List.filled(1000, 3));
+    });
+
+    test('a 206 from the wrong offset drops the partial file', () async {
+      savePart(400);
+      final controller = controllerWith(
+        MockClient.streaming((request, _) async {
+          return http.StreamedResponse(
+            Stream.value(List.filled(1000, 2)),
+            206,
+            headers: {'content-range': 'bytes 0-999/1000'},
+          );
+        }),
+      );
+
+      expect(await controller.downloadBook(), DownloadResult.failed);
+      expect(part.existsSync(), isFalse);
+      expect(target.existsSync(), isFalse);
+    });
+
+    test('a short body keeps the partial file for the next try', () async {
+      final controller = controllerWith(
+        MockClient.streaming((request, _) async {
+          return http.StreamedResponse(
+            Stream.value(List.filled(700, 3)),
+            200,
+            headers: {'etag': 'W/"v2"'},
+          );
+        }),
+      );
+
+      expect(await controller.downloadBook(), DownloadResult.failed);
+      expect(target.existsSync(), isFalse);
+      expect(part.lengthSync(), 700);
+      expect(tag.readAsStringSync(), 'W/"v2"');
+    });
+
+    test('a partial file without a version is not resumed', () async {
+      part.writeAsBytesSync(List.filled(400, 1));
+      final ranges = <String?>[];
+      final controller = controllerWith(
+        MockClient.streaming((request, _) async {
+          if (request.url.path.endsWith('/download')) {
+            ranges.add(request.headers['range']);
+          }
+          return http.StreamedResponse(Stream.value(List.filled(1000, 3)), 200);
+        }),
+      );
+
+      expect(await controller.downloadBook(), DownloadResult.done);
+      expect(ranges, [null]);
+      expect(target.readAsBytesSync(), List.filled(1000, 3));
+    });
+
+    test('a complete partial file is finished without a request', () async {
+      savePart(1000);
+      var requests = 0;
+      final controller = controllerWith(
+        MockClient.streaming((request, _) async {
+          if (request.url.path.endsWith('/download')) requests++;
+          return http.StreamedResponse(const Stream.empty(), 404);
+        }),
+      );
+
+      expect(await controller.downloadBook(), DownloadResult.done);
+      expect(requests, 0);
+      expect(target.lengthSync(), 1000);
+    });
+  });
 
   test('cancel while waiting for the response', () async {
     final controller = controllerWith(
@@ -142,6 +326,56 @@ void main() {
     );
     expect(calls.last, 'stop');
     refresh.complete(http.Response('', 503));
+  });
+
+  test('a queued book sends the token refreshed meanwhile', () async {
+    SharedPreferences.setMockInitialValues({});
+    AuthSession.instance.start('http://abs.test', 'acc1', 'ref1');
+    addTearDown(AuthSession.instance.clear);
+    final auth = <String, List<String?>>{};
+    final bodies = <String, StreamController<List<int>>>{};
+    final client = MockClient.streaming((request, _) async {
+      final path = request.url.path;
+      if (!path.endsWith('/download')) {
+        return http.StreamedResponse(const Stream.empty(), 404);
+      }
+      final item = path.split('/')[3];
+      (auth[item] ??= []).add(request.headers['authorization']);
+      if (request.headers['authorization'] == 'Bearer acc1') {
+        return http.StreamedResponse(const Stream.empty(), 401);
+      }
+      final body = bodies[item] = StreamController<List<int>>();
+      return http.StreamedResponse(body.stream, 200, contentLength: 1000);
+    });
+    final refreshes = <String?>[];
+    final refresh = MockClient((request) async {
+      refreshes.add(request.headers['x-refresh-token']);
+      return http.Response(
+        '{"user":{"accessToken":"acc2","refreshToken":"ref2"}}',
+        200,
+      );
+    });
+
+    await http.runWithClient(() async {
+      final first = controllerWith(client)..token = 'acc1';
+      final second = controllerWith(client, item: 'li_2')..token = 'acc1';
+      final results = [first.downloadBook(), second.downloadBook()];
+      await settle();
+      bodies['li_1']!.add(List.filled(1000, 1));
+      await bodies['li_1']!.close();
+      await settle();
+      bodies['li_2']!.add(List.filled(1000, 1));
+      await bodies['li_2']!.close();
+      expect(await Future.wait(results), [
+        DownloadResult.done,
+        DownloadResult.done,
+      ]);
+    }, () => refresh);
+
+    // One refresh after the 401; the queued book starts with the new token.
+    expect(refreshes, ['ref1']);
+    expect(auth['li_1'], ['Bearer acc1', 'Bearer acc2']);
+    expect(auth['li_2'], ['Bearer acc2']);
   });
 
   test('falls back to the default network when Wi-Fi fails', () async {
@@ -198,23 +432,135 @@ void main() {
     wifi.complete();
   });
 
-  test('closing the player cancels its download', () async {
-    final body = StreamController<List<int>>();
+  test('closing the player leaves its download running', () async {
+    final feed = feedable();
+    final controller = controllerWith(feed.client);
+
+    final result = controller.downloadBook();
+    await settle();
+    await controller.close();
+    expect(DownloadManager.instance.jobFor('li_1'), isNotNull);
+
+    feed.bodies['li_1']!.add(List.filled(1000, 1));
+    await feed.bodies['li_1']!.close();
+    expect(
+      await result.timeout(const Duration(seconds: 2)),
+      DownloadResult.done,
+    );
+    expect(File('${docs.path}/li_1/001_111.mp3').lengthSync(), 1000);
+    expect(calls.last, 'stop');
+  });
+
+  test('cancel ends the wait for the cover at once', () async {
+    final coverAsked = Completer<void>();
     final controller = controllerWith(
       MockClient.streaming((request, _) async {
-        return http.StreamedResponse(body.stream, 200, contentLength: 1000);
+        if (request.url.path.endsWith('/cover')) {
+          coverAsked.complete();
+          return await Completer<http.StreamedResponse>().future;
+        }
+        return http.StreamedResponse(
+          Stream.value(List.filled(1000, 1)),
+          200,
+          contentLength: 1000,
+        );
       }),
     );
 
     final result = controller.downloadBook();
-    await Future<void>.delayed(const Duration(milliseconds: 50));
-    unawaited(controller.close());
+    await coverAsked.future.timeout(const Duration(seconds: 2));
+    controller.cancelDownload();
+    // The audio is all there, so the book counts as downloaded.
     expect(
       await result.timeout(const Duration(seconds: 2)),
-      DownloadResult.canceled,
+      DownloadResult.done,
     );
+    expect(DownloadManager.instance.jobs, isEmpty);
+  });
+
+  test('a second book waits for the first under one keep-alive', () async {
+    final feed = feedable();
+    final first = controllerWith(feed.client);
+    final second = controllerWith(feed.client, item: 'li_2');
+
+    final firstResult = first.downloadBook();
+    final secondResult = second.downloadBook();
+    await settle();
+    expect(feed.bodies.keys, ['li_1']);
+    expect(first.isDownloading, isTrue);
+    expect(second.isDownloading, isTrue);
+    // Queued: no progress yet.
+    expect(second.downloadProgress.value, isNull);
+
+    feed.bodies['li_1']!.add(List.filled(1000, 1));
+    await feed.bodies['li_1']!.close();
+    expect(await firstResult, DownloadResult.done);
+    await settle();
+    expect(feed.bodies.keys, ['li_1', 'li_2']);
+    expect(second.downloadProgress.value, 0);
+
+    feed.bodies['li_2']!.add(List.filled(1000, 1));
+    await feed.bodies['li_2']!.close();
+    expect(await secondResult, DownloadResult.done);
+    await settle();
+    expect(calls.where((c) => c == 'start'), hasLength(1));
+    expect(calls, containsAllInOrder(['start', 'title', 'stop']));
     expect(calls.last, 'stop');
-    await body.close();
+  });
+
+  test('canceling a queued book leaves the running one alone', () async {
+    final feed = feedable();
+    final first = controllerWith(feed.client);
+    final second = controllerWith(feed.client, item: 'li_2');
+
+    final firstResult = first.downloadBook();
+    final secondResult = second.downloadBook();
+    await settle();
+    second.cancelDownload();
+    expect(await secondResult, DownloadResult.canceled);
+    expect(second.isDownloading, isFalse);
+    expect(first.isDownloading, isTrue);
+
+    feed.bodies['li_1']!.add(List.filled(1000, 1));
+    await feed.bodies['li_1']!.close();
+    expect(await firstResult, DownloadResult.done);
+    expect(feed.bodies.keys, ['li_1']);
+  });
+
+  test('downloading the same book again joins its download', () async {
+    final feed = feedable();
+    final controller = controllerWith(feed.client);
+    final reopened = controllerWith(feed.client);
+
+    final result = controller.downloadBook();
+    final again = reopened.downloadBook();
+    await settle();
+    expect(DownloadManager.instance.jobs, hasLength(1));
+
+    feed.bodies['li_1']!.add(List.filled(1000, 1));
+    await feed.bodies['li_1']!.close();
+    expect(await result, DownloadResult.done);
+    expect(await again, DownloadResult.done);
+  });
+
+  test("the notification's cancel stops the whole queue", () async {
+    final feed = feedable();
+    final first = controllerWith(feed.client).downloadBook();
+    final second = controllerWith(feed.client, item: 'li_2').downloadBook();
+    await settle();
+
+    await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .handlePlatformMessage(
+          _channel.name,
+          _channel.codec.encodeMethodCall(const MethodCall('cancel')),
+          (_) {},
+        );
+    expect(await first, DownloadResult.canceled);
+    expect(await second, DownloadResult.canceled);
+    expect(DownloadManager.instance.jobs, isEmpty);
+    expect(feed.bodies.keys, ['li_1']);
+    await settle();
+    expect(calls.last, 'stop');
   });
 
   test("an old download ending doesn't stop a newer one", () async {

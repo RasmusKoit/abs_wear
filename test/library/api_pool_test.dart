@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:abs_wear/library/data/library_api.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
 
 // Real sockets: no widget tests here, so HTTP isn't mocked.
 void main() {
@@ -42,7 +43,11 @@ void main() {
         ).then<Object?>((_) => null, onError: (Object e) => e),
     ];
 
-    expect(await Future.wait(stuck), everyElement(isA<TimeoutException>()));
+    // A retry cut short by another request's timeout ends as a ClientException.
+    final failed = anyOf(isA<TimeoutException>(), isA<http.ClientException>());
+    final errors = await Future.wait(stuck);
+    expect(errors, everyElement(failed));
+    expect(errors, contains(isA<TimeoutException>()));
     final response = await apiGet('$url/ok', 'tok');
     expect(response.statusCode, 200);
   });

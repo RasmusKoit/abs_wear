@@ -3,7 +3,7 @@
 ![ABS Wear][abs_wear_header]
 
 [![style: very good analysis][very_good_analysis_badge]][very_good_analysis_link]
-[![License: MIT][license_badge]][license_link]
+[![License: GPL-3.0][license_badge]][license_link]
 
 [Audiobookshelf][abs_github_link] on your Wear OS watch: a standalone app for listening to your audiobooks and podcasts, no phone needed.
 
@@ -106,8 +106,8 @@ ABS Wear is a third-party app and isn't affiliated with the Audiobookshelf proje
 [advplyr_github_link]: https://github.com/advplyr
 [android_platform_tools]: https://developer.android.com/tools/releases/platform-tools
 [flutter_localizations_link]: https://api.flutter.dev/flutter/flutter_localizations/flutter_localizations-library.html
-[license_badge]: https://img.shields.io/badge/license-MIT-blue.svg
-[license_link]: https://opensource.org/licenses/MIT
+[license_badge]: https://img.shields.io/badge/license-GPL--3.0-blue.svg
+[license_link]: LICENSE
 [nyxholas_github_link]: https://github.com/nichwall
 [play_store_link]: https://play.google.com/store/apps/details?id=dev.koit.abs_wear
 [releases_page]: https://github.com/RasmusKoit/abs_wear/releases/latest
