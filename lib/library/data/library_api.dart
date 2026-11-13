@@ -172,10 +172,10 @@ Duration listTimeout = const Duration(seconds: 20);
 Duration coverTimeout = const Duration(seconds: 60);
 
 /// A hung connection never frees its slot, so a timeout drops the client.
-void _discard({required bool cover}) {
+void _discard(http.Client client, {required bool cover}) {
   final pool = _pool(cover: cover);
-  final client = pool[Zone.current];
-  if (client == null || _owned[client] != true) return;
+  // Already replaced: closing the new one would fail its requests.
+  if (pool[Zone.current] != client || _owned[client] != true) return;
   pool[Zone.current] = null;
   client.close();
 }
@@ -188,7 +188,8 @@ Future<http.Response> apiGet(
   String? accept,
   bool cover = false,
 }) async {
-  Future<http.Response> get() => _client(cover: cover)
+  late http.Client used;
+  Future<http.Response> get() => (used = _client(cover: cover))
       .get(
         Uri.parse(url),
         headers: {'Authorization': 'Bearer $token', 'Accept': ?accept},
@@ -202,7 +203,7 @@ Future<http.Response> apiGet(
       return await get();
     }
   } on TimeoutException {
-    _discard(cover: cover);
+    _discard(used, cover: cover);
     rethrow;
   }
 }
