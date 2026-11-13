@@ -89,6 +89,16 @@ void main() {
     await c.close();
   });
 
+  test('a sync with post (library refresh) posts at once', () async {
+    final c = controller()..debugPlaying = true;
+    await c.seekToBookTime(40);
+    await c.periodicSync(post: true);
+    expect(requests, ['POST /api/session/s1/sync']);
+    expect(jsonDecode(bodies.single), containsPair('currentTime', 40));
+    c.debugPlaying = null;
+    await c.close();
+  });
+
   test('a pause or close post restarts the count', () async {
     final c = controller()..debugPlaying = true;
     for (var i = 0; i < 5; i++) {
