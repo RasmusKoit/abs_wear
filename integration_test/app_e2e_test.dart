@@ -4,6 +4,7 @@
 // --dart-define values read from tool/abs_test_server/.env).
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:abs_wear/app/app.dart';
 import 'package:abs_wear/l10n/l10n.dart';
@@ -16,6 +17,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:integration_test/integration_test.dart';
 import 'package:just_audio_background/just_audio_background.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 const absUrl = String.fromEnvironment('ABS_URL');
@@ -570,14 +572,27 @@ void main() {
     await tester.tap(find.byIcon(Icons.play_arrow));
     await pumpUntil(tester, find.text('00:07:27'));
 
-    // Clean up the download for the other tests.
+    // Offline the files are all the player has: delete is disabled.
     await tester.tap(find.byIcon(Icons.pause));
     await tester.fling(find.byType(PageView), const Offset(0, -300), 1000);
     await pumpUntil(tester, find.byIcon(Icons.delete_forever_rounded));
-    await scrollAndTap(tester, find.byIcon(Icons.delete_forever_rounded));
-    await pumpUntil(tester, find.byIcon(Icons.check_rounded));
-    await tester.tap(find.byIcon(Icons.check_rounded));
-    await pumpUntil(tester, find.byIcon(Icons.download_rounded));
+    final delete = tester.widget<IconButton>(
+      find.ancestor(
+        of: find.byIcon(Icons.delete_forever_rounded),
+        matching: find.byType(IconButton),
+      ),
+    );
+    expect(delete.onPressed, isNull);
+
+    // Clean up the download for the other tests: close the player, then
+    // remove its files.
+    await tester.pumpWidget(const SizedBox());
+    await tester.runAsync(() async {
+      await AudioPlayerController.lastClose;
+      final docs = await getApplicationDocumentsDirectory();
+      final dir = Directory('${docs.path}/$id');
+      if (dir.existsSync()) dir.deleteSync(recursive: true);
+    });
   });
 
   testWidgets('downloads a multi-file book with progress', (tester) async {
