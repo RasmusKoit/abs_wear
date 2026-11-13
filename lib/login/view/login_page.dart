@@ -674,6 +674,11 @@ class LoginPageState extends State<LoginPage> {
     final token = _token;
     final url = serverUrlController.text;
     final user = usernameController.text;
+    // This account's book and downloads; closing syncs while the token works.
+    final stopped = Future.wait([
+      NowPlaying.instance.stop(),
+      DownloadManager.instance.cancelAll(),
+    ]);
     final prefs = await SharedPreferences.getInstance();
     passwordController.clear();
     if (deleteDownloads && token.isNotEmpty) {
@@ -689,8 +694,13 @@ class LoginPageState extends State<LoginPage> {
         _stage = _Stage.server;
       });
     }
-    if (!deleteDownloads) return;
+    if (!deleteDownloads) {
+      unawaited(stopped);
+      return;
+    }
     try {
+      // A running download would write into the deleted folders.
+      await stopped.timeout(const Duration(seconds: 5), onTimeout: () => []);
       await prefs.remove('pickedLibrary');
       // First, so the push below can't hold it up: the login form already
       // shows, and the next user mustn't find this account's books. The push

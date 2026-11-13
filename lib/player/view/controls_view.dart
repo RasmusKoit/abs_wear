@@ -66,9 +66,7 @@ class _ControlViewPageState extends State<ControlViewPage> {
       cancelLabel: l10n.cancel,
       channelName: l10n.downloads,
     );
-    // Leaving the player cancels the download; no toast on another page.
-    // (Not `mounted`: this page may have been rebuilt meanwhile.)
-    if (!_controller.isOpen) return;
+    // The download outlives this page; the system toast shows anywhere.
     unawaited(
       _toast(switch (result) {
         DownloadResult.done => l10n.downloadDone,
@@ -276,10 +274,12 @@ class _ControlViewPageState extends State<ControlViewPage> {
                 ),
               ),
             ),
-            Text(
-              '${((progress ?? 0) * 100).floor()}%',
-              style: theme.textTheme.labelSmall,
-            ),
+            // Queued behind another book: a spinning ring, no percentage.
+            if (progress != null)
+              Text(
+                '${(progress * 100).floor()}%',
+                style: theme.textTheme.labelSmall,
+              ),
           ],
         ),
       );
