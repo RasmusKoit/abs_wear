@@ -134,10 +134,27 @@ void main() {
     await c.close();
   });
 
-  // In the fake zone; unawaited seeks move the position at once (no audio).
+  /// Runs [body] in fake time, then closes its player from the real zone.
+  Future<void> inFakeTime(
+    void Function(FakeAsync async, AudioPlayerController c) body,
+  ) async {
+    final fake = FakeAsync();
+    late AudioPlayerController c;
+    fake.run((async) => body(async, c = controller()));
+    var closed = false;
+    // Real zone: the static close chain must not live in a dead fake zone.
+    unawaited(c.close().whenComplete(() => closed = true));
+    // Drives the player's fake-zone callbacks while the close runs.
+    for (var i = 0; i < 200 && !closed; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      fake.elapse(const Duration(seconds: 1));
+    }
+    expect(closed, isTrue, reason: 'the player closed');
+  }
+
+  // Unawaited seeks move the position at once (no audio loaded).
   test('rapid skips post once, a few seconds after the last', () {
-    fakeAsync((async) {
-      final c = controller();
+    return inFakeTime((async, c) {
       const twoSeconds = Duration(seconds: 2);
       unawaited(c.seekRelative(10));
       async.elapse(twoSeconds);
@@ -161,34 +178,26 @@ void main() {
       async.elapse(AudioPlayerController.skipSyncDelay);
       expect(requests, hasLength(2));
       expect(jsonDecode(bodies.last), containsPair('currentTime', 0));
-      unawaited(c.close());
-      async.elapse(const Duration(seconds: 1));
     });
   });
 
   test('a post of an older position leaves a newer skip waiting', () {
-    fakeAsync((async) {
-      final c = controller();
+    return inFakeTime((async, c) {
       unawaited(c.seekRelative(10));
       // As reloadSources does, with a position captured before the skip.
       unawaited(c.syncOpenSession(position: 5));
       async.elapse(AudioPlayerController.skipSyncDelay);
       expect(requests, hasLength(2));
       expect(jsonDecode(bodies.last), containsPair('currentTime', 10));
-      unawaited(c.close());
-      async.elapse(const Duration(seconds: 1));
     });
   });
 
   test('a pause right after a skip posts once', () {
-    fakeAsync((async) {
-      final c = controller();
+    return inFakeTime((async, c) {
       unawaited(c.seekRelative(10));
       unawaited(c.syncOpenSession());
       async.elapse(const Duration(seconds: 10));
       expect(requests, hasLength(1));
-      unawaited(c.close());
-      async.elapse(const Duration(seconds: 1));
     });
   });
 }
