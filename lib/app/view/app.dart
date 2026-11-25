@@ -21,6 +21,11 @@ ThemeData appTheme({bool ambient = false}) => ThemeData(
         )
       // Monochrome, like the rest of the app: white accents, no colour.
       : const ColorScheme.dark(primary: Colors.white),
+  // Labels for screen readers only: a popup is cut off on a round screen.
+  tooltipTheme: const TooltipThemeData(
+    triggerMode: TooltipTriggerMode.manual,
+    waitDuration: Duration(days: 1), // Mouse hover.
+  ),
   // The one main action on a screen: a light grey fill with dark text, so
   // it reads as a button (text buttons are the secondary actions).
   elevatedButtonTheme: ElevatedButtonThemeData(

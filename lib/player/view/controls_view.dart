@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:abs_wear/app/toast.dart';
+import 'package:abs_wear/app/view/round_title.dart';
 import 'package:abs_wear/l10n/l10n.dart';
 import 'package:abs_wear/player/darts/audio_player.dart';
 import 'package:abs_wear/player/volume.dart';
@@ -81,6 +82,7 @@ class _ControlViewPageState extends State<ControlViewPage> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
+        scrollable: true,
         insetPadding: const EdgeInsets.symmetric(horizontal: 12),
         contentPadding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
         actionsPadding: const EdgeInsets.only(bottom: 12),
@@ -127,7 +129,7 @@ class _ControlViewPageState extends State<ControlViewPage> {
         toolbarHeight: 40,
         centerTitle: true,
         automaticallyImplyLeading: false,
-        title: Text(l10n.controls, style: theme.textTheme.bodyLarge),
+        title: RoundTitle(l10n.controls),
       ),
       // Scrolls rather than overflowing on small screens or large text.
       // Not primary: the page's round scrollbar makes the player's

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:abs_wear/app/view/crown_scrollbar.dart';
+import 'package:abs_wear/app/view/round_title.dart';
 import 'package:abs_wear/l10n/l10n.dart';
 import 'package:abs_wear/library/data/downloads.dart';
 import 'package:abs_wear/library/view/book_tile.dart';
@@ -91,7 +92,7 @@ class _DownloadsPageState extends State<DownloadsPage> {
           child: AppBar(
             centerTitle: true,
             automaticallyImplyLeading: false,
-            title: Text(l10n.downloads, style: theme.textTheme.bodyLarge),
+            title: RoundTitle(l10n.downloads),
           ),
         ),
         body: items == null

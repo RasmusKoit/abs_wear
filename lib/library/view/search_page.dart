@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:abs_wear/app/view/crown_scrollbar.dart';
+import 'package:abs_wear/app/view/round_title.dart';
 import 'package:abs_wear/l10n/l10n.dart';
 import 'package:abs_wear/library/data/library_api.dart';
 import 'package:abs_wear/library/view/book_tile.dart';
@@ -152,7 +153,7 @@ class _SearchPageState extends State<SearchPage> {
           child: AppBar(
             centerTitle: true,
             automaticallyImplyLeading: false,
-            title: Text(l10n.search, style: theme.textTheme.bodyLarge),
+            title: RoundTitle(l10n.search),
           ),
         ),
         body: ListView(
@@ -163,6 +164,8 @@ class _SearchPageState extends State<SearchPage> {
             TextField(
               controller: _queryController,
               autofocus: true,
+              enableInteractiveSelection: false,
+              contextMenuBuilder: null, // Cut off on a round screen.
               style: theme.textTheme.labelSmall,
               scrollPadding: const EdgeInsets.all(8),
               decoration: InputDecoration(
