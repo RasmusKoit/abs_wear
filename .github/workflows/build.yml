@@ -23,6 +23,11 @@ on:
         type: choice
         default: draft
         options: [draft, completed]
+      # Play requires this after a rejection, and refuses it otherwise.
+      play_not_sent_for_review:
+        description: 'Hold for review: send it from Play Console (needed after a rejection)'
+        type: boolean
+        default: false
 
 jobs:
   build:
@@ -133,6 +138,7 @@ jobs:
           releaseName: ${{ env.BUILD_NAME }} (${{ env.BUILD_NUMBER }})
           track: ${{ inputs.play_track }}
           status: ${{ inputs.play_status }}
+          changesNotSentForReview: ${{ inputs.play_not_sent_for_review }}
 
       - name: Create release
         if: github.ref == 'refs/heads/master'
