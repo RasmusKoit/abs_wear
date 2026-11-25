@@ -77,6 +77,7 @@ class _HeadphonePromptState extends State<_HeadphonePrompt> {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     return AlertDialog(
+      scrollable: true,
       insetPadding: const EdgeInsets.symmetric(horizontal: 12),
       contentPadding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
       actionsPadding: const EdgeInsets.only(bottom: 12),

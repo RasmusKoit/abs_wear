@@ -7,12 +7,14 @@ import 'package:flutter_test/flutter_test.dart';
 /// largest the app allows ([maxTextScale]), and some headroom past it.
 const watchTextScales = <double>[1, maxTextScale, 1.5];
 
-/// Makes the test surface a round watch's: 454x454 px at 2 dpr (227 dp
-/// across), about the emulator's size and a little smaller than a OnePlus
-/// Watch 2 (466 px).
-void useWatchScreen(WidgetTester tester) {
+/// The round screens Play reviews on, in dp across: Wear OS small round and
+/// large round (a little smaller than a OnePlus Watch 2).
+const watchSizes = <double>[192, 227];
+
+/// Makes the test surface a round watch's, [size] dp across at 2 dpr.
+void useWatchScreen(WidgetTester tester, {double size = 227}) {
   tester.view
-    ..physicalSize = const Size.square(454)
+    ..physicalSize = Size.square(size * 2)
     ..devicePixelRatio = 2;
   addTearDown(tester.view.reset);
 }

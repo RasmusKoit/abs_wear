@@ -858,6 +858,7 @@ class LoginPageState extends State<LoginPage> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
+        scrollable: true,
         // Round screens: use the width, keep content inside the circle.
         insetPadding: const EdgeInsets.symmetric(horizontal: 12),
         contentPadding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
@@ -1029,6 +1030,8 @@ class LoginPageState extends State<LoginPage> {
         TextFormField(
           style: theme.textTheme.labelSmall,
           scrollPadding: const EdgeInsets.all(8),
+          enableInteractiveSelection: false,
+          contextMenuBuilder: null, // Cut off on a round screen.
           strutStyle: StrutStyle.fromTextStyle(theme.textTheme.labelSmall!),
           controller: serverUrlController,
           decoration: InputDecoration(
@@ -1074,7 +1077,7 @@ class LoginPageState extends State<LoginPage> {
                   _loginError = null;
                   _stage = _Stage.username;
                 }),
-          child: Text(l10n.passwordLogin),
+          child: Text(l10n.passwordLogin, textAlign: TextAlign.center),
         ),
         const SizedBox(height: 4),
         ElevatedButton(
@@ -1104,6 +1107,8 @@ class LoginPageState extends State<LoginPage> {
         TextFormField(
           style: theme.textTheme.labelSmall,
           scrollPadding: const EdgeInsets.all(8),
+          enableInteractiveSelection: false,
+          contextMenuBuilder: null, // Cut off on a round screen.
           strutStyle: StrutStyle.fromTextStyle(theme.textTheme.labelSmall!),
           controller: usernameController,
           decoration: InputDecoration(
@@ -1146,6 +1151,8 @@ class LoginPageState extends State<LoginPage> {
         TextFormField(
           style: theme.textTheme.labelSmall,
           scrollPadding: const EdgeInsets.all(8),
+          enableInteractiveSelection: false,
+          contextMenuBuilder: null, // Cut off on a round screen.
           strutStyle: StrutStyle.fromTextStyle(theme.textTheme.labelSmall!),
           controller: passwordController,
           decoration: InputDecoration(
@@ -1236,7 +1243,8 @@ class LoginPageState extends State<LoginPage> {
   List<Widget> _loginErrorText(ThemeData theme) => [
     if (_loginError case final error?)
       Padding(
-        padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+        // Below, so its last line scrolls clear of the round edge.
+        padding: const EdgeInsets.fromLTRB(8, 8, 8, 24),
         child: Text(
           error,
           textAlign: TextAlign.center,
@@ -1294,6 +1302,8 @@ class LoginPageState extends State<LoginPage> {
             key: ValueKey(field),
             style: small,
             scrollPadding: const EdgeInsets.all(8),
+            enableInteractiveSelection: false,
+            contextMenuBuilder: null, // Cut off on a round screen.
             strutStyle: StrutStyle.fromTextStyle(small),
             controller: _ssoInputs[field],
             decoration: InputDecoration(

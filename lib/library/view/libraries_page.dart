@@ -1,4 +1,5 @@
 import 'package:abs_wear/app/view/crown_scrollbar.dart';
+import 'package:abs_wear/app/view/round_title.dart';
 import 'package:abs_wear/l10n/l10n.dart';
 import 'package:abs_wear/library/data/library_api.dart';
 import 'package:flutter/material.dart';
@@ -39,10 +40,7 @@ class _LibrariesPageState extends State<LibrariesPage> {
           child: AppBar(
             centerTitle: true,
             automaticallyImplyLeading: false,
-            title: Text(
-              context.l10n.libraries,
-              style: theme.textTheme.bodyLarge,
-            ),
+            title: RoundTitle(context.l10n.libraries),
           ),
         ),
         body: ListView(
@@ -52,6 +50,9 @@ class _LibrariesPageState extends State<LibrariesPage> {
             for (final library in widget.libraries)
               Card(
                 child: ListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 10),
+                  horizontalTitleGap: 8,
+                  minLeadingWidth: 24,
                   leading: Icon(
                     library.isPodcast
                         ? Icons.podcasts_rounded

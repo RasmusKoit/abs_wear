@@ -89,9 +89,16 @@ class PlayerViewPage extends StatelessWidget {
             ),
           ],
         ),
-        TimeLeftWidget(
-          timeLeft: controller.timeLeft,
-          style: theme.textTheme.labelSmall!,
+        // The round screen's chord down here, at 192 dp.
+        SizedBox(
+          width: 84,
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: TimeLeftWidget(
+              timeLeft: controller.timeLeft,
+              style: theme.textTheme.labelSmall!,
+            ),
+          ),
         ),
       ],
     );

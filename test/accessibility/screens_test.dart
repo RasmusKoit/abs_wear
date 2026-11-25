@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui' show PointerDeviceKind;
 
 import 'package:abs_wear/ambient_mode/ambient_mode.dart';
 import 'package:abs_wear/app/view/app.dart';
@@ -86,20 +87,22 @@ void main() {
     body,
   ) {
     group(name, () {
-      for (final v in variants) {
-        testWidgets(v.name, (tester) async {
-          useWatchScreen(tester);
-          await body(
-            tester,
-            (home) => watchApp(
-              home,
-              textScale: v.scale,
-              boldText: v.bold,
-              locale: v.locale,
-            ),
-          );
-          expectNoLayoutErrors(tester);
-        });
+      for (final size in watchSizes) {
+        for (final v in variants) {
+          testWidgets('${size.round()} dp, ${v.name}', (tester) async {
+            useWatchScreen(tester, size: size);
+            await body(
+              tester,
+              (home) => watchApp(
+                home,
+                textScale: v.scale,
+                boldText: v.bold,
+                locale: v.locale,
+              ),
+            );
+            expectNoLayoutErrors(tester);
+          });
+        }
       }
     });
   }
@@ -111,6 +114,13 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(TextFormField), findsOneWidget);
       expect(find.byType(ElevatedButton), findsOneWidget); // Next
+      // No selection toolbar or handles, cut off by the screen.
+      await tester.enterText(find.byType(TextFormField), fakeAbsUrl);
+      await tester.longPress(find.byType(TextFormField));
+      await tester.pumpAndSettle();
+      expect(find.byType(AdaptiveTextSelectionToolbar), findsNothing);
+      FocusManager.instance.primaryFocus?.unfocus();
+      await tester.pumpAndSettle();
       await expectAccessible(tester);
       expectNoLayoutErrors(tester);
     });
@@ -512,6 +522,27 @@ void main() {
         expectOnRoundScreen(tester, find.byIcon(icon));
       }
       expectOnRoundScreen(tester, find.textContaining(':06:40'));
+    });
+
+    testWidgets('a long press or hover shows no tooltip', (tester) async {
+      useWatchScreen(tester);
+      await tester.pumpWidget(
+        watchApp(Scaffold(body: PlayerViewPage(playerController: loaded()))),
+      );
+      await tester.pump();
+      final forward = find.byIcon(Icons.forward_10_rounded);
+      final press = await tester.startGesture(tester.getCenter(forward));
+      await tester.pump(const Duration(seconds: 1));
+      expect(find.text('Forward 10 seconds'), findsNothing);
+      // Not up: that would skip.
+      await press.cancel();
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: Offset.zero);
+      await mouse.moveTo(tester.getCenter(forward));
+      await tester.pump(const Duration(seconds: 1));
+      expect(find.text('Forward 10 seconds'), findsNothing);
+      await mouse.removePointer();
+      await tester.pump(const Duration(seconds: 1));
     });
 
     screen('always-on', (tester, app) async {
